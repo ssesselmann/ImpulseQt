@@ -2,6 +2,7 @@ import pyqtgraph as pg
 import shared  
 import os
 import json
+import numpy as np
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QGridLayout, QLabel, QFrame, QSizePolicy,
@@ -18,7 +19,7 @@ class Tab2(QWidget):
 
     def labeled_input(self, label_text, widget):
         label = QLabel(label_text)
-        label.setStyleSheet("font-size: 10pt; color: #555; margin-bottom: 2px;")
+        label.setStyleSheet("font-size: 10pt; color: #555; margin-bottom: 0px;")
         label.setAlignment(Qt.AlignCenter)
         layout = QVBoxLayout()
         layout.setSpacing(0)
@@ -139,13 +140,15 @@ class Tab2(QWidget):
         self.calib_bin_1 = QLineEdit(str(shared.calib_bin_1))
         self.calib_bin_1.setAlignment(Qt.AlignCenter)
         self.calib_bin_1.setToolTip("Calibration point 1")
-        grid.addWidget(self.labeled_input("Calibration bins", self.calib_bin_1), 0, 7)
+        self.calib_bin_1.editingFinished.connect(self.save_calibration_points)
+        grid.addWidget(self.labeled_input("Calibration bin 1", self.calib_bin_1), 0, 7)
 
         # Row 1 Column 9
         self.calib_e_1 = QLineEdit(str(shared.calib_e_1))
         self.calib_e_1.setAlignment(Qt.AlignCenter)
         self.calib_e_1.setToolTip("Calibration energy 1")
-        grid.addWidget(self.labeled_input("Calibration energy", self.calib_e_1), 0, 8)
+        self.calib_e_1.editingFinished.connect(self.save_calibration_points)
+        grid.addWidget(self.labeled_input("Calibration energy 1", self.calib_e_1), 0, 8)
 
         # Row 2 Col 1----------------------------------------------
         self.counts_label = QLabel("0")
@@ -221,13 +224,15 @@ class Tab2(QWidget):
         self.calib_bin_2 = QLineEdit(str(shared.calib_bin_2))
         self.calib_bin_2.setAlignment(Qt.AlignCenter)
         self.calib_bin_2.setToolTip("Calibration point 2")
-        grid.addWidget(self.calib_bin_2, 1, 7)
+        self.calib_bin_2.editingFinished.connect(self.save_calibration_points)
+        grid.addWidget(self.labeled_input("Calibration bin 2", self.calib_bin_2), 1, 7)
 
         # Row 2, Col 9
         self.calib_e_2 = QLineEdit(str(shared.calib_e_2))
         self.calib_e_2.setAlignment(Qt.AlignCenter)
         self.calib_e_2.setToolTip("Calibration energy 2")
-        grid.addWidget(self.calib_e_2, 1, 8)
+        self.calib_e_2.editingFinished.connect(self.save_calibration_points)
+        grid.addWidget(self.labeled_input("Calibration energy 2", self.calib_e_2), 1, 8)        
 
         # Row 3, Col 1 ----------------------------------------------------------------
         self.max_counts_input = QLineEdit(str(shared.max_counts))
@@ -270,13 +275,15 @@ class Tab2(QWidget):
         self.calib_bin_3 = QLineEdit(str(shared.calib_bin_3))
         self.calib_bin_3.setAlignment(Qt.AlignCenter)
         self.calib_bin_3.setToolTip("Calibration point 3")
-        grid.addWidget(self.calib_bin_3, 2, 7)
+        self.calib_bin_3.editingFinished.connect(self.save_calibration_points)
+        grid.addWidget(self.labeled_input("Calibration bin 3", self.calib_bin_3), 2, 7)
 
         # Row 3, Col 9
         self.calib_e_3 = QLineEdit(str(shared.calib_e_3))
         self.calib_e_3.setAlignment(Qt.AlignCenter)
         self.calib_e_3.setToolTip("Calibration energy 3")
-        grid.addWidget(self.calib_e_3, 2, 8)
+        self.calib_e_3.editingFinished.connect(self.save_calibration_points)
+        grid.addWidget(self.labeled_input("Calibration energy 3", self.calib_e_3), 2, 8)
 
         # Row 4, Col 1 -----------------------------------------
         self.dropped_label = QLabel("0")
@@ -323,13 +330,15 @@ class Tab2(QWidget):
         self.calib_bin_4 = QLineEdit(str(shared.calib_bin_4))
         self.calib_bin_4.setAlignment(Qt.AlignCenter)
         self.calib_bin_4.setToolTip("Calibration point 4")
-        grid.addWidget(self.calib_bin_4, 3, 7)
+        self.calib_bin_4.editingFinished.connect(self.save_calibration_points)
+        grid.addWidget(self.labeled_input("Calibration bin 4", self.calib_bin_4), 3, 7)
 
         # Row 4, Col 9
         self.calib_e_4 = QLineEdit(str(shared.calib_e_4))
         self.calib_e_4.setAlignment(Qt.AlignCenter)
         self.calib_e_4.setToolTip("Calibration energy 4")
-        grid.addWidget(self.calib_e_4, 3, 8)
+        self.calib_e_4.editingFinished.connect(self.save_calibration_points)
+        grid.addWidget(self.labeled_input("Calibration energy 4", self.calib_e_4), 3, 8)
 
         # Row 5, Col 1
 
@@ -347,13 +356,15 @@ class Tab2(QWidget):
         self.calib_bin_5 = QLineEdit(str(shared.calib_bin_5))
         self.calib_bin_5.setAlignment(Qt.AlignCenter)
         self.calib_bin_5.setToolTip("Calibration point 5")
-        grid.addWidget(self.calib_bin_5, 4, 7)
+        self.calib_bin_5.editingFinished.connect(self.save_calibration_points)
+        grid.addWidget(self.labeled_input("Calibration bin 5", self.calib_bin_5), 4, 7)
 
         # Row 5, Col 9
         self.calib_e_5 = QLineEdit(str(shared.calib_e_5))
         self.calib_e_5.setAlignment(Qt.AlignCenter)
         self.calib_e_5.setToolTip("Calibration energy 5")
-        grid.addWidget(self.calib_e_5, 4, 8)
+        self.calib_e_5.editingFinished.connect(self.save_calibration_points)
+        grid.addWidget(self.labeled_input("Calibration energy 5", self.calib_e_5), 4, 8)
 
         # Other stuff.......
         self.label_timer = QTimer()
@@ -391,22 +402,6 @@ class Tab2(QWidget):
         except ValueError:
             pass  # skip if input is invalid    
 
-    def update_calibration_inputs(self):
-        try:
-            shared.calib_bin_1 = int(self.calib_bin_1.text())
-            shared.calib_bin_2 = int(self.calib_bin_2.text())
-            shared.calib_bin_3 = int(self.calib_bin_3.text())
-            shared.calib_bin_4 = int(self.calib_bin_4.text())
-            shared.calib_bin_5 = int(self.calib_bin_5.text())
-
-            shared.calib_e_1 = float(self.calib_e_1.text())
-            shared.calib_e_2 = float(self.calib_e_2.text())
-            shared.calib_e_3 = float(self.calib_e_3.text())
-            shared.calib_e_4 = float(self.calib_e_4.text())
-            shared.calib_e_5 = float(self.calib_e_5.text())
-
-        except ValueError as e:
-            QMessageBox.warning(self, "Invalid Input", f"Calibration input must be numeric.\n\n{str(e)}")
 
     def update_histogram(self):
         try:
@@ -489,9 +484,6 @@ class Tab2(QWidget):
         except Exception as e:
             logger.error(f"[ERROR] Plot update failed: {e}")
 
-
-
-
     def make_cell(self, text):
         label = QLabel(text)
         label.setFrameStyle(QFrame.Box | QFrame.Plain)
@@ -515,8 +507,10 @@ class Tab2(QWidget):
             )
             if reply != QMessageBox.Yes:
                 return
+
         self.clear_session()
         self.start_recording_2d(filename)
+
 
     @Slot()
     def on_stop_clicked(self):
@@ -561,6 +555,9 @@ class Tab2(QWidget):
 
             else:
                 start_recording(mode)  # fallback
+
+            shared.recording = True
+            self.plot_timer.start(1000)
 
         except Exception as e:
             QMessageBox.critical(self, "Start Error", f"Error starting: {str(e)}")    
@@ -658,3 +655,67 @@ class Tab2(QWidget):
 
         except Exception as e:
             logger.error(f"[ERROR] Peak annotation failed: {e}")
+
+    def save_calibration_points(self):
+        try:
+            shared.calib_bin_1 = int(self.calib_bin_1.text())
+            shared.calib_bin_2 = int(self.calib_bin_2.text())
+            shared.calib_bin_3 = int(self.calib_bin_3.text())
+            shared.calib_bin_4 = int(self.calib_bin_4.text())
+            shared.calib_bin_5 = int(self.calib_bin_5.text())
+
+            shared.calib_e_1 = float(self.calib_e_1.text())
+            shared.calib_e_2 = float(self.calib_e_2.text())
+            shared.calib_e_3 = float(self.calib_e_3.text())
+            shared.calib_e_4 = float(self.calib_e_4.text())
+            shared.calib_e_5 = float(self.calib_e_5.text())
+
+            self.calculate_polynomial()
+
+        except ValueError as e:
+            print("[Calibration Save] Invalid input:", e)
+
+
+    def calculate_polynomial(self):
+        def parse_int(val): return int(val.strip()) if val.strip().isdigit() else 0
+        def parse_float(val): return float(val.strip()) if val.strip() else 0.0
+
+        bin_vals = [parse_int(e.text()) for e in (
+            self.calib_bin_1, self.calib_bin_2, self.calib_bin_3, self.calib_bin_4, self.calib_bin_5)]
+        energy_vals = [parse_float(e.text()) for e in (
+            self.calib_e_1, self.calib_e_2, self.calib_e_3, self.calib_e_4, self.calib_e_5)]
+
+        (
+            shared.calib_bin_1, shared.calib_bin_2, shared.calib_bin_3,
+            shared.calib_bin_4, shared.calib_bin_5
+        ) = bin_vals
+
+        (
+            shared.calib_e_1, shared.calib_e_2, shared.calib_e_3,
+            shared.calib_e_4, shared.calib_e_5
+        ) = energy_vals
+
+        x_bins = [b for b, e in zip(bin_vals, energy_vals) if b > 0 and e > 0]
+        x_energies = [e for b, e in zip(bin_vals, energy_vals) if b > 0 and e > 0]
+
+        coefficients = [0, 1, 0]
+        message = "⚠️ Insufficient calibration points"
+
+        if len(x_bins) == 1:
+            m = x_energies[0] / x_bins[0]
+            coefficients = [0, m, 0]
+            message = "✅ Linear one-point calibration"
+        elif len(x_bins) == 2:
+            coeffs = np.polyfit(x_bins, x_energies, 1).tolist()
+            coefficients = [0] + coeffs
+            message = "✅ Linear two-point calibration"
+        elif len(x_bins) >= 3:
+            coefficients = np.polyfit(x_bins, x_energies, 2).tolist()
+            message = "✅ Second-order polynomial fit"
+
+        shared.coeff_1 = round(coefficients[0], 6)
+        shared.coeff_2 = round(coefficients[1], 6)
+        shared.coeff_3 = round(coefficients[2], 6)
+        shared.coefficients_1 = coefficients
+
+        print(f"[Calibration Update] {message}: poly = {np.poly1d(coefficients)}")
