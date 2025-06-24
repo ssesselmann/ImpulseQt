@@ -95,5 +95,9 @@ DEFAULT_SETTINGS = {
 	"threshold": 200,
 	"tolerance": 20000,
 	"user_settings": "",
-	"val_flag": False
+	"val_flag": False,
+	"window_width": 960,
+    "window_height": 600,
+    "window_pos_x": 100,
+    "window_pos_y": 100
 }
