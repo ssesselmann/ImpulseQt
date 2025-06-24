@@ -181,6 +181,12 @@ run_flag_lock = Lock()
 max_pulse_length = 0
 max_pulse_height = 0
 
+# Window size and position
+window_pos_x = 0
+window_pos_y = 0
+window_width = 0
+window_height = 0
+
 # --- Versioning ---
 __version__ = "2.1.8"
 
@@ -220,7 +226,8 @@ SETTINGS_KEYS = [
     "tempcal_poll_interval_sec", "tempcal_smoothing_sigma",
     "tempcal_spectrum_duration_sec", "tempcal_stability_tolerance",
     "tempcal_stability_window_sec", "tempcal_table",
-    "theme", "threshold", "tolerance", "iso_switch"
+    "theme", "threshold", "tolerance", "iso_switch",
+    "window_pos_x", "window_pos_y", "window_width", "window_height"
 ]
 
 
