@@ -1,3 +1,4 @@
+# settings_manager.py
 import json
 from pathlib import Path
 from shared import DATA_DIR
