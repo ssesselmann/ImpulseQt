@@ -127,7 +127,7 @@ class Tab2(QWidget):
         
         sigma_layout.addWidget(self.sigma_label)
         sigma_layout.addWidget(self.sigma_slider)
-        
+
         sigma_widget = QWidget()
         sigma_widget.setLayout(sigma_layout)
         grid.addWidget(sigma_widget, 0, 6)
@@ -247,7 +247,6 @@ class Tab2(QWidget):
         grid.addWidget(self.labeled_input("Channel pitch", self.bin_size), 2, 2)
 
         # Row 3, Col 4
-        grid.addWidget(self.make_cell("C4R3"), 2, 3)
 
         # Row 3, Col 5
         self.diff_switch = QCheckBox()
@@ -266,7 +265,6 @@ class Tab2(QWidget):
         grid.addWidget(self.labeled_input("Calibration on", self.cal_switch), 2, 5)
 
         # Row 3, Col 7
-        grid.addWidget(self.make_cell("C7R3"), 2, 6)
 
         # Row 3, Col 8
         self.calib_bin_3 = QLineEdit(str(shared.calib_bin_3))
@@ -303,7 +301,6 @@ class Tab2(QWidget):
         grid.addWidget(self.labeled_input("Open spectrum file", self.select_file), 3, 2)
 
         # Row 4, Col 2
-        grid.addWidget(self.make_cell("C4R4"), 3, 3)
 
         # Row 4, Col 5
         self.coi_switch = QCheckBox()
@@ -321,7 +318,6 @@ class Tab2(QWidget):
         grid.addWidget(self.labeled_input("Show Isotopes", self.iso_switch), 3, 5)
 
         # Row 4, Col 7
-        grid.addWidget(self.make_cell("C7R4"), 3, 6)
 
         # Row 4, Col 8
         self.calib_bin_4 = QLineEdit(str(shared.calib_bin_4))
@@ -336,25 +332,16 @@ class Tab2(QWidget):
         grid.addWidget(self.calib_e_4, 3, 8)
 
         # Row 5, Col 1
-        grid.addWidget(self.make_cell("BLANK"), 4, 0)
 
         # Row 5, Col 2
-        grid.addWidget(self.make_cell("BLANK"), 4, 1)
 
         # Row 5, Col 3
-        grid.addWidget(self.make_cell("C3R5"), 4, 2)
 
         # Row 5, Col 4
-        grid.addWidget(self.make_cell("C6R5"), 4, 3)
 
         # Row 5, Col 5
-        grid.addWidget(self.make_cell("C5R5"), 4, 4)
-
-        grid.addWidget(self.make_cell("C5R4"), 4, 5)
-        
 
         # Row 5, Col 7
-        grid.addWidget(self.make_cell("C7R5"), 4, 6)
 
         # Row 5, Col 8
         self.calib_bin_5 = QLineEdit(str(shared.calib_bin_5))
@@ -465,7 +452,7 @@ class Tab2(QWidget):
                 )
                 self.diff_curve = self.plot_widget.plot(x_vals, y_vals, pen=pg.mkPen("k", width=1.5))
 
-            # Gaussian correlation (green)
+            # Gaussian correlation (red)
             if shared.sigma > 0 and shared.histogram and not shared.diff_switch:
                 corr = gaussian_correl(shared.histogram, shared.sigma)
                 x_vals = list(range(len(corr)))
@@ -473,13 +460,27 @@ class Tab2(QWidget):
                     [y * x for x, y in enumerate(corr)]
                     if shared.epb_switch else corr
                 )
+
+                # Match histogram amplitude — same as Dash version
+                max_hist = max(shared.histogram)
+                max_corr = max(y_vals) if y_vals else 1
+                if max_corr > 0:
+                    scale = max_hist / max_corr
+                    y_vals = [y * scale for y in y_vals]
+
+                # Apply floor for log mode — avoids zeroes collapsing plot
+                if shared.log_switch:
+                    y_vals = [max(1e-3, y) for y in y_vals]
+
                 self.gauss_curve = self.plot_widget.plot(
-                x_vals,
-                y_vals,
-                pen=pg.mkPen("r", width=1.5),
-                fillLevel=0,  # Fill down to y=0
-                brush=QBrush(QColor(255, 0, 0, 80))  # Semi-transparent red
-            )
+                    x_vals,
+                    y_vals,
+                    pen=pg.mkPen("r", width=1.5),
+                    fillLevel=0,
+                    brush=QBrush(QColor(255, 0, 0, 80))  # semi-transparent red
+                )
+
+                        
 
             # Optional: peak markers, still useful for visual context
             if shared.sigma > 0:
