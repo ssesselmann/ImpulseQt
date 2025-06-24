@@ -5,10 +5,11 @@ import json
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QGridLayout, QLabel, QFrame, QSizePolicy,
-    QPushButton, QLineEdit, QMessageBox, QCheckBox, QComboBox, QHBoxLayout
+    QPushButton, QLineEdit, QMessageBox, QCheckBox, QComboBox, QHBoxLayout, QSlider
 )
 from PySide6.QtCore import Qt, QTimer, Slot
-from functions import start_recording, get_options, stop_recording, load_histogram, load_histogram_2
+from PySide6.QtGui import QFont, QBrush, QColor
+from functions import start_recording, get_options, stop_recording, load_histogram, load_histogram_2, gaussian_correl
 from audio_spectrum import play_wav_file
 from shared import logger
 
@@ -17,9 +18,8 @@ class Tab2(QWidget):
 
     def labeled_input(self, label_text, widget):
         label = QLabel(label_text)
-        label.setStyleSheet("font-size: 9pt; color: #555; margin-bottom: 2px;")
+        label.setStyleSheet("font-size: 10pt; color: #555; margin-bottom: 2px;")
         label.setAlignment(Qt.AlignCenter)
-
         layout = QVBoxLayout()
         layout.setSpacing(0)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -106,18 +106,34 @@ class Tab2(QWidget):
         self.select_comparison.currentIndexChanged.connect(self.on_select_filename_2_changed)    
         grid.addWidget(self.labeled_input("Comparison spectrum", self.select_comparison), 0, 4)
 
-        # Row 1 Column 6
+        # Row 1 Col 6
         self.epb_switch = QCheckBox()
         self.epb_switch.setChecked(shared.epb_switch) 
         self.epb_switch.setToolTip("Energy by bin")
         self.epb_switch.stateChanged.connect(lambda state: self.on_checkbox_toggle(state, "epb_switch"))
         grid.addWidget(self.labeled_input("Energy per bin", self.epb_switch), 0, 5)
+        
+        # Row 1, Column 7 (Sigma slider with value in label)
+        self.sigma_slider = QSlider(Qt.Horizontal)
+        self.sigma_slider.setRange(0, 30)  # 0.0 to 3.0 in steps of 0.1
+        self.sigma_slider.setSingleStep(1)
+        self.sigma_slider.setValue(int(shared.sigma * 10))
+        self.sigma_slider.setFocusPolicy(Qt.StrongFocus)
+        self.sigma_slider.setFocus()
+        self.sigma_label = QLabel(f"Sigma: {shared.sigma:.1f}")
+        self.sigma_label.setAlignment(Qt.AlignCenter)
+        self.sigma_label.setStyleSheet("font-size: 10pt; color: #777;")
+        sigma_layout = QVBoxLayout()
+        
+        sigma_layout.addWidget(self.sigma_label)
+        sigma_layout.addWidget(self.sigma_slider)
+        
+        sigma_widget = QWidget()
+        sigma_widget.setLayout(sigma_layout)
+        grid.addWidget(sigma_widget, 0, 6)
 
-        # Row 1 Column 7
-        self.btn_chord = QPushButton("Sound")
-        self.btn_chord.setStyleSheet("background-color: orange; color: white; font-weight: bold;")
-        self.btn_chord.setToolTip("Generates a chord from peaks")
-        grid.addWidget(self.labeled_input("Generate chord", self.btn_chord), 0, 6)
+        self.sigma_slider.valueChanged.connect(self.on_sigma_changed)
+
 
         # Row 1 Column 8
         self.calib_bin_1 = QLineEdit(str(shared.calib_bin_1))
@@ -169,8 +185,37 @@ class Tab2(QWidget):
         self.log_switch.stateChanged.connect(lambda state: self.on_checkbox_toggle(state, "log_switch"))
         grid.addWidget(self.labeled_input("Show log(y)", self.log_switch), 1, 5)
 
-        # Row 2 Col 7
-        grid.addWidget(self.make_cell("C7R2"), 1, 6)
+        # Row 2, Col 7
+        self.peakfinder_slider = QSlider(Qt.Horizontal)
+        self.peakfinder_slider.setRange(0, 100)
+        self.peakfinder_slider.setSingleStep(1)
+        self.peakfinder_slider.setValue(int(shared.peakfinder))
+
+        self.peakfinder_slider.setFocusPolicy(Qt.StrongFocus)
+        self.peakfinder_slider.setFocus()
+
+        # Define label before using it
+        self.peakfinder_label = QLabel(f"Peakfinder: {shared.peakfinder}")
+        self.peakfinder_label.setAlignment(Qt.AlignCenter)
+
+        # Apply smaller font
+        font = QFont()
+        font.setPointSize(9)
+        self.peakfinder_label.setFont(font)
+        self.peakfinder_label.setStyleSheet("color: #777;")
+
+        # Build layout
+        peakfinder_layout = QVBoxLayout()
+        peakfinder_layout.addWidget(self.peakfinder_label)
+        peakfinder_layout.addWidget(self.peakfinder_slider)
+
+        peakfinder_widget = QWidget()
+        peakfinder_widget.setLayout(peakfinder_layout)
+
+        grid.addWidget(peakfinder_widget, 1, 6)
+
+        # Connect handler
+        self.peakfinder_slider.valueChanged.connect(self.on_peakfinder_changed)
 
         # Row 2, Col 8
         self.calib_bin_2 = QLineEdit(str(shared.calib_bin_2))
@@ -257,18 +302,23 @@ class Tab2(QWidget):
     
         grid.addWidget(self.labeled_input("Open spectrum file", self.select_file), 3, 2)
 
-        # Row 4, Col 4
+        # Row 4, Col 2
         grid.addWidget(self.make_cell("C4R4"), 3, 3)
 
         # Row 4, Col 5
-        grid.addWidget(self.make_cell("C5R4"), 3, 4)
+        self.coi_switch = QCheckBox()
+        self.coi_switch.setChecked(shared.coi_switch) 
+        self.coi_switch.setToolTip("Coincidence spectrum")
+        self.coi_switch.stateChanged.connect(lambda state: self.on_checkbox_toggle(state, "coi_switch"))
+        grid.addWidget(self.labeled_input("Coincidence", self.coi_switch), 3, 4)
+        
 
         # Row 4, Col 6
         self.iso_switch = QCheckBox()
         self.iso_switch.setChecked(shared.iso_switch) 
         self.iso_switch.setToolTip("values or isotopes")
         self.iso_switch.stateChanged.connect(lambda state: self.on_checkbox_toggle(state, "iso_switch"))
-        grid.addWidget(self.labeled_input("Show log(y)", self.iso_switch), 3, 5)
+        grid.addWidget(self.labeled_input("Show Isotopes", self.iso_switch), 3, 5)
 
         # Row 4, Col 7
         grid.addWidget(self.make_cell("C7R4"), 3, 6)
@@ -300,12 +350,7 @@ class Tab2(QWidget):
         # Row 5, Col 5
         grid.addWidget(self.make_cell("C5R5"), 4, 4)
 
-        # Row 5, Col 6
-        self.coi_switch = QCheckBox()
-        self.coi_switch.setChecked(shared.coi_switch) 
-        self.coi_switch.setToolTip("Coincidence spectrum")
-        self.coi_switch.stateChanged.connect(lambda state: self.on_checkbox_toggle(state, "coi_switch"))
-        grid.addWidget(self.labeled_input("Coincidence", self.coi_switch), 4, 5)
+        grid.addWidget(self.make_cell("C5R4"), 4, 5)
         
 
         # Row 5, Col 7
@@ -331,11 +376,11 @@ class Tab2(QWidget):
         layout.addLayout(grid)
 
         # === Footer ===
-        footer = QLabel("Impulse")
+        footer = QLabel("IMPULSE")
         footer.setStyleSheet("padding: 6px; background: #eee;")
         footer.setAlignment(Qt.AlignCenter)
         footer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        footer.setStyleSheet("background-color: #0066D1; color: white; padding: 5px;")
+        footer.setStyleSheet("background-color: #0066D1; color: white; font-weight:bold; padding: 5px;")
 
         layout.addWidget(footer)
 
@@ -379,33 +424,69 @@ class Tab2(QWidget):
     def update_histogram(self):
         try:
             self.plot_widget.clear()
+            self.plot_widget.setLogMode(x=False, y=shared.log_switch)
 
-            # Show difference only
+            self.hist_curve = None
+            self.comp_curve = None
+            self.diff_curve = None
+            self.gauss_curve = None
+
+            # Base histogram (blue)
+            if shared.histogram and not shared.diff_switch:
+                x_vals = list(range(len(shared.histogram)))
+                y_vals = (
+                    [y * x for x, y in enumerate(shared.histogram)]
+                    if shared.epb_switch else shared.histogram
+                )
+                self.hist_curve = self.plot_widget.plot(x_vals, y_vals, pen=pg.mkPen("b", width=1.5))
+
+            # Comparison histogram (red)
+            if shared.comp_switch and shared.histogram_2 and not shared.diff_switch:
+                x_vals2 = list(range(len(shared.histogram_2)))
+                y_vals2 = (
+                    [y * x for x, y in enumerate(shared.histogram_2)]
+                    if shared.epb_switch else shared.histogram_2
+                )
+                self.comp_curve = self.plot_widget.plot(x_vals2, y_vals2, pen=pg.mkPen("r", width=1.5))
+
+            # Difference plot (black)
             if shared.diff_switch and shared.histogram and shared.histogram_2:
                 len1 = len(shared.histogram)
                 len2 = len(shared.histogram_2)
                 max_len = max(len1, len2)
-
                 hist1 = shared.histogram + [0] * (max_len - len1)
                 hist2 = shared.histogram_2 + [0] * (max_len - len2)
 
-                difference = [a - b for a, b in zip(hist1, hist2)]
+                diff = [a - b for a, b in zip(hist1, hist2)]
                 x_vals = list(range(max_len))
-                self.plot_widget.plot(x_vals, difference, pen=pg.mkPen("k", width=1.5))
+                y_vals = (
+                    [y * x for x, y in enumerate(diff)]
+                    if shared.epb_switch else diff
+                )
+                self.diff_curve = self.plot_widget.plot(x_vals, y_vals, pen=pg.mkPen("k", width=1.5))
 
-            else:
-                # Show main histogram
-                if shared.histogram:
-                    x_vals = list(range(len(shared.histogram)))
-                    self.plot_widget.plot(x_vals, shared.histogram, pen=pg.mkPen("b", width=1.5))
+            # Gaussian correlation (green)
+            if shared.sigma > 0 and shared.histogram and not shared.diff_switch:
+                corr = gaussian_correl(shared.histogram, shared.sigma)
+                x_vals = list(range(len(corr)))
+                y_vals = (
+                    [y * x for x, y in enumerate(corr)]
+                    if shared.epb_switch else corr
+                )
+                self.gauss_curve = self.plot_widget.plot(
+                x_vals,
+                y_vals,
+                pen=pg.mkPen("r", width=1.5),
+                fillLevel=0,  # Fill down to y=0
+                brush=QBrush(QColor(255, 0, 0, 80))  # Semi-transparent red
+            )
 
-                # Show comparison if enabled
-                if shared.comp_switch and shared.histogram_2:
-                    x_vals = list(range(len(shared.histogram_2)))
-                    self.plot_widget.plot(x_vals, shared.histogram_2, pen=pg.mkPen("r", width=1.5))
+            # Optional: peak markers, still useful for visual context
+            if shared.sigma > 0:
+                self.update_peak_markers()
 
         except Exception as e:
-            logger.error(f"[ERROR] Failed to update plot: {e}")
+            logger.error(f"[ERROR] Plot update failed: {e}")
 
 
 
@@ -433,13 +514,25 @@ class Tab2(QWidget):
             )
             if reply != QMessageBox.Yes:
                 return
-
+        self.clear_session()
         self.start_recording_2d(filename)
 
     @Slot()
     def on_stop_clicked(self):
         stop_recording()
         self.plot_timer.stop()
+
+    def clear_session(self):
+        self.plot_widget.clear()
+        shared.histogram = []
+        shared.histogram_2 = []
+        shared.gauss_curve = None
+        shared.diff_curve = None
+        self.peak_markers = []
+        self.hist_curve = None
+        self.comp_curve = None
+        self.diff_curve = None
+        self.gauss_curve = None
 
     def start_recording_2d(self, filename):
         try:
@@ -487,16 +580,16 @@ class Tab2(QWidget):
         value = bool(state)
         setattr(shared, name, value)
 
-        if name == "comp_switch":
-            if value:
-                shared.filename_2 = self.select_file.currentData()
-                success = load_histogram_2(shared.filename_2)
-                if success:
-                    print(f"[OK] Loaded comparison spectrum: {shared.filename_2}")
+        if name in ("epb_switch", "log_switch", "diff_switch"):
             self.update_histogram()
 
-        elif name == "diff_switch":
-            self.update_histogram()
+        elif name == "comp_switch" and value:
+            shared.filename_2 = self.select_file.currentData()
+            success = load_histogram_2(shared.filename_2)
+            if success:
+                print(f"[OK] Loaded comparison spectrum: {shared.filename_2}")
+            else:
+                print(f"[ERROR] Failed to load comparison spectrum: {shared.filename_2}")
 
 
     def on_text_changed(self, text, field_name):
@@ -515,5 +608,52 @@ class Tab2(QWidget):
             shared.filename_2 = filename
             load_histogram_2(filename)
     
+    def on_sigma_changed(self, val):
+        sigma = val / 10.0
+        shared.sigma = sigma
+        self.sigma_label.setText(f"Sigma: {sigma:.1f}")
+
+
+    def on_peakfinder_changed(self, val):
+        shared.peakfinder = val
+        self.peakfinder_label.setText(f"Width {val}")
 
     
+    def update_peak_markers(self):
+        from functions import peak_finder  # or move to top if already imported
+
+        # Remove old markers
+        for marker in getattr(self, "peak_markers", []):
+            self.plot_widget.removeItem(marker)
+        self.peak_markers = []
+
+        if not shared.histogram:
+            return
+
+        # Apply epb switch if needed
+        y_data = [
+            y * x if shared.epb_switch else y
+            for x, y in enumerate(shared.histogram)
+        ]
+
+        try:
+            peaks, fwhm = peak_finder(
+                y_values=y_data,
+                prominence=shared.peakfinder,
+                min_width=shared.sigma,
+                smoothing_window=3
+            )
+
+            for p, width in zip(peaks, fwhm):
+                y = y_data[p]
+                resolution = (width / p) * 100 if p != 0 else 0
+                label = pg.TextItem(text=f"< {p} - {resolution:.1f}%", anchor=(0, 0), color="k")
+                font = QFont()
+                font.setPointSize(10)
+                label.setFont(font)
+                label.setPos(p, y)
+                self.plot_widget.addItem(label)
+                self.peak_markers.append(label)
+
+        except Exception as e:
+            logger.error(f"[ERROR] Peak annotation failed: {e}")
