@@ -25,15 +25,13 @@ import serial.tools.list_ports
 import shared
 import numpy as np
 
-
 from pulsecatcher import pulsecatcher
 from scipy.signal import find_peaks, peak_widths
 from collections import defaultdict
 from datetime import datetime
 from urllib.request import urlopen
 from shproto.dispatcher import process_03, start
-
-import shared
+from pathlib import Path
 
 logger          = logging.getLogger(__name__)
 cps_list        = []
@@ -805,30 +803,78 @@ def is_valid_json(file_path):
     except (json.JSONDecodeError, FileNotFoundError):
         return False
 
-def get_options():
-    with shared.write_lock:
-        data_directory = shared.USER_DATA_DIR
 
-    files = [os.path.relpath(file, data_directory).replace("\\", "/")
-             for file in glob.glob(os.path.join(data_directory, "**", "*.json"), recursive=True)]
-    
-    options = [{'label': "• " + os.path.basename(file), 'value': file} if "i/" in file and file.endswith(".json")
-        else {'label': os.path.basename(file), 'value': file} for file in files]
+def get_options(): # get user files only
 
-    # Exclude specific file patterns and files within i/tbl
-    options = [opt for opt in options if not opt['value'].endswith("_cps.json")]
-    options = [opt for opt in options if not opt['value'].endswith("-cps.json")]
-    options = [opt for opt in options if not opt['value'].endswith("_3d.json")]
-    options = [opt for opt in options if not opt['value'].endswith("_settings.json")]
-    options = [opt for opt in options if not opt['value'].endswith("_user.json")]
-    options = [opt for opt in options if not "i/tbl/" in opt['value']]  # Exclude files in i/tbl
+    def is_valid(filename: str) -> bool:
+        excluded = ["_cps.json", "-cps.json", "_3d.json", "_settings.json", "_user.json"]
+        return not any(filename.endswith(sfx) for sfx in excluded)
 
-    options_sorted = sorted(options, key=lambda x: x['label'])
-    for file in options_sorted:
-        file['label'] = file['label'].replace('.json', '')
-        file['value'] = file['value'].replace('.json', '')
+    def make_option(file_path: Path, base_dir: Path):
+        rel = file_path.relative_to(base_dir)
+        label = rel.stem
+        value = str(rel).replace("\\", "/")
+        return {'label': label, 'value': value}
 
-    return options_sorted
+    user_dir = Path(shared.USER_DATA_DIR)
+
+    user_files = [
+        make_option(f, user_dir)
+        for f in user_dir.glob("*.json")
+        if is_valid(str(f))
+    ]
+    user_files.sort(key=lambda x: x['label'].lower())  # case-insensitive sort
+
+    return user_files
+
+def get_filename_2_options():
+    def is_valid(filename: str) -> bool:
+        excluded = ["_cps.json", "-cps.json", "_3d.json", "_settings.json", "_user.json"]
+        return not any(filename.endswith(sfx) for sfx in excluded)
+
+    def make_option(file_path: Path, base_dir: Path, prefix: str = "", dot_prefix: bool = False):
+        rel = file_path.relative_to(base_dir)
+        name = rel.stem
+        label = ("• " if dot_prefix else "") + name
+        value = f"{prefix}{rel}".replace("\\", "/")
+        return {'label': label, 'value': value, 'sort_key': name.lower()}
+
+    user_dir = Path(shared.USER_DATA_DIR)
+    iso_dir = Path(shared.ISO_DIR)
+
+    print(iso_dir)
+
+    # Only include user files at root level of USER_DATA_DIR
+    user_files = [
+        make_option(f, user_dir)
+        for f in user_dir.glob("*.json")
+        if is_valid(str(f))
+    ]
+    user_files.sort(key=lambda x: x['sort_key'])
+
+    # Include isotope files
+    iso_files = [
+        make_option(f, iso_dir, prefix="lib/iso/", dot_prefix=True)
+        for f in iso_dir.glob("*.json")
+        if is_valid(str(f))
+    ]
+    iso_files.sort(key=lambda x: x['sort_key'])
+
+    # Remove sort_key before returning
+    for item in user_files + iso_files:
+        item.pop('sort_key', None)
+
+    # Combine with separator
+    combined = user_files
+    if user_files and iso_files:
+        combined.append({'label': '───────', 'value': '', 'disabled': True})
+    combined += iso_files
+
+    return combined
+
+
+
+
 
 def get_options_3d():
     with shared.write_lock:
@@ -893,7 +939,7 @@ def load_histogram(filename):
         data_directory = shared.USER_DATA_DIR
 
     data = {}
-    path = get_path(os.path.join(data_directory, f'{filename}.json'))
+    path = get_path(os.path.join(data_directory, filename))
 
     try:
         # Read the JSON file
@@ -920,7 +966,11 @@ def load_histogram(filename):
         return False
 
 def load_histogram_2(filename):
-    path = get_path(os.path.join(shared.USER_DATA_DIR, f'{filename}.json'))
+    
+    with shared.write_lock:
+        data_directory = shared.USER_DATA_DIR
+
+    path = get_path(os.path.join(data_directory, filename))
     try:
         with open(path, 'r') as file:
             data = json.load(file)

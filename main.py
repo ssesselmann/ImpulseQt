@@ -1,9 +1,8 @@
+# main.py
+import shutil
 import sys
 import json
 import shared
-
-from pathlib import Path
-from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget
 
 from tab1 import Tab1
 from tab2 import Tab2
@@ -11,18 +10,38 @@ from tab3 import Tab3
 from tab4 import Tab4
 from tab5 import Tab5
 
+from pathlib import Path
+from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget
 from shared import DATA_DIR, from_settings, to_settings
 from settings_manager import settings_path, load_settings, save_settings
 from default_settings import DEFAULT_SETTINGS
 
 
+#On first launch, copy default lib/iso and lib/tbl from assets into user's data dir.
+def initialize_user_data():
+
+    source_lib = shared.BASE_DIR / "assets" / "lib"
+    target_lib = shared.USER_DATA_DIR / "lib"
+
+    if target_lib.exists():
+        shared.logger.info("User lib already exists, skipping initialization.")
+        return
+
+    try:
+        shutil.copytree(source_lib, target_lib)
+        shared.logger.info(f"Copied default lib directory to: {target_lib}")
+    except Exception as e:
+        shared.logger.error(f"Error copying default lib directory: {e}")
+
+initialize_user_data()
+
+
 def ensure_settings_exists():
     if not settings_path.exists():
-        print("No settings file found, writing default settings...")
+        shared.logger.info("No settings file found, writing default settings...")
         settings_path.parent.mkdir(parents=True, exist_ok=True)
         with open(settings_path, "w") as f:
             json.dump(DEFAULT_SETTINGS, f, indent=2)
-
 
 class MainWindow(QMainWindow):
     def __init__(self, settings):
@@ -53,7 +72,6 @@ class MainWindow(QMainWindow):
         save_settings(shared.to_settings())
         super().closeEvent(event)
 
-
 if __name__ == "__main__":
     ensure_settings_exists()
     app = QApplication(sys.argv)
@@ -67,5 +85,5 @@ if __name__ == "__main__":
 
     # On exit → save shared state
     exit_code = app.exec()
-    save_settings(to_settings())
+    save_settings(shared.to_settings())
     sys.exit(exit_code)

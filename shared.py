@@ -1,53 +1,68 @@
 # shared.py
+
 import logging
 import platform
-
+import sys
+from os import getenv
 from pathlib import Path
 from threading import Lock, Event
 from PySide6.QtCore import QStandardPaths
 
-# Determine the correct log directory based on OS
+# -------------------------------
+# Logging Setup
+# -------------------------------
+
 if platform.system() == "Darwin":  # macOS
     LOG_DIR = Path.home() / "Library" / "Logs" / "ImpulseQt"
 elif platform.system() == "Windows":
-    from os import getenv
-    LOG_DIR = Path(getenv("APPDATA")) / "ImpulseQt" / "logs"
+    LOG_DIR = Path(getenv("APPDATA", str(Path.home() / "AppData" / "Roaming"))) / "ImpulseQt" / "logs"
 else:  # Linux or others
     LOG_DIR = Path.home() / ".impulseqt" / "logs"
 
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 log_file = LOG_DIR / "impulseqt_log.txt"
 
-# Set up logger
 logger = logging.getLogger("ImpulseLogger")
 logger.setLevel(logging.DEBUG)
 
-# File handler
-fh = logging.FileHandler(log_file, mode='a', encoding='utf-8')
+# File logging
+fh = logging.FileHandler(log_file, mode='w', encoding='utf-8')
 fh.setLevel(logging.DEBUG)
 
-# Optional console output
-ch = logging.StreamHandler()
-ch.setLevel(logging.INFO)
-
-# Formatting
 formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s', datefmt='%H:%M:%S')
 fh.setFormatter(formatter)
-ch.setFormatter(formatter)
 
-# Add handlers only once
 if not logger.handlers:
     logger.addHandler(fh)
-    logger.addHandler(ch)
 
-# --- Determine appropriate platform-specific data directory ---
+# -------------------------------
+# Environment: Development or Frozen
+# -------------------------------
+
+if getattr(sys, 'frozen', False):
+    BASE_DIR = Path(sys._MEIPASS)  # PyInstaller extraction path
+else:
+    BASE_DIR = Path(__file__).resolve().parent
+
+# -------------------------------
+# Application Paths
+# -------------------------------
+
 APP_NAME = "ImpulseQt"
+
+# AppData for internal use (not user-visible)
 DATA_DIR = Path(QStandardPaths.writableLocation(QStandardPaths.AppDataLocation)) / APP_NAME
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-# User-visible data (e.g. saved spectra)
+# User-accessible data directory (e.g., saved spectra)
 USER_DATA_DIR = Path.home() / "ImpulseData"
 USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+# Static library paths (packaged or local)
+LIB_DIR = USER_DATA_DIR / "lib"
+ISO_DIR = LIB_DIR / "iso"  # Gamma reference spectra
+TBL_DIR = LIB_DIR / "tbl"  # Flagging tables
+
 
 # --- Application Settings ---
 filename = "my_spectrum"

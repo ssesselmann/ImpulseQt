@@ -5,12 +5,32 @@ import json
 import numpy as np
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QGridLayout, QLabel, QFrame, QSizePolicy,
-    QPushButton, QLineEdit, QMessageBox, QCheckBox, QComboBox, QHBoxLayout, QSlider
+    QWidget, 
+    QVBoxLayout, 
+    QGridLayout, 
+    QLabel, 
+    QFrame, 
+    QSizePolicy,
+    QPushButton, 
+    QLineEdit, 
+    QMessageBox, 
+    QCheckBox, 
+    QComboBox, 
+    QHBoxLayout, 
+    QSlider
 )
 from PySide6.QtCore import Qt, QTimer, Slot
 from PySide6.QtGui import QFont, QBrush, QColor
-from functions import start_recording, get_options, stop_recording, load_histogram, load_histogram_2, gaussian_correl
+from functions import (
+    start_recording, 
+    get_options, 
+    get_filename_2_options, 
+    stop_recording, 
+    load_histogram, 
+    load_histogram_2, 
+    gaussian_correl,
+    peak_finder
+    )
 from audio_spectrum import play_wav_file
 from shared import logger
 
@@ -52,6 +72,7 @@ class Tab2(QWidget):
         self.plot_timer.timeout.connect(self.update_histogram)
         self.plot_widget = pg.PlotWidget(title="2D Count Rate Histogram")
         self.hist_curve = self.plot_widget.plot(shared.histogram, pen='b')
+        self.hist_curve_2 = None  # Will hold the comparison plot
         self.hist_curve_2 = self.plot_widget.plot([], pen=pg.mkPen("r", width=1.5))  # comparison in red
         self.diff_curve = None  # Holds the plotted difference line
         self.plot_widget.setBackground('w')
@@ -101,7 +122,7 @@ class Tab2(QWidget):
         self.select_comparison.setEditable(False)
         self.select_comparison.setInsertPolicy(QComboBox.NoInsert)
         self.select_comparison.setStyleSheet("font-weight: bold;")
-        options = get_options()
+        options = get_filename_2_options()
         for opt in options:
             self.select_comparison.addItem(opt['label'], opt['value'])
         self.select_comparison.currentIndexChanged.connect(self.on_select_filename_2_changed)    
@@ -300,11 +321,11 @@ class Tab2(QWidget):
         self.select_file.setEditable(False)
         self.select_file.setInsertPolicy(QComboBox.NoInsert)
         self.select_file.setStyleSheet("font-weight: bold;")
+        options = []
         options = get_options()
         for opt in options:
             self.select_file.addItem(opt['label'], opt['value'])
         self.select_file.currentIndexChanged.connect(self.on_select_filename_changed)
-    
         grid.addWidget(self.labeled_input("Open spectrum file", self.select_file), 3, 2)
 
         # Row 4, Col 2
@@ -415,7 +436,11 @@ class Tab2(QWidget):
 
             # Base histogram (blue)
             if shared.histogram and not shared.diff_switch:
+
                 x_vals = list(range(len(shared.histogram)))
+                if shared.cal_switch and shared.coefficients_1:
+                    x_vals = np.polyval(np.poly1d(shared.coefficients_1), x_vals)
+
                 y_vals = (
                     [y * x for x, y in enumerate(shared.histogram)]
                     if shared.epb_switch else shared.histogram
@@ -424,7 +449,12 @@ class Tab2(QWidget):
 
             # Comparison histogram (red)
             if shared.comp_switch and shared.histogram_2 and not shared.diff_switch:
+
                 x_vals2 = list(range(len(shared.histogram_2)))
+
+                if shared.cal_switch and shared.coefficients_2:
+                    x_vals2 = np.polyval(np.poly1d(shared.coefficients_2), x_vals2)
+
                 y_vals2 = (
                     [y * x for x, y in enumerate(shared.histogram_2)]
                     if shared.epb_switch else shared.histogram_2
@@ -449,8 +479,15 @@ class Tab2(QWidget):
 
             # Gaussian correlation (red)
             if shared.sigma > 0 and shared.histogram and not shared.diff_switch:
+
                 corr = gaussian_correl(shared.histogram, shared.sigma)
+
                 x_vals = list(range(len(corr)))
+                
+                if shared.cal_switch and shared.coefficients_1:
+                    x_vals = np.polyval(np.poly1d(shared.coefficients_1), x_vals)
+
+
                 y_vals = (
                     [y * x for x, y in enumerate(corr)]
                     if shared.epb_switch else corr
@@ -604,7 +641,13 @@ class Tab2(QWidget):
         filename = self.select_comparison.itemData(index)
         if filename:
             shared.filename_2 = filename
-            load_histogram_2(filename)
+            data = load_histogram_2(filename)
+
+            if data is not None and self.hist_curve_2:
+                x = data.get("bins", [])
+                y = data.get("counts", [])
+                self.hist_curve_2.setData(x, y)
+
     
     def on_sigma_changed(self, val):
         sigma = val / 10.0
@@ -618,11 +661,11 @@ class Tab2(QWidget):
 
     
     def update_peak_markers(self):
-        from functions import peak_finder  # or move to top if already imported
 
         # Remove old markers
         for marker in getattr(self, "peak_markers", []):
             self.plot_widget.removeItem(marker)
+
         self.peak_markers = []
 
         if not shared.histogram:
@@ -645,16 +688,24 @@ class Tab2(QWidget):
             for p, width in zip(peaks, fwhm):
                 y = y_data[p]
                 resolution = (width / p) * 100 if p != 0 else 0
-                label = pg.TextItem(text=f"< {p} - {resolution:.1f}%", anchor=(0, 0), color="k")
+
+                # Apply energy calibration if enabled
+                x_pos = (
+                    float(np.polyval(np.poly1d(shared.coefficients_1), p))
+                    if shared.cal_switch and shared.coefficients_1 else p
+                )
+
+                label = pg.TextItem(text=f"< {int(x_pos)} - {resolution:.1f}%", anchor=(0, 0), color="k")
                 font = QFont()
                 font.setPointSize(10)
                 label.setFont(font)
-                label.setPos(p, y)
+                label.setPos(x_pos, y)
                 self.plot_widget.addItem(label)
                 self.peak_markers.append(label)
 
         except Exception as e:
             logger.error(f"[ERROR] Peak annotation failed: {e}")
+
 
     def save_calibration_points(self):
         try:
