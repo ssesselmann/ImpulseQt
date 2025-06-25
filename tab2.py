@@ -459,6 +459,10 @@ class Tab2(QWidget):
                     [y * x for x, y in enumerate(shared.histogram_2)]
                     if shared.epb_switch else shared.histogram_2
                 )
+
+                if shared.log_switch:
+                    y_vals2 = [max(1, y2) for y2 in y_vals2]
+
                 self.comp_curve = self.plot_widget.plot(x_vals2, y_vals2, pen=pg.mkPen("r", width=1.5))
 
             # Difference plot (black)
@@ -475,6 +479,7 @@ class Tab2(QWidget):
                     [y * x for x, y in enumerate(diff)]
                     if shared.epb_switch else diff
                 )
+
                 self.diff_curve = self.plot_widget.plot(x_vals, y_vals, pen=pg.mkPen("k", width=1.5))
 
             # Gaussian correlation (red)
@@ -483,7 +488,7 @@ class Tab2(QWidget):
                 corr = gaussian_correl(shared.histogram, shared.sigma)
 
                 x_vals = list(range(len(corr)))
-                
+
                 if shared.cal_switch and shared.coefficients_1:
                     x_vals = np.polyval(np.poly1d(shared.coefficients_1), x_vals)
 
@@ -502,7 +507,7 @@ class Tab2(QWidget):
 
                 # Apply floor for log mode — avoids zeroes collapsing plot
                 if shared.log_switch:
-                    y_vals = [max(1e-3, y) for y in y_vals]
+                    y_vals = [max(1, y) for y in y_vals]
 
                 self.gauss_curve = self.plot_widget.plot(
                     x_vals,
@@ -510,9 +515,7 @@ class Tab2(QWidget):
                     pen=pg.mkPen("r", width=1.5),
                     fillLevel=0,
                     brush=QBrush(QColor(255, 0, 0, 80))  # semi-transparent red
-                )
-
-                        
+                )      
 
             # Optional: peak markers, still useful for visual context
             if shared.sigma > 0:
