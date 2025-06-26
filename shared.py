@@ -147,7 +147,7 @@ startTime3d = ""
 
 # --- Peak Detection ---
 threshold = 0
-tolerance = 5
+tolerance = 0
 peakfinder = 0
 polynomial_fn = ""
 sigma = 0

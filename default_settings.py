@@ -93,7 +93,7 @@ DEFAULT_SETTINGS = {
 	"tempcal_table": [],
 	"theme": "light-theme",
 	"threshold": 200,
-	"tolerance": 20000,
+	"tolerance": 50000,
 	"user_settings": "",
 	"val_flag": False,
 	"window_width": 960,

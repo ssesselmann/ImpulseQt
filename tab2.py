@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QSlider
 )
 from PySide6.QtCore import Qt, QTimer, Slot
-from PySide6.QtGui import QFont, QBrush, QColor
+from PySide6.QtGui import QFont, QBrush, QColor, QIntValidator
 from functions import (
     start_recording, 
     get_options, 
@@ -33,6 +33,8 @@ from functions import (
     )
 from audio_spectrum import play_wav_file
 from shared import logger
+from pathlib import Path
+
 
 
 class Tab2(QWidget):
@@ -183,16 +185,21 @@ class Tab2(QWidget):
         self.elapsed_label.setAlignment(Qt.AlignCenter)
         grid.addWidget(self.labeled_input("Elapsed time", self.elapsed_label), 1, 1)
 
-        # Row 2 Col 3
+        # Validator that only allows positive integers (1 and up)
+        positive_int_validator = QIntValidator(1, 999999)  # Adjust max as needed
+
+        # Row 2 Col 3 — Number of channels
         self.bins = QLineEdit(str(shared.bins))
         self.bins.setAlignment(Qt.AlignCenter)
         self.bins.setToolTip("Bins")
+        self.bins.setValidator(positive_int_validator)
         grid.addWidget(self.labeled_input("Number of channels", self.bins), 1, 2)
 
         # Row 2, Col 4 — Distortion Tolerance 
         self.tolerance_input = QLineEdit(str(shared.tolerance))
         self.tolerance_input.setAlignment(Qt.AlignCenter)
         self.tolerance_input.setToolTip("Distortion tolerance threshold")
+        self.tolerance_input.setValidator(positive_int_validator)
         grid.addWidget(self.labeled_input("Distortion tolerance", self.tolerance_input), 1, 3)
 
         # Row 2, Col 5
@@ -211,6 +218,7 @@ class Tab2(QWidget):
 
         # Row 2, Col 7
         self.peakfinder_slider = QSlider(Qt.Horizontal)
+        self.peakfinder_values = [0] + list(range(100, 0, -1))  # [0, 100, 99, ..., 1]
         self.peakfinder_slider.setRange(0, 100)
         self.peakfinder_slider.setSingleStep(1)
         self.peakfinder_slider.setValue(int(shared.peakfinder))
@@ -321,6 +329,7 @@ class Tab2(QWidget):
         self.select_file.setEditable(False)
         self.select_file.setInsertPolicy(QComboBox.NoInsert)
         self.select_file.setStyleSheet("font-weight: bold;")
+        self.select_file.addItem("— Select file —", "")
         options = []
         options = get_options()
         for opt in options:
@@ -427,6 +436,9 @@ class Tab2(QWidget):
     def update_histogram(self):
         try:
             self.plot_widget.clear()
+                # Re-add crosshair lines
+            self.plot_widget.addItem(self.vline, ignoreBounds=True)
+            self.plot_widget.addItem(self.hline, ignoreBounds=True)
             self.plot_widget.setLogMode(x=False, y=shared.log_switch)
 
             self.hist_curve = None
@@ -634,10 +646,24 @@ class Tab2(QWidget):
         setattr(shared, field_name, text.strip())
 
     def on_select_filename_changed(self, index):
-        filename = self.select_file.itemData(index)
-        if filename:
-            shared.filename = filename
-            load_histogram(filename)
+        filepath = self.select_file.itemData(index)
+
+        # Ignore placeholder
+        if not filepath:
+            return
+
+        # Remove `.json` extension
+        filename_no_ext = Path(filepath).stem
+
+        # Update input field and shared state
+        self.filename_input.setText(filename_no_ext)
+        shared.filename = filepath
+        load_histogram(filepath)
+
+        # Reset selector to "— Select file —"
+        QTimer.singleShot(0, lambda: self.select_file.setCurrentIndex(0))
+
+
 
 
     def on_select_filename_2_changed(self, index):
@@ -658,12 +684,18 @@ class Tab2(QWidget):
         self.sigma_label.setText(f"Sigma: {sigma:.1f}")
 
 
-    def on_peakfinder_changed(self, val):
-        shared.peakfinder = val
-        self.peakfinder_label.setText(f"Width {val}")
-
+    def on_peakfinder_changed(self, position):
+        value = self.peakfinder_values[position]
+        shared.peakfinder = value
+        if value == 0:
+            self.peakfinder_label.setText(f"Peaks Off")
+        elif value > 0:
+            self.peakfinder_label.setText(f"More peaks >>")
     
     def update_peak_markers(self):
+
+        if shared.peakfinder == 0:
+            return
 
         # Remove old markers
         for marker in getattr(self, "peak_markers", []):
