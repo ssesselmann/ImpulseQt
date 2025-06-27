@@ -369,10 +369,7 @@ class Tab2(QWidget):
                 x_vals = list(range(len(shared.histogram)))
 
                 if shared.cal_switch and any(coeff_abc):
-                    print("[DEBUG] Coefficients:", coeff_abc)
-                    print("[DEBUG] x_vals before:", x_vals[:10])
                     x_vals = np.polyval(np.poly1d(coeff_abc), x_vals)
-                    print("[DEBUG] x_vals after :", x_vals[:10])
 
                 y_vals = (
                     [y * x for x, y in enumerate(shared.histogram)]
@@ -423,29 +420,30 @@ class Tab2(QWidget):
                 if shared.cal_switch and any(coeff_abc):
                     x_vals = np.polyval(np.poly1d(coeff_abc), x_vals)
 
-                y_vals = (
-                    [y * x for x, y in enumerate(corr)]
-                    if shared.epb_switch else corr
-                )
-
                 # Match histogram amplitude — same as Dash version
                 max_hist = max(shared.histogram)
-                max_corr = max(y_vals) if y_vals else 1
+                max_corr = max(corr) if corr else 1
                 if max_corr > 0:
-                    scale = max_hist / max_corr
-                    y_vals = [y * scale for y in y_vals]
+                    corr = [y * (max_hist / max_corr) for y in corr]
+
+                # Now apply EPB transformation if needed
+                if shared.epb_switch:
+                    corr = [y * x for x, y in enumerate(corr)]
 
                 # Apply floor for log mode — avoids zeroes collapsing plot
                 if shared.log_switch:
-                    y_vals = [max(1, y) for y in y_vals]
+                    corr = [max(1, y) for y in corr]
 
                 self.gauss_curve = self.plot_widget.plot(
                     x_vals,
-                    y_vals,
+                    corr,
                     pen=pg.mkPen("r", width=1.5),
                     fillLevel=0,
                     brush=QBrush(QColor(255, 0, 0, 80))  # semi-transparent red
                 )
+
+
+
 
             # Optional: peak markers
             if shared.sigma > 0:
@@ -644,10 +642,12 @@ class Tab2(QWidget):
                 resolution = (width / p) * 100 if p != 0 else 0
 
                 # Apply energy calibration if enabled
-                x_pos = (
-                    float(np.polyval(np.poly1d(shared.coefficients_1), p))
-                    if shared.cal_switch and shared.coefficients_1 else p
-                )
+                coeff_abc = [shared.coeff_1, shared.coeff_2, shared.coeff_3]
+                if shared.cal_switch and all(isinstance(c, (int, float)) for c in coeff_abc):
+                    x_pos = float(np.polyval(np.poly1d(coeff_abc), p))
+                else:
+                    x_pos = p
+
 
                 label = pg.TextItem(text=f"< {int(x_pos)} - {resolution:.1f}%", anchor=(0, 0), color="k")
                 font = QFont()
