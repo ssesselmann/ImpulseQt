@@ -34,6 +34,8 @@ from functions import (
 from audio_spectrum import play_wav_file
 from shared import logger
 from pathlib import Path
+from calibration_popup import CalibrationPopup
+
 
 
 
@@ -89,242 +91,75 @@ class Tab2(QWidget):
 
         # === 9x4 Grid ===
         grid = QGridLayout()
+
         grid.setSpacing(10)
 
         for i in range(9):
             grid.setColumnStretch(i, 1)
 
-        # Row 1, Column 1 Start button
+        # Col 1 Row 1 --------------------------------------------------------------------------
         self.btn_start = QPushButton("Start")
         self.btn_start.setStyleSheet("background-color: green; color: white; font-weight: bold;")
         self.btn_start.clicked.connect(self.on_start_clicked)
         grid.addWidget(self.labeled_input("Start", self.btn_start), 0, 0)
 
-        # Row 1, Column 2 Stop Button
-        self.btn_stop = QPushButton("Stop")
-        self.btn_stop.setStyleSheet("background-color: red; color: white; font-weight: bold;")
-        self.btn_stop.clicked.connect(self.on_stop_clicked)
-        grid.addWidget(self.labeled_input("Stop", self.btn_stop), 0, 1)
-
-        # Row 1, Column 3 Filename
-        self.filename_input = QLineEdit(shared.filename)
-        self.filename_input.textChanged.connect(lambda text: self.on_text_changed(text, "filename"))
-        grid.addWidget(self.labeled_input("Filename", self.filename_input), 0, 2)
-
-
-        # Row 1, Column 4 — Distortion Tolerance 
-        self.threshold = QLineEdit(str(shared.threshold))
-        self.threshold.setAlignment(Qt.AlignCenter)
-        self.threshold.setToolTip("LLD threshold")
-        grid.addWidget(self.labeled_input("LLD Threshold", self.threshold), 0, 3)
-
-
-        # Row 1 Column 5 Dropdown File Selector
-        self.select_comparison = QComboBox()
-        self.select_comparison.setEditable(False)
-        self.select_comparison.setInsertPolicy(QComboBox.NoInsert)
-        self.select_comparison.setStyleSheet("font-weight: bold;")
-        options = get_filename_2_options()
-        for opt in options:
-            self.select_comparison.addItem(opt['label'], opt['value'])
-        self.select_comparison.currentIndexChanged.connect(self.on_select_filename_2_changed)    
-        grid.addWidget(self.labeled_input("Comparison spectrum", self.select_comparison), 0, 4)
-
-        # Row 1 Col 6
-        self.epb_switch = QCheckBox()
-        self.epb_switch.setChecked(shared.epb_switch) 
-        self.epb_switch.setToolTip("Energy by bin")
-        self.epb_switch.stateChanged.connect(lambda state: self.on_checkbox_toggle(state, "epb_switch"))
-        grid.addWidget(self.labeled_input("Energy per bin", self.epb_switch), 0, 5)
-        
-        # Row 1, Column 7 (Sigma slider with value in label)
-        self.sigma_slider = QSlider(Qt.Horizontal)
-        self.sigma_slider.setRange(0, 30)  # 0.0 to 3.0 in steps of 0.1
-        self.sigma_slider.setSingleStep(1)
-        self.sigma_slider.setValue(int(shared.sigma * 10))
-        self.sigma_slider.setFocusPolicy(Qt.StrongFocus)
-        self.sigma_slider.setFocus()
-        self.sigma_label = QLabel(f"Sigma: {shared.sigma:.1f}")
-        self.sigma_label.setAlignment(Qt.AlignCenter)
-        self.sigma_label.setStyleSheet("font-size: 10pt; color: #777;")
-        sigma_layout = QVBoxLayout()
-        
-        sigma_layout.addWidget(self.sigma_label)
-        sigma_layout.addWidget(self.sigma_slider)
-
-        sigma_widget = QWidget()
-        sigma_widget.setLayout(sigma_layout)
-        grid.addWidget(sigma_widget, 0, 6)
-
-        self.sigma_slider.valueChanged.connect(self.on_sigma_changed)
-
-
-        # Row 1 Column 8
-        self.calib_bin_1 = QLineEdit(str(shared.calib_bin_1))
-        self.calib_bin_1.setAlignment(Qt.AlignCenter)
-        self.calib_bin_1.setToolTip("Calibration point 1")
-        self.calib_bin_1.editingFinished.connect(self.save_calibration_points)
-        grid.addWidget(self.labeled_input("Calibration bin 1", self.calib_bin_1), 0, 7)
-
-        # Row 1 Column 9
-        self.calib_e_1 = QLineEdit(str(shared.calib_e_1))
-        self.calib_e_1.setAlignment(Qt.AlignCenter)
-        self.calib_e_1.setToolTip("Calibration energy 1")
-        self.calib_e_1.editingFinished.connect(self.save_calibration_points)
-        grid.addWidget(self.labeled_input("Calibration energy 1", self.calib_e_1), 0, 8)
-
-        # Row 2 Col 1----------------------------------------------
+        # Col 1 Row 2
         self.counts_label = QLabel("0")
         self.counts_label.setStyleSheet("font-weight: bold; font-size: 16px;")
         self.counts_label.setAlignment(Qt.AlignCenter)
         grid.addWidget(self.labeled_input("Total counts", self.counts_label), 1, 0)
 
-        # Row 2 Col 2
+        # Col 1 Row 3 
+        self.max_counts_input = QLineEdit(str(shared.max_counts))
+        self.max_counts_input.setAlignment(Qt.AlignCenter)
+        grid.addWidget(self.labeled_input("Stop at counts.", self.max_counts_input), 2, 0)
+
+        # Col 1 Row 4
+        self.dropped_label = QLabel("0")
+        self.dropped_label.setAlignment(Qt.AlignCenter)
+        grid.addWidget(self.labeled_input("Lost counts", self.dropped_label), 3, 0)
+
+
+        # Col 2 Row 1 ------------------------------------------------------------------------
+        self.btn_stop = QPushButton("Stop")
+        self.btn_stop.setStyleSheet("background-color: red; color: white; font-weight: bold;")
+        self.btn_stop.clicked.connect(self.on_stop_clicked)
+        grid.addWidget(self.labeled_input("Stop", self.btn_stop), 0, 1)
+
+        # Col 2 Row 1
         self.elapsed_label = QLabel("0")
         self.elapsed_label.setStyleSheet("font-weight: bold; font-size: 16px;")
         self.elapsed_label.setAlignment(Qt.AlignCenter)
         grid.addWidget(self.labeled_input("Elapsed time", self.elapsed_label), 1, 1)
 
-        # Validator that only allows positive integers (1 and up)
-        positive_int_validator = QIntValidator(1, 999999)  # Adjust max as needed
-
-        # Row 2 Col 3 — Number of channels
-        self.bins = QLineEdit(str(shared.bins))
-        self.bins.setAlignment(Qt.AlignCenter)
-        self.bins.setToolTip("Bins")
-        self.bins.setValidator(positive_int_validator)
-        grid.addWidget(self.labeled_input("Number of channels", self.bins), 1, 2)
-
-        # Row 2, Col 4 — Distortion Tolerance 
-        self.tolerance_input = QLineEdit(str(shared.tolerance))
-        self.tolerance_input.setAlignment(Qt.AlignCenter)
-        self.tolerance_input.setToolTip("Distortion tolerance threshold")
-        self.tolerance_input.setValidator(positive_int_validator)
-        grid.addWidget(self.labeled_input("Distortion tolerance", self.tolerance_input), 1, 3)
-
-        # Row 2, Col 5
-        self.comp_switch = QCheckBox()
-        self.comp_switch.setChecked(shared.comp_switch) 
-        self.comp_switch.setToolTip("Comparison Spectrum")
-        self.comp_switch.stateChanged.connect(lambda state: self.on_checkbox_toggle(state, "comp_switch"))
-        grid.addWidget(self.labeled_input("Show comparison", self.comp_switch), 1, 4)
-
-        # Row 2 Col 6
-        self.log_switch = QCheckBox()
-        self.log_switch.setChecked(shared.log_switch) 
-        self.log_switch.setToolTip("Energy by bin")
-        self.log_switch.stateChanged.connect(lambda state: self.on_checkbox_toggle(state, "log_switch"))
-        grid.addWidget(self.labeled_input("Show log(y)", self.log_switch), 1, 5)
-
-        # Row 2, Col 7
-        self.peakfinder_slider = QSlider(Qt.Horizontal)
-        self.peakfinder_values = [0] + list(range(100, 0, -1))  # [0, 100, 99, ..., 1]
-        self.peakfinder_slider.setRange(0, 100)
-        self.peakfinder_slider.setSingleStep(1)
-        self.peakfinder_slider.setValue(int(shared.peakfinder))
-
-        self.peakfinder_slider.setFocusPolicy(Qt.StrongFocus)
-        self.peakfinder_slider.setFocus()
-
-        # Define label before using it
-        self.peakfinder_label = QLabel(f"Peakfinder: {shared.peakfinder}")
-        self.peakfinder_label.setAlignment(Qt.AlignCenter)
-
-        # Apply smaller font
-        font = QFont()
-        font.setPointSize(9)
-        self.peakfinder_label.setFont(font)
-        self.peakfinder_label.setStyleSheet("color: #777;")
-
-        # Build layout
-        peakfinder_layout = QVBoxLayout()
-        peakfinder_layout.addWidget(self.peakfinder_label)
-        peakfinder_layout.addWidget(self.peakfinder_slider)
-
-        peakfinder_widget = QWidget()
-        peakfinder_widget.setLayout(peakfinder_layout)
-
-        grid.addWidget(peakfinder_widget, 1, 6)
-
-        # Connect handler
-        self.peakfinder_slider.valueChanged.connect(self.on_peakfinder_changed)
-
-        # Row 2, Col 8
-        self.calib_bin_2 = QLineEdit(str(shared.calib_bin_2))
-        self.calib_bin_2.setAlignment(Qt.AlignCenter)
-        self.calib_bin_2.setToolTip("Calibration point 2")
-        self.calib_bin_2.editingFinished.connect(self.save_calibration_points)
-        grid.addWidget(self.labeled_input("Calibration bin 2", self.calib_bin_2), 1, 7)
-
-        # Row 2, Col 9
-        self.calib_e_2 = QLineEdit(str(shared.calib_e_2))
-        self.calib_e_2.setAlignment(Qt.AlignCenter)
-        self.calib_e_2.setToolTip("Calibration energy 2")
-        self.calib_e_2.editingFinished.connect(self.save_calibration_points)
-        grid.addWidget(self.labeled_input("Calibration energy 2", self.calib_e_2), 1, 8)        
-
-        # Row 3, Col 1 ----------------------------------------------------------------
-        self.max_counts_input = QLineEdit(str(shared.max_counts))
-        self.max_counts_input.setAlignment(Qt.AlignCenter)
-        grid.addWidget(self.labeled_input("Stop at counts.", self.max_counts_input), 2, 0)
-
-        # Row 3, Col 2 
+        # Col 2 Row 3
         self.max_seconds_input = QLineEdit(str(shared.max_seconds))
         self.max_seconds_input.setAlignment(Qt.AlignCenter)
         grid.addWidget(self.labeled_input("Stop at seconds", self.max_seconds_input), 2, 1)
 
-
-        # Row 3, Col 4
-        self.bin_size = QLineEdit(str(shared.bin_size))
-        self.bin_size.setAlignment(Qt.AlignCenter)
-        self.bin_size.setToolTip("Bin_size")
-        grid.addWidget(self.labeled_input("Channel pitch", self.bin_size), 2, 2)
-
-        # Row 3, Col 4
-
-        # Row 3, Col 5
-        self.diff_switch = QCheckBox()
-        self.diff_switch.setChecked(shared.diff_switch)
-        self.diff_switch.setToolTip("Subtract comparison")
-        self.diff_switch.stateChanged.connect(lambda state: self.on_checkbox_toggle(state, "diff_switch"))
-        grid.addWidget(self.labeled_input("Subtract comparison", self.diff_switch), 2, 4)
-
-
-
-        # Row 3, Col 6
-        self.cal_switch = QCheckBox()
-        self.cal_switch.setChecked(shared.log_switch) 
-        self.cal_switch.setToolTip("Calibration on")
-        self.cal_switch.stateChanged.connect(lambda state: self.on_checkbox_toggle(state, "cal_switch"))
-        grid.addWidget(self.labeled_input("Calibration on", self.cal_switch), 2, 5)
-
-        # Row 3, Col 7
-
-        # Row 3, Col 8
-        self.calib_bin_3 = QLineEdit(str(shared.calib_bin_3))
-        self.calib_bin_3.setAlignment(Qt.AlignCenter)
-        self.calib_bin_3.setToolTip("Calibration point 3")
-        self.calib_bin_3.editingFinished.connect(self.save_calibration_points)
-        grid.addWidget(self.labeled_input("Calibration bin 3", self.calib_bin_3), 2, 7)
-
-        # Row 3, Col 9
-        self.calib_e_3 = QLineEdit(str(shared.calib_e_3))
-        self.calib_e_3.setAlignment(Qt.AlignCenter)
-        self.calib_e_3.setToolTip("Calibration energy 3")
-        self.calib_e_3.editingFinished.connect(self.save_calibration_points)
-        grid.addWidget(self.labeled_input("Calibration energy 3", self.calib_e_3), 2, 8)
-
-        # Row 4, Col 1 -----------------------------------------
-        self.dropped_label = QLabel("0")
-        self.dropped_label.setAlignment(Qt.AlignCenter)
-        grid.addWidget(self.labeled_input("Lost counts", self.dropped_label), 3, 0)
-
-        # Row 4, Col 2
+        # Col 2 Row 4
         self.cps_label = QLabel("0")
         self.cps_label.setAlignment(Qt.AlignCenter)
         grid.addWidget(self.labeled_input("cps", self.cps_label), 3, 1)
 
-        # Row 4, Col 3 select filename
+
+
+        # Col 3 Row 1 -------------------------------------------------------------------------
+        self.filename_input = QLineEdit(shared.filename)
+        self.filename_input.textChanged.connect(lambda text: self.on_text_changed(text, "filename"))
+        grid.addWidget(self.labeled_input("Filename", self.filename_input), 0, 2)
+
+        positive_int_validator = QIntValidator(1, 999999)  # Adjust max as needed
+
+        # Col 3 Row 3
+        self.bins = QLineEdit(str(shared.bins))
+        self.bins.setAlignment(Qt.AlignCenter)
+        self.bins.setToolTip("Bins")
+        self.bins.setValidator(positive_int_validator)
+        grid.addWidget(self.labeled_input("Number of channels", self.bins), 2, 2)
+
+
+        # Col 3 Row 3
         self.select_file = QComboBox()
         self.select_file.setEditable(False)
         self.select_file.setInsertPolicy(QComboBox.NoInsert)
@@ -337,66 +172,147 @@ class Tab2(QWidget):
         self.select_file.currentIndexChanged.connect(self.on_select_filename_changed)
         grid.addWidget(self.labeled_input("Open spectrum file", self.select_file), 3, 2)
 
-        # Row 4, Col 2
+    
+        # Col 4 Row 1 -------------------------------------------------------------------
+        self.threshold = QLineEdit(str(shared.threshold))
+        self.threshold.setAlignment(Qt.AlignCenter)
+        self.threshold.setToolTip("LLD threshold")
+        grid.addWidget(self.labeled_input("LLD Threshold", self.threshold), 0, 3)
 
-        # Row 4, Col 5
+        # Col 4 Row 2 - blank
+
+        # Col 4 Row 3
+        self.tolerance_input = QLineEdit(str(shared.tolerance))
+        self.tolerance_input.setAlignment(Qt.AlignCenter)
+        self.tolerance_input.setToolTip("Distortion tolerance threshold")
+        self.tolerance_input.setValidator(positive_int_validator)
+        grid.addWidget(self.labeled_input("Distortion tolerance", self.tolerance_input), 2, 3)
+
+
+        # Col 4 Row 4
+        self.select_comparison = QComboBox()
+        self.select_comparison.setEditable(False)
+        self.select_comparison.setInsertPolicy(QComboBox.NoInsert)
+        self.select_comparison.setStyleSheet("font-weight: bold;")
+        options = get_filename_2_options()
+        for opt in options:
+            self.select_comparison.addItem(opt['label'], opt['value'])
+        self.select_comparison.currentIndexChanged.connect(self.on_select_filename_2_changed)    
+        grid.addWidget(self.labeled_input("Comparison spectrum", self.select_comparison), 3, 3)
+
+
+
+        # Col 5 Row 1 ---------------------------------------------------------------------
+        self.comp_switch = QCheckBox()
+        self.comp_switch.setChecked(shared.comp_switch) 
+        self.comp_switch.setToolTip("Comparison Spectrum")
+        self.comp_switch.stateChanged.connect(lambda state: self.on_checkbox_toggle(state, "comp_switch"))
+        grid.addWidget(self.labeled_input("Show comparison", self.comp_switch), 0, 4)   
+
+
+        # Col 5 Row 2
+        self.diff_switch = QCheckBox()
+        self.diff_switch.setChecked(shared.diff_switch)
+        self.diff_switch.setToolTip("Subtract comparison")
+        self.diff_switch.stateChanged.connect(lambda state: self.on_checkbox_toggle(state, "diff_switch"))
+        grid.addWidget(self.labeled_input("Subtract comparison", self.diff_switch), 1, 4)
+
+        # Col 5 Row 3
         self.coi_switch = QCheckBox()
         self.coi_switch.setChecked(shared.coi_switch) 
         self.coi_switch.setToolTip("Coincidence spectrum")
         self.coi_switch.stateChanged.connect(lambda state: self.on_checkbox_toggle(state, "coi_switch"))
-        grid.addWidget(self.labeled_input("Coincidence", self.coi_switch), 3, 4)
-        
+        grid.addWidget(self.labeled_input("Coincidence", self.coi_switch), 2, 4)
 
-        # Row 4, Col 6
+        # Col 6 Row 1 ----------------------------------------------------------------------------------
+        self.epb_switch = QCheckBox()
+        self.epb_switch.setChecked(shared.epb_switch) 
+        self.epb_switch.setToolTip("Energy by bin")
+        self.epb_switch.stateChanged.connect(lambda state: self.on_checkbox_toggle(state, "epb_switch"))
+        grid.addWidget(self.labeled_input("Energy per bin", self.epb_switch), 0, 5)
+        
+        # Col 6 Row 2 
+        self.log_switch = QCheckBox()
+        self.log_switch.setChecked(shared.log_switch) 
+        self.log_switch.setToolTip("Energy by bin")
+        self.log_switch.stateChanged.connect(lambda state: self.on_checkbox_toggle(state, "log_switch"))
+        grid.addWidget(self.labeled_input("Show log(y)", self.log_switch), 1, 5)
+
+        # Col 6 Row 3
+        self.cal_switch = QCheckBox()
+        self.cal_switch.setChecked(shared.log_switch) 
+        self.cal_switch.setToolTip("Calibration on")
+        self.cal_switch.stateChanged.connect(lambda state: self.on_checkbox_toggle(state, "cal_switch"))
+        grid.addWidget(self.labeled_input("Calibration on", self.cal_switch), 2, 5)
+
+        # Col 6 Row 4
         self.iso_switch = QCheckBox()
         self.iso_switch.setChecked(shared.iso_switch) 
         self.iso_switch.setToolTip("values or isotopes")
         self.iso_switch.stateChanged.connect(lambda state: self.on_checkbox_toggle(state, "iso_switch"))
         grid.addWidget(self.labeled_input("Show Isotopes", self.iso_switch), 3, 5)
 
-        # Row 4, Col 7
+        # Col 7 Row 1
+        self.sigma_slider = QSlider(Qt.Horizontal)
+        self.sigma_slider.setRange(0, 30)  # 0.0 to 3.0 in steps of 0.1
+        self.sigma_slider.setSingleStep(1)
+        self.sigma_slider.setValue(int(shared.sigma * 10))
+        self.sigma_slider.setFocusPolicy(Qt.StrongFocus)
+        self.sigma_slider.setFocus()
+        self.sigma_label = QLabel(f"Sigma: {shared.sigma:.1f}")
+        self.sigma_label.setAlignment(Qt.AlignCenter)
+        self.sigma_label.setStyleSheet("font-size: 10pt; color: #777;")
+        sigma_layout = QVBoxLayout()
+        sigma_layout.addWidget(self.sigma_label)
+        sigma_layout.addWidget(self.sigma_slider)
+        sigma_widget = QWidget()
+        sigma_widget.setLayout(sigma_layout)
+        grid.addWidget(sigma_widget, 0, 6)
+        self.sigma_slider.valueChanged.connect(self.on_sigma_changed)
 
-        # Row 4, Col 8
-        self.calib_bin_4 = QLineEdit(str(shared.calib_bin_4))
-        self.calib_bin_4.setAlignment(Qt.AlignCenter)
-        self.calib_bin_4.setToolTip("Calibration point 4")
-        self.calib_bin_4.editingFinished.connect(self.save_calibration_points)
-        grid.addWidget(self.labeled_input("Calibration bin 4", self.calib_bin_4), 3, 7)
+        # Col 7 Row 2
+        self.peakfinder_slider = QSlider(Qt.Horizontal)
+        self.peakfinder_values = [0] + list(range(100, 0, -1))  # [0, 100, 99, ..., 1]
+        self.peakfinder_slider.setRange(0, 100)
+        self.peakfinder_slider.setSingleStep(1)
+        self.peakfinder_slider.setValue(int(shared.peakfinder))
+        self.peakfinder_slider.setFocusPolicy(Qt.StrongFocus)
+        self.peakfinder_slider.setFocus()
+        self.peakfinder_label = QLabel(f"Peakfinder: {shared.peakfinder}")
+        self.peakfinder_label.setAlignment(Qt.AlignCenter)
+        font = QFont()
+        font.setPointSize(9)
+        self.peakfinder_label.setFont(font)
+        self.peakfinder_label.setStyleSheet("color: #777;")
+        peakfinder_layout = QVBoxLayout()
+        peakfinder_layout.addWidget(self.peakfinder_label)
+        peakfinder_layout.addWidget(self.peakfinder_slider)
+        peakfinder_widget = QWidget()
+        peakfinder_widget.setLayout(peakfinder_layout)
+        grid.addWidget(peakfinder_widget, 1, 6)
+        self.peakfinder_slider.valueChanged.connect(self.on_peakfinder_changed)
 
-        # Row 4, Col 9
-        self.calib_e_4 = QLineEdit(str(shared.calib_e_4))
-        self.calib_e_4.setAlignment(Qt.AlignCenter)
-        self.calib_e_4.setToolTip("Calibration energy 4")
-        self.calib_e_4.editingFinished.connect(self.save_calibration_points)
-        grid.addWidget(self.labeled_input("Calibration energy 4", self.calib_e_4), 3, 8)
+        # Col 7 Row 3
+        self.poly_label = QLabel(f"E = {round(shared.coeff_1,2)}x² + {round(shared.coeff_2,2)}x + {round(shared.coeff_3,2)}")
+        self.poly_label.setAlignment(Qt.AlignCenter)
+        font = QFont()
+        font.setPointSize(9)
+        self.poly_label.setFont(font)
+        self.poly_label.setStyleSheet("color: #444; font-style: italic;")
+        poly_layout = QVBoxLayout()
+        poly_layout.addWidget(self.poly_label)
+        poly_widget = QWidget()
+        poly_widget.setLayout(poly_layout)
+        grid.addWidget(poly_widget, 2, 6)
 
-        # Row 5, Col 1
+        # Col 7 Row 4
+        self.open_calib_btn = QPushButton("Calibrate")
+        self.open_calib_btn.clicked.connect(self.open_calibration_popup)
+        self.open_calib_btn.setStyleSheet("background-color: orange; color: white; font-weight: bold;")
+        self.poly_label.setStyleSheet("color: #333; font-style: italic;")
+        grid.addWidget(self.open_calib_btn, 3, 6)
 
-        # Row 5, Col 2
-
-        # Row 5, Col 3
-
-        # Row 5, Col 4
-
-        # Row 5, Col 5
-
-        # Row 5, Col 7
-
-        # Row 5, Col 8
-        self.calib_bin_5 = QLineEdit(str(shared.calib_bin_5))
-        self.calib_bin_5.setAlignment(Qt.AlignCenter)
-        self.calib_bin_5.setToolTip("Calibration point 5")
-        self.calib_bin_5.editingFinished.connect(self.save_calibration_points)
-        grid.addWidget(self.labeled_input("Calibration bin 5", self.calib_bin_5), 4, 7)
-
-        # Row 5, Col 9
-        self.calib_e_5 = QLineEdit(str(shared.calib_e_5))
-        self.calib_e_5.setAlignment(Qt.AlignCenter)
-        self.calib_e_5.setToolTip("Calibration energy 5")
-        self.calib_e_5.editingFinished.connect(self.save_calibration_points)
-        grid.addWidget(self.labeled_input("Calibration energy 5", self.calib_e_5), 4, 8)
-
-        # Other stuff.......
+        # Label stuff
         self.label_timer = QTimer()
         self.label_timer.timeout.connect(self.update_labels)
         self.label_timer.start(1000)  # update every 1 second
@@ -436,7 +352,6 @@ class Tab2(QWidget):
     def update_histogram(self):
         try:
             self.plot_widget.clear()
-                # Re-add crosshair lines
             self.plot_widget.addItem(self.vline, ignoreBounds=True)
             self.plot_widget.addItem(self.hline, ignoreBounds=True)
             self.plot_widget.setLogMode(x=False, y=shared.log_switch)
@@ -446,26 +361,32 @@ class Tab2(QWidget):
             self.diff_curve = None
             self.gauss_curve = None
 
+            # === Prepare calibration coefficients ===
+            coeff_abc = [shared.coeff_1, shared.coeff_2, shared.coeff_3]
+
             # Base histogram (blue)
             if shared.histogram and not shared.diff_switch:
-
                 x_vals = list(range(len(shared.histogram)))
-                if shared.cal_switch and shared.coefficients_1:
-                    x_vals = np.polyval(np.poly1d(shared.coefficients_1), x_vals)
+
+                if shared.cal_switch and any(coeff_abc):
+                    print("[DEBUG] Coefficients:", coeff_abc)
+                    print("[DEBUG] x_vals before:", x_vals[:10])
+                    x_vals = np.polyval(np.poly1d(coeff_abc), x_vals)
+                    print("[DEBUG] x_vals after :", x_vals[:10])
 
                 y_vals = (
                     [y * x for x, y in enumerate(shared.histogram)]
                     if shared.epb_switch else shared.histogram
                 )
+
                 self.hist_curve = self.plot_widget.plot(x_vals, y_vals, pen=pg.mkPen("b", width=1.5))
 
             # Comparison histogram (red)
             if shared.comp_switch and shared.histogram_2 and not shared.diff_switch:
-
                 x_vals2 = list(range(len(shared.histogram_2)))
 
-                if shared.cal_switch and shared.coefficients_2:
-                    x_vals2 = np.polyval(np.poly1d(shared.coefficients_2), x_vals2)
+                if shared.cal_switch and any(coeff_abc):
+                    x_vals2 = np.polyval(np.poly1d(coeff_abc), x_vals2)
 
                 y_vals2 = (
                     [y * x for x, y in enumerate(shared.histogram_2)]
@@ -496,14 +417,11 @@ class Tab2(QWidget):
 
             # Gaussian correlation (red)
             if shared.sigma > 0 and shared.histogram and not shared.diff_switch:
-
                 corr = gaussian_correl(shared.histogram, shared.sigma)
-
                 x_vals = list(range(len(corr)))
 
-                if shared.cal_switch and shared.coefficients_1:
-                    x_vals = np.polyval(np.poly1d(shared.coefficients_1), x_vals)
-
+                if shared.cal_switch and any(coeff_abc):
+                    x_vals = np.polyval(np.poly1d(coeff_abc), x_vals)
 
                 y_vals = (
                     [y * x for x, y in enumerate(corr)]
@@ -527,14 +445,15 @@ class Tab2(QWidget):
                     pen=pg.mkPen("r", width=1.5),
                     fillLevel=0,
                     brush=QBrush(QColor(255, 0, 0, 80))  # semi-transparent red
-                )      
+                )
 
-            # Optional: peak markers, still useful for visual context
+            # Optional: peak markers
             if shared.sigma > 0:
                 self.update_peak_markers()
 
         except Exception as e:
             logger.error(f"[ERROR] Plot update failed: {e}")
+
 
     def make_cell(self, text):
         label = QLabel(text)
@@ -742,66 +661,55 @@ class Tab2(QWidget):
             logger.error(f"[ERROR] Peak annotation failed: {e}")
 
 
-    def save_calibration_points(self):
-        try:
-            shared.calib_bin_1 = int(self.calib_bin_1.text())
-            shared.calib_bin_2 = int(self.calib_bin_2.text())
-            shared.calib_bin_3 = int(self.calib_bin_3.text())
-            shared.calib_bin_4 = int(self.calib_bin_4.text())
-            shared.calib_bin_5 = int(self.calib_bin_5.text())
+    # def calculate_polynomial(self):
+    #     def parse_int(val): return int(val.strip()) if val.strip().isdigit() else 0
+    #     def parse_float(val): return float(val.strip()) if val.strip() else 0.0
 
-            shared.calib_e_1 = float(self.calib_e_1.text())
-            shared.calib_e_2 = float(self.calib_e_2.text())
-            shared.calib_e_3 = float(self.calib_e_3.text())
-            shared.calib_e_4 = float(self.calib_e_4.text())
-            shared.calib_e_5 = float(self.calib_e_5.text())
+    #     bin_vals = [parse_int(e.text()) for e in (
+    #         self.calib_bin_1, self.calib_bin_2, self.calib_bin_3, self.calib_bin_4, self.calib_bin_5)]
+    #     energy_vals = [parse_float(e.text()) for e in (
+    #         self.calib_e_1, self.calib_e_2, self.calib_e_3, self.calib_e_4, self.calib_e_5)]
 
-            self.calculate_polynomial()
+    #     (
+    #         shared.calib_bin_1, shared.calib_bin_2, shared.calib_bin_3,
+    #         shared.calib_bin_4, shared.calib_bin_5
+    #     ) = bin_vals
 
-        except ValueError as e:
-            print("[Calibration Save] Invalid input:", e)
+    #     (
+    #         shared.calib_e_1, shared.calib_e_2, shared.calib_e_3,
+    #         shared.calib_e_4, shared.calib_e_5
+    #     ) = energy_vals
+
+    #     x_bins = [b for b, e in zip(bin_vals, energy_vals) if b > 0 and e > 0]
+    #     x_energies = [e for b, e in zip(bin_vals, energy_vals) if b > 0 and e > 0]
+
+    #     coefficients = [0, 1, 0]
+    #     message = "⚠️ Insufficient calibration points"
+
+    #     if len(x_bins) == 1:
+    #         m = x_energies[0] / x_bins[0]
+    #         coefficients = [0, m, 0]
+    #         message = "✅ Linear one-point calibration"
+    #     elif len(x_bins) == 2:
+    #         coeffs = np.polyfit(x_bins, x_energies, 1).tolist()
+    #         coefficients = [0] + coeffs
+    #         message = "✅ Linear two-point calibration"
+    #     elif len(x_bins) >= 3:
+    #         coefficients = np.polyfit(x_bins, x_energies, 2).tolist()
+    #         message = "✅ Second-order polynomial fit"
+
+    #     shared.coeff_1 = round(coefficients[0], 6)
+    #     shared.coeff_2 = round(coefficients[1], 6)
+    #     shared.coeff_3 = round(coefficients[2], 6)
+    #     shared.coefficients_1 = coefficients
+
+    #     print(f"[Calibration Update] {message}: poly = {np.poly1d(coefficients)}")
+
+    def open_calibration_popup(self):
+        self.calibration_popup = CalibrationPopup(self.poly_label)
+
+        self.calibration_popup.show()
 
 
-    def calculate_polynomial(self):
-        def parse_int(val): return int(val.strip()) if val.strip().isdigit() else 0
-        def parse_float(val): return float(val.strip()) if val.strip() else 0.0
 
-        bin_vals = [parse_int(e.text()) for e in (
-            self.calib_bin_1, self.calib_bin_2, self.calib_bin_3, self.calib_bin_4, self.calib_bin_5)]
-        energy_vals = [parse_float(e.text()) for e in (
-            self.calib_e_1, self.calib_e_2, self.calib_e_3, self.calib_e_4, self.calib_e_5)]
-
-        (
-            shared.calib_bin_1, shared.calib_bin_2, shared.calib_bin_3,
-            shared.calib_bin_4, shared.calib_bin_5
-        ) = bin_vals
-
-        (
-            shared.calib_e_1, shared.calib_e_2, shared.calib_e_3,
-            shared.calib_e_4, shared.calib_e_5
-        ) = energy_vals
-
-        x_bins = [b for b, e in zip(bin_vals, energy_vals) if b > 0 and e > 0]
-        x_energies = [e for b, e in zip(bin_vals, energy_vals) if b > 0 and e > 0]
-
-        coefficients = [0, 1, 0]
-        message = "⚠️ Insufficient calibration points"
-
-        if len(x_bins) == 1:
-            m = x_energies[0] / x_bins[0]
-            coefficients = [0, m, 0]
-            message = "✅ Linear one-point calibration"
-        elif len(x_bins) == 2:
-            coeffs = np.polyfit(x_bins, x_energies, 1).tolist()
-            coefficients = [0] + coeffs
-            message = "✅ Linear two-point calibration"
-        elif len(x_bins) >= 3:
-            coefficients = np.polyfit(x_bins, x_energies, 2).tolist()
-            message = "✅ Second-order polynomial fit"
-
-        shared.coeff_1 = round(coefficients[0], 6)
-        shared.coeff_2 = round(coefficients[1], 6)
-        shared.coeff_3 = round(coefficients[2], 6)
-        shared.coefficients_1 = coefficients
-
-        print(f"[Calibration Update] {message}: poly = {np.poly1d(coefficients)}")
+    
