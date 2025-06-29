@@ -898,14 +898,6 @@ def calibrate_gc(gc, coefficients):
     x_values = np.polyval(coefficients, channels)
     gc_calibrated = list(zip(x_values, gc))
     return gc_calibrated
-
-# Opens and reads the isotopes.json file
-def get_isotopes(file_path):
-    try:
-        with open(file_path, 'r') as file:
-            return json.load(file)
-    except:
-        logger.info('functions get_isotopes failed')
                 
 
 # Finds the peaks in gc (Gaussian correlation)
@@ -1120,26 +1112,36 @@ def capture_pulse_data():
         logger.error(f"Error while capturing pulse data: {e}")
 
 
-def get_isotope_options(path):
+def get_flag_options():
+    """Returns a list of dicts with 'label' and 'value' for each .json file in the given directory."""
     options = []
+    path = Path(shared.TBL_DIR)
+
     try:
-        # Get all files in the directory
-        for file_name in os.listdir(path):
-            # Check if the file has a .json extension
-            if file_name.endswith('.json'):
-                file_path = os.path.join(path, file_name)
-                label = file_name.replace('.json', '').replace('-', ' ').title()
-                options.append({'label': label, 'value': file_path})
+        for file in path.glob("*.json"):
+            label = file.stem.replace('-', ' ').title()
+            options.append({
+                'label': label,
+                'value': file.name  # Only the filename, not full path
+            })
     except Exception as e:
-        print(f"Error accessing directory: {e}")
+        print(f"[ERROR] Failed to list flag files in {path}: {e}")
 
     return options
 
-def read_isotopes_data(data_path):
+def read_flag_data(path):
     try:
-        with open(data_path, 'r') as f:
+        with open(path, 'r') as f:
             data = json.load(f)
         return data
     except Exception as e:
         print(f"Error reading isotopes data: {e}")
-        return []      
+        return []    
+
+# Opens and reads the isotopes.json file
+def get_isotope_flags(path):
+    try:
+        with open(path, 'r') as file:
+            return json.load(file)
+    except:
+        logger.info('functions get_isotopes failed')
