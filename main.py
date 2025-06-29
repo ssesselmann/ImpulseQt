@@ -1,58 +1,49 @@
 # main.py
-import shutil
-import sys
-import json
-import shared
 
+import sys
+import shutil
+from pathlib import Path
+
+from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget
+
+import shared
 from tab1 import Tab1
 from tab2 import Tab2
 from tab3 import Tab3
 from tab4 import Tab4
 from tab5 import Tab5
 
-from pathlib import Path
-from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget
-from shared import DATA_DIR, from_settings, to_settings
-from settings_manager import settings_path, load_settings, save_settings
-from default_settings import DEFAULT_SETTINGS
 
-
-#On first launch, copy default lib/iso and lib/tbl from assets into user's data dir.
+# --------------------------------------
+# One-time setup for user data folders
+# --------------------------------------
 def initialize_user_data():
-
     source_lib = shared.BASE_DIR / "assets" / "lib"
     target_lib = shared.USER_DATA_DIR / "lib"
 
-    if target_lib.exists():
+    if not target_lib.exists():
+        try:
+            shutil.copytree(source_lib, target_lib)
+            shared.logger.info(f"Copied default lib directory to: {target_lib}")
+        except Exception as e:
+            shared.logger.error(f"Error copying default lib directory: {e}")
+    else:
         shared.logger.info("User lib already exists, skipping initialization.")
-        return
-
-    try:
-        shutil.copytree(source_lib, target_lib)
-        shared.logger.info(f"Copied default lib directory to: {target_lib}")
-    except Exception as e:
-        shared.logger.error(f"Error copying default lib directory: {e}")
-
-initialize_user_data()
 
 
-def ensure_settings_exists():
-    if not settings_path.exists():
-        shared.logger.info("No settings file found, writing default settings...")
-        settings_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(settings_path, "w") as f:
-            json.dump(DEFAULT_SETTINGS, f, indent=2)
-
+# --------------------------------------
+# Main Window Class
+# --------------------------------------
 class MainWindow(QMainWindow):
-    def __init__(self, settings):
+    def __init__(self):
         super().__init__()
-        self.settings = settings  # Save for later use
         self.setWindowTitle("Impulse QT")
-        self.resize(settings.get("window_width", 960), settings.get("window_height", 600))
-        self.move(settings.get("window_pos_x", 200), settings.get("window_pos_y", 100))
+
+        self.resize(shared.window_width or 960, shared.window_height or 600)
+        self.move(shared.window_pos_x or 200, shared.window_pos_y or 100)
 
         tabs = QTabWidget()
-        tabs.addTab(Tab1(), "Connection")
+        tabs.addTab(Tab1(), "Device Setup")
         tabs.addTab(Tab2(), "2D Histogram")
         tabs.addTab(Tab3(), "3D Histogram")
         tabs.addTab(Tab4(), "Count Rate")
@@ -69,21 +60,22 @@ class MainWindow(QMainWindow):
         shared.window_width = size.width()
         shared.window_height = size.height()
 
-        save_settings(shared.to_settings())
+        shared.save_settings()
         super().closeEvent(event)
 
+
+# --------------------------------------
+# Application Entry Point
+# --------------------------------------
 if __name__ == "__main__":
-    ensure_settings_exists()
+    shared.ensure_settings_exists()
+    shared.load_settings()
+    initialize_user_data()
+
     app = QApplication(sys.argv)
-
-    # Load settings once
-    app_settings = load_settings()
-    from_settings(app_settings)
-
-    win = MainWindow(app_settings)
+    win = MainWindow()
     win.show()
 
-    # On exit → save shared state
     exit_code = app.exec()
-    save_settings(shared.to_settings())
+    shared.save_settings()
     sys.exit(exit_code)
