@@ -6,8 +6,6 @@ import time
 import shared
 import pandas as pd
 
-import settings_manager
-
 # Setup logging (optional, if logging is desired)
 import logging
 logger = logging.getLogger(__name__)
@@ -189,7 +187,6 @@ def shapecatcher():
     with shared.write_lock:
         shared.flip = encoded_pulse_sign
 
-    settings_manager.save_settings(shared.to_settings())
 
     # Start PyAudio
     p = pyaudio.PyAudio()
@@ -207,7 +204,7 @@ def shapecatcher():
                     frames_per_buffer=chunk_size * channels,
                     input_device_index=device)
 
-    pulse_list_left = []
+    pulse_list_left  = []
     pulse_list_right = []
 
     try:
