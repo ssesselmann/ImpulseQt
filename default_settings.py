@@ -68,7 +68,7 @@ DEFAULT_SETTINGS = {
 	"distortion_list_right": [],
 	"rolling_interval": 60,
 	"sample_length": 61,
-	"sample_rate": 48000,
+	"sample_rate": 192000,
 	"serial_number": 0,
 	"settings_file": "",
 	"shape_lld": 500,
@@ -96,8 +96,8 @@ DEFAULT_SETTINGS = {
 	"tolerance": 50000,
 	"user_settings": "",
 	"val_flag": False,
-	"window_width": 960,
-    "window_height": 600,
-    "window_pos_x": 100,
-    "window_pos_y": 100
+	"window_pos_x": 349,
+	"window_pos_y": 294,
+	"window_width": 1277,
+	"window_height": 770
 }
