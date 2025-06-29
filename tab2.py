@@ -17,10 +17,11 @@ from PySide6.QtWidgets import (
     QCheckBox, 
     QComboBox, 
     QHBoxLayout, 
-    QSlider
+    QSlider,
+    QTextEdit
 )
 from PySide6.QtCore import Qt, QTimer, Slot
-from PySide6.QtGui import QFont, QBrush, QColor, QIntValidator
+from PySide6.QtGui import QFont, QBrush, QColor, QIntValidator, QPixmap
 from functions import (
     start_recording, 
     get_options, 
@@ -29,14 +30,14 @@ from functions import (
     load_histogram, 
     load_histogram_2, 
     gaussian_correl,
-    peak_finder
+    peak_finder,
+    get_flag_options,
+    read_flag_data
     )
 from audio_spectrum import play_wav_file
 from shared import logger
 from pathlib import Path
 from calibration_popup import CalibrationPopup
-
-
 
 
 class Tab2(QWidget):
@@ -149,14 +150,32 @@ class Tab2(QWidget):
         self.filename_input.textChanged.connect(lambda text: self.on_text_changed(text, "filename"))
         grid.addWidget(self.labeled_input("Filename", self.filename_input), 0, 2)
 
-        positive_int_validator = QIntValidator(1, 999999)  # Adjust max as needed
+        
 
         # Col 3 Row 3
+
+        positive_int_validator = QIntValidator(1, 999999)  # Adjust max as needed
+
+        # PRO wrapper=====================================================
+
+        # Initialize widget lists for visibility control
+        self.pro_only_widgets = []
+        self.max_only_widgets = []
+
+        # Col 3 Row 3: PRO-only bins container
+        self.bins_container = QWidget()
+        self.bins_container.setObjectName("bins_container")  # For debugging
+        bins_layout = QVBoxLayout(self.bins_container)
+        bins_layout.setContentsMargins(0, 0, 0, 0)
         self.bins = QLineEdit(str(shared.bins))
         self.bins.setAlignment(Qt.AlignCenter)
         self.bins.setToolTip("Bins")
         self.bins.setValidator(positive_int_validator)
-        grid.addWidget(self.labeled_input("Number of channels", self.bins), 2, 2)
+        self.bins.textChanged.connect(lambda text: self.on_text_changed(text, "bins"))
+        bins_layout.addWidget(self.labeled_input("Number of channels", self.bins))
+        grid.addWidget(self.bins_container, 2, 2)
+        self.pro_only_widgets.append(self.bins_container)
+        # PRO CLOSE WRAPPER ===============================================
 
 
         # Col 3 Row 3
@@ -223,6 +242,17 @@ class Tab2(QWidget):
         self.coi_switch.setToolTip("Coincidence spectrum")
         self.coi_switch.stateChanged.connect(lambda state: self.on_checkbox_toggle(state, "coi_switch"))
         grid.addWidget(self.labeled_input("Coincidence", self.coi_switch), 2, 4)
+
+        # Col 5 Row 4
+        self.select_flags = QComboBox()
+        self.select_flags.setEditable(False)
+        self.select_flags.setInsertPolicy(QComboBox.NoInsert)
+        self.select_flags.setStyleSheet("font-weight: bold;")
+        options = get_flag_options()
+        for opt in options:
+            self.select_flags.addItem(opt['label'], opt['value'])
+        self.select_flags.currentIndexChanged.connect(self.on_select_flags_changed)    
+        grid.addWidget(self.labeled_input("Select Isotope Library", self.select_flags), 3, 4)
 
         # Col 6 Row 1 ----------------------------------------------------------------------------------
         self.epb_switch = QCheckBox()
@@ -312,6 +342,44 @@ class Tab2(QWidget):
         self.poly_label.setStyleSheet("color: #333; font-style: italic;")
         grid.addWidget(self.open_calib_btn, 3, 6)
 
+        # Col 8: Notes input (spanning rows 0–3)
+        self.notes_input = QTextEdit()
+        self.notes_input.setPlaceholderText("Enter notes about this spectrum...")
+        self.notes_input.setToolTip("These notes are saved in the spectrum file")
+        self.notes_input.setFixedWidth(260)  # Optional: adjust width
+        self.notes_input.setStyleSheet("font-family: monospace;")
+
+        # Optional: set existing value if shared.spec_notes is loaded
+        self.notes_input.setText(shared.spec_notes)
+
+        # Connect submit signal
+        self.notes_input.textChanged.connect(self.on_notes_changed)
+
+        # Add to layout (row 0, col 7, rowspan 3, colspan 1)
+        grid.addWidget(self.labeled_input("Spectrum Notes", self.notes_input), 0, 8, 2, 1)
+
+
+        # --- Logo widget ---
+        logo_label = QLabel()
+        logo_label.setAlignment(Qt.AlignCenter)
+        logo_label.setStyleSheet("padding: 10px;")
+
+        # Load and scale logo (optional height: adjust as needed)
+        pixmap = QPixmap("assets/impulse.gif")
+        scaled_pixmap = pixmap.scaledToHeight(80, Qt.SmoothTransformation)
+        logo_label.setPixmap(scaled_pixmap)
+
+        # Add to grid layout at row 3, column 7, rowspan 2, colspan 2
+        grid.addWidget(logo_label, 2, 8, 2, 2)
+
+        # hide/show pro widget
+        self.pro_only_widgets = [
+        self.bins_container,
+        #self.threshold_container,
+        #self.tolerance_container,
+        ]
+        self.update_widget_visibility()
+
         # Label stuff
         self.label_timer = QTimer()
         self.label_timer.timeout.connect(self.update_labels)
@@ -319,14 +387,17 @@ class Tab2(QWidget):
 
         layout.addLayout(grid)
 
-        # === Footer ===
-        footer = QLabel("IMPULSE")
+        #=================
+        # FOOTER
+        #=================
+        footer = QLabel(f"impulse v.{shared.__version__}")
         footer.setStyleSheet("padding: 6px; background: #eee;")
         footer.setAlignment(Qt.AlignCenter)
         footer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         footer.setStyleSheet("background-color: #0066D1; color: white; font-weight:bold; padding: 5px;")
-
         layout.addWidget(footer)
+
+        
 
         self.setLayout(layout)
 
@@ -334,6 +405,20 @@ class Tab2(QWidget):
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_labels)
         self.plot_timer.start(1000)
+
+    
+    def update_widget_visibility(self):
+        logger.info(f"Updating visibility, device_type: {shared.device_type}")
+        for widget in getattr(self, "pro_only_widgets", []):
+            widget.setVisible(shared.device_type == "PRO")
+        for widget in getattr(self, "max_only_widgets", []):
+            widget.setVisible(shared.device_type == "MAX")
+
+    def on_device_type_changed(self, new_device_type):
+        shared.device_type = new_device_type
+        shared.save_settings()
+        logger.info(f"Device type changed to: {new_device_type}")
+        self.update_widget_visibility()
 
     def update_labels(self):
         self.counts_label.setText(str(shared.counts))
@@ -523,7 +608,7 @@ class Tab2(QWidget):
                 shproto.dispatcher.process_01(filename, compression, "MAX", t_interval)
 
             else:
-                start_recording(mode)  # fallback
+                start_recording(mode=2)  # fallback
 
             shared.recording = True
             self.plot_timer.start(1000)
@@ -577,10 +662,11 @@ class Tab2(QWidget):
         shared.filename = filepath
         load_histogram(filepath)
 
+        # Refresh the note text box
+        self.notes_input.setText(shared.spec_notes)
+
         # Reset selector to "— Select file —"
         QTimer.singleShot(0, lambda: self.select_file.setCurrentIndex(0))
-
-
 
 
     def on_select_filename_2_changed(self, index):
@@ -594,7 +680,27 @@ class Tab2(QWidget):
                 y = data.get("counts", [])
                 self.hist_curve_2.setData(x, y)
 
-    
+    def on_select_flags_changed(self, index):
+        # Get the selected file path
+        filepath = self.select_flags.itemData(index)
+
+        if not filepath:
+            return
+
+        # Full path (relative to USER_DATA_DIR/lib/tbl/)
+        full_path = Path(shared.USER_DATA_DIR) / "lib" / "tbl" / filepath
+
+        # Read isotope flags from the file
+        flags = read_flag_data(full_path)
+
+        if flags:
+            shared.isotope_flags = flags
+            logger.info(f"[INFO] Loaded {len(flags)} isotope flags from {filepath}")
+        else:
+            shared.isotope_flags = []
+            logger.warning(f"[WARN] No isotope flags loaded from {filepath}")
+
+        
     def on_sigma_changed(self, val):
         sigma = val / 10.0
         shared.sigma = sigma
@@ -610,14 +716,12 @@ class Tab2(QWidget):
             self.peakfinder_label.setText(f"More peaks >>")
     
     def update_peak_markers(self):
-
         if shared.peakfinder == 0:
             return
 
         # Remove old markers
         for marker in getattr(self, "peak_markers", []):
             self.plot_widget.removeItem(marker)
-
         self.peak_markers = []
 
         if not shared.histogram:
@@ -637,19 +741,43 @@ class Tab2(QWidget):
                 smoothing_window=3
             )
 
+            coeff_abc = [shared.coeff_1, shared.coeff_2, shared.coeff_3]
+            use_cal = shared.cal_switch and any(coeff_abc)
+            use_iso = shared.iso_switch and shared.isotope_flags and use_cal
+            sigma = shared.sigma
+
             for p, width in zip(peaks, fwhm):
                 y = y_data[p]
                 resolution = (width / p) * 100 if p != 0 else 0
 
-                # Apply energy calibration if enabled
-                coeff_abc = [shared.coeff_1, shared.coeff_2, shared.coeff_3]
-                if shared.cal_switch and all(isinstance(c, (int, float)) for c in coeff_abc):
-                    x_pos = float(np.polyval(np.poly1d(coeff_abc), p))
+                # Energy calibration if enabled
+                energy = float(np.polyval(np.poly1d(coeff_abc), p)) if use_cal else p
+                x_pos = energy if use_cal else p
+
+                # Isotope label if enabled and cal_switch is True
+                isotope_labels = []
+                if shared.iso_switch and shared.cal_switch and shared.isotope_flags:
+                    for iso in shared.isotope_flags:
+                        iso_energy = iso.get("energy")
+                        if iso_energy is None:
+                            continue
+                        if abs(iso_energy - energy) <= shared.sigma:
+                            isotope_labels.append(
+                                f"{iso['isotope']} {iso['energy']:.1f} keV ({iso['intensity'] * 100:.1f}%)"
+                        )
+
+
+                # Build label text
+                if isotope_labels:
+                    label_text = "\n".join(isotope_labels)  # omit resolution
+                elif use_cal:
+                    label_text = f"{energy:.1f} keV\n{resolution:.1f}%"
                 else:
-                    x_pos = p
+                    label_text = f"Bin {p}\n{resolution:.1f}%"
 
 
-                label = pg.TextItem(text=f"< {int(x_pos)} - {resolution:.1f}%", anchor=(0, 0), color="k")
+                # Draw label
+                label = pg.TextItem(text=label_text, anchor=(0, 0), color="k")
                 font = QFont()
                 font.setPointSize(10)
                 label.setFont(font)
@@ -661,55 +789,42 @@ class Tab2(QWidget):
             logger.error(f"[ERROR] Peak annotation failed: {e}")
 
 
-    # def calculate_polynomial(self):
-    #     def parse_int(val): return int(val.strip()) if val.strip().isdigit() else 0
-    #     def parse_float(val): return float(val.strip()) if val.strip() else 0.0
-
-    #     bin_vals = [parse_int(e.text()) for e in (
-    #         self.calib_bin_1, self.calib_bin_2, self.calib_bin_3, self.calib_bin_4, self.calib_bin_5)]
-    #     energy_vals = [parse_float(e.text()) for e in (
-    #         self.calib_e_1, self.calib_e_2, self.calib_e_3, self.calib_e_4, self.calib_e_5)]
-
-    #     (
-    #         shared.calib_bin_1, shared.calib_bin_2, shared.calib_bin_3,
-    #         shared.calib_bin_4, shared.calib_bin_5
-    #     ) = bin_vals
-
-    #     (
-    #         shared.calib_e_1, shared.calib_e_2, shared.calib_e_3,
-    #         shared.calib_e_4, shared.calib_e_5
-    #     ) = energy_vals
-
-    #     x_bins = [b for b, e in zip(bin_vals, energy_vals) if b > 0 and e > 0]
-    #     x_energies = [e for b, e in zip(bin_vals, energy_vals) if b > 0 and e > 0]
-
-    #     coefficients = [0, 1, 0]
-    #     message = "⚠️ Insufficient calibration points"
-
-    #     if len(x_bins) == 1:
-    #         m = x_energies[0] / x_bins[0]
-    #         coefficients = [0, m, 0]
-    #         message = "✅ Linear one-point calibration"
-    #     elif len(x_bins) == 2:
-    #         coeffs = np.polyfit(x_bins, x_energies, 1).tolist()
-    #         coefficients = [0] + coeffs
-    #         message = "✅ Linear two-point calibration"
-    #     elif len(x_bins) >= 3:
-    #         coefficients = np.polyfit(x_bins, x_energies, 2).tolist()
-    #         message = "✅ Second-order polynomial fit"
-
-    #     shared.coeff_1 = round(coefficients[0], 6)
-    #     shared.coeff_2 = round(coefficients[1], 6)
-    #     shared.coeff_3 = round(coefficients[2], 6)
-    #     shared.coefficients_1 = coefficients
-
-    #     print(f"[Calibration Update] {message}: poly = {np.poly1d(coefficients)}")
-
     def open_calibration_popup(self):
         self.calibration_popup = CalibrationPopup(self.poly_label)
 
         self.calibration_popup.show()
 
+    def on_notes_changed(self):
+
+        new_note          = self.notes_input.toPlainText().strip()
+        shared.spec_notes = new_note
+        filename          = shared.filename 
+
+        if not filename:
+            return
+
+        json_path = shared.USER_DATA_DIR / filename
+
+        if not json_path.exists():
+            return
+
+        try:
+            with open(json_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            # Update the note safely
+            try:
+                data["data"][0]["sampleInfo"]["note"] = new_note
+
+            except (IndexError, KeyError) as e:
+                logger.error(f"[ERROR] Could not find sampleInfo to update note: {e}")
+                return
+
+            with open(json_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+
+        except Exception as e:
+            logger.error(f"[ERROR] Failed to update notes in JSON: {e}")
 
 
     
