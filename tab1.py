@@ -1,25 +1,29 @@
+
+#tab1.py
+
+import shared
+
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QComboBox,
-    QFrame, QHBoxLayout, QSizePolicy
+    QFrame, QHBoxLayout, QSizePolicy, QApplication, QMessageBox
 )
 from PySide6.QtCore import Qt
-from settings_manager import load_settings, save_settings
-from tab1_pro import ProWidget  # ⬅️ Import your Pro tab content
-
+from tab1_pro import Tab1ProWidget 
+from tab1_max import Tab1MaxWidget
+from shared import logger
 
 class Tab1(QWidget):
     def __init__(self):
         super().__init__()
-        self.settings = load_settings()
-        device_type = self.settings.get("device_type", "PRO")
+        device_type = shared.device_type
 
         # === Top controls ===
-        header_label = QLabel("Select Device Type:")
+        header_label = QLabel("Change Device Type and restart:")
         header_label.setAlignment(Qt.AlignLeft)
 
         self.selector = QComboBox()
         self.selector.addItems(["PRO", "MAX"])
-        self.selector.setCurrentText(device_type)
+        self.selector.setCurrentText(shared.device_type)
         self.selector.setMaximumWidth(200)
         self.selector.setSizeAdjustPolicy(QComboBox.AdjustToContents)
         self.selector.currentTextChanged.connect(self.switch_device_type)
@@ -55,9 +59,22 @@ class Tab1(QWidget):
         self.setLayout(layout)
 
     def switch_device_type(self, value):
-        self.settings["device_type"] = value
-        save_settings(self.settings)
-        self.set_main_content(value)
+            if value == shared.device_type:
+                return  # No change needed
+            reply = QMessageBox.question(
+                self,
+                "Confirm Device Change",
+                f"Changing to {value} will quit the application. Continue?",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            if reply == QMessageBox.Yes:
+                logger.info(f"Tab1: Device type changed to {value}")
+                shared.device_type = value
+                shared.save_settings()
+                logger.info("Quitting application to apply new device type")
+                QApplication.quit()
+            else:
+                self.selector.setCurrentText(shared.device_type)  # Revert selection
 
     def set_main_content(self, device_type):
         # Clear current content
@@ -69,9 +86,6 @@ class Tab1(QWidget):
 
         # Insert the correct widget
         if device_type == "PRO":
-            self.main_layout.addWidget(ProWidget())
+            self.main_layout.addWidget(Tab1ProWidget())
         elif device_type == "MAX":
-            # Placeholder until you build tab1_max
-            label = QLabel("MAX device UI coming soon.")
-            label.setAlignment(Qt.AlignCenter)
-            self.main_layout.addWidget(label)
+            self.main_layout.addWidget(Tab1MaxWidget())  # Use Tab1MaxWidget
