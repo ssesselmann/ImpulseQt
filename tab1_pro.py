@@ -9,12 +9,11 @@ from PySide6.QtWidgets import (
     QWidget, QLabel, QVBoxLayout, QHBoxLayout, QComboBox,
     QTextEdit, QSizePolicy, QPushButton, QSlider,QCheckBox
 )
-from settings_manager import load_settings, save_settings
 from PySide6.QtCore import Qt
 from shapecatcher import shapecatcher
 from distortionchecker import distortion_finder
 
-class ProWidget(QWidget):
+class Tab1ProWidget(QWidget):
     def __init__(self):
         super().__init__()
 
@@ -275,6 +274,7 @@ class ProWidget(QWidget):
             self.pulse_plot.setYRange(-50, y_peak + 50)
 
         except Exception as e:
+            
             print(f"❌ Error during shapecatcher: {e}")
 
     def run_distortion_finder(self):
