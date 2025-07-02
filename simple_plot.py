@@ -43,7 +43,6 @@ class MainWindow(QMainWindow):
         # Generate and print data
         x = np.linspace(0, 10, 100)
         y = np.sin(x)
-        print("Sample x:", x[:5], "Sample y:", y[:5])
         
         # Multiple plot attempts
         # 1. Thick blue line

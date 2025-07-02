@@ -275,7 +275,7 @@ class Tab1ProWidget(QWidget):
 
         except Exception as e:
             
-            print(f"❌ Error during shapecatcher: {e}")
+            logger.error(f"❌ Error during shapecatcher: {e}")
 
     def run_distortion_finder(self):
         from shared import stereo
@@ -356,6 +356,6 @@ class Tab1ProWidget(QWidget):
             )
 
         except Exception as e:
-            print(f"❌ Error in plot_saved_shapes: {e}")
+            logger.error(f"❌ Error in plot_saved_shapes: {e}")
     
 

@@ -193,19 +193,44 @@ class Tab2(QWidget):
 
     
         # Col 4 Row 1 -------------------------------------------------------------------
+
+        # PRO wrapper for threshold field =========================================
+        self.threshold_container = QWidget()
+        self.threshold_container.setObjectName("threshold_container")  # For debugging
+        threshold_layout = QVBoxLayout(self.threshold_container)
+        threshold_layout.setContentsMargins(0, 0, 0, 0)
+
         self.threshold = QLineEdit(str(shared.threshold))
         self.threshold.setAlignment(Qt.AlignCenter)
         self.threshold.setToolTip("LLD threshold")
-        grid.addWidget(self.labeled_input("LLD Threshold", self.threshold), 0, 3)
+        self.threshold.setValidator(positive_int_validator)  # Optional if you use a validator
+        self.threshold.textChanged.connect(lambda text: self.on_text_changed(text, "threshold"))
+
+        threshold_layout.addWidget(self.labeled_input("LLD Threshold", self.threshold))
+        grid.addWidget(self.threshold_container, 0, 3)
+        self.pro_only_widgets.append(self.threshold_container)
+        # PRO CLOSE wrapper =======================================================
 
         # Col 4 Row 2 - blank
 
-        # Col 4 Row 3
+        # Col 4 Row 3    
+        # PRO wrapper for tolerance field =========================================
+        self.tolerance_container = QWidget()
+        self.tolerance_container.setObjectName("tolerance_container")  # For debugging
+        tolerance_layout = QVBoxLayout(self.tolerance_container)
+        tolerance_layout.setContentsMargins(0, 0, 0, 0)
+
         self.tolerance_input = QLineEdit(str(shared.tolerance))
         self.tolerance_input.setAlignment(Qt.AlignCenter)
         self.tolerance_input.setToolTip("Distortion tolerance threshold")
         self.tolerance_input.setValidator(positive_int_validator)
-        grid.addWidget(self.labeled_input("Distortion tolerance", self.tolerance_input), 2, 3)
+        self.tolerance_input.textChanged.connect(lambda text: self.on_text_changed(text, "tolerance"))
+
+        tolerance_layout.addWidget(self.labeled_input("Distortion tolerance", self.tolerance_input))
+        grid.addWidget(self.tolerance_container, 2, 3)
+        self.pro_only_widgets.append(self.tolerance_container)
+        # PRO CLOSE wrapper =======================================================
+
 
 
         # Col 4 Row 4
@@ -375,8 +400,8 @@ class Tab2(QWidget):
         # hide/show pro widget
         self.pro_only_widgets = [
         self.bins_container,
-        #self.threshold_container,
-        #self.tolerance_container,
+        self.threshold_container,
+        self.tolerance_container,
         ]
         self.update_widget_visibility()
 
@@ -639,9 +664,9 @@ class Tab2(QWidget):
             shared.filename_2 = self.select_file.currentData()
             success = load_histogram_2(shared.filename_2)
             if success:
-                print(f"[OK] Loaded comparison spectrum: {shared.filename_2}")
+                logger.info(f"[OK] Loaded comparison spectrum: {shared.filename_2}")
             else:
-                print(f"[ERROR] Failed to load comparison spectrum: {shared.filename_2}")
+                logger.error(f"[ERROR] Failed to load comparison spectrum: {shared.filename_2}")
 
 
     def on_text_changed(self, text, field_name):

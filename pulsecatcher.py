@@ -93,8 +93,9 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
         shared.count_history   = []
 
     if mode == 3:
-        bin_size    = bin_size * int(bins/bins_3d)
-        bins        = bins_3d
+        bins = shared.bins_3d
+        bin_size = shared.bin_size * (shared.bins / shared.bins_3d)
+
 
     # Fixed variables
     right_threshold = 1000  # Threshold for right channel   

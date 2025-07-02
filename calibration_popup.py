@@ -46,8 +46,6 @@ class CalibrationPopup(QDialog):
 
     def update_calibration(self):
 
-        print(shared.filename)
-
         bins = []
         energies = []
 
@@ -89,7 +87,7 @@ class CalibrationPopup(QDialog):
                         json.dump(data, f, indent=2)
 
                 except Exception as e:
-                    print(f"[Calibration] Failed to save coefficients: {e}")
+                    logger.error(f"[Calibration] Failed to save coefficients: {e}")
 
 
             

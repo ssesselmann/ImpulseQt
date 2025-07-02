@@ -39,15 +39,28 @@ else:
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 log_file = LOG_DIR / "impulseqt_log.txt"
 
+# Set root logging level and format early
+logging.basicConfig(level=logging.WARNING)
+
+# Suppress noisy matplotlib loggers
+logging.getLogger('matplotlib').setLevel(logging.WARNING)
+logging.getLogger('matplotlib.font_manager').setLevel(logging.ERROR)
+
+# Prevent matplotlib log propagation to root logger
+logging.getLogger('matplotlib.font_manager').propagate = False
+
+# Custom application logger
 logger = logging.getLogger("ImpulseLogger")
 logger.setLevel(logging.DEBUG)
 
+# Avoid duplicate handlers
 if not logger.handlers:
     fh = logging.FileHandler(log_file, mode='w', encoding='utf-8')
     fh.setLevel(logging.DEBUG)
     formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s', datefmt='%H:%M:%S')
     fh.setFormatter(formatter)
     logger.addHandler(fh)
+
 
 # -------------------------------
 # Environment: Development or Frozen
@@ -260,14 +273,14 @@ def to_settings():
 
 def from_settings(settings: dict):
     if not isinstance(settings, dict):
-        print("[from_settings] ERROR: settings is not a dictionary.")
+        logger.error("[from_settings] ERROR: settings is not a dictionary.")
         return
     for key in SETTINGS_KEYS:
         if key in settings:
             try:
                 globals()[key] = settings[key]
             except Exception as e:
-                print(f"[from_settings] WARNING: Could not set {key}: {e}")
+                logger.info(f"[from_settings] WARNING: Could not set {key}: {e}")
 
 def load_settings():
     try:
@@ -276,7 +289,6 @@ def load_settings():
             from_settings(settings)
             logger.info("Settings loaded successfully.")
     except Exception as e:
-        print(f"[load_settings] ERROR: {e}")
         logger.warning("Using defaults due to settings load failure.")
 
 def save_default_settings():

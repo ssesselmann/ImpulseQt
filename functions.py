@@ -442,7 +442,13 @@ def start_recording(mode):
     else:
         logger.error("Invalid recording mode specified.\n")
 
+def stop_recording():
+    with shared.write_lock:
+        shared.run_flag.clear()
+    logger.info('functions recording stopped\n')
+    return
 
+    
 # clear variables
 def clear_shared(mode):
     logger.info('1..running clear_shared\n')
@@ -485,12 +491,6 @@ def clear_global_cps_list():
         shared.dropped_counts  = 0
         shared.count_history   = []
 
-def stop_recording():
-    with shared.write_lock:
-        shared.run_flag.clear()
-    logger.info('functions recording stopped\n')
-    return
-
 
 def get_unique_filename(directory, filename):
     """
@@ -514,7 +514,7 @@ def export_csv(filename, data_directory, calib_switch):
         with open(os.path.join(data_directory, f'{filename}.json')) as f:
             data = json.load(f)
     except FileNotFoundError:
-        print(f"Error: {filename}.json not found in {data_directory}")
+        logger.error(f"Error: {filename}.json not found in {data_directory}")
         return
 
     if data.get("schemaVersion") == "NPESv2":
@@ -524,7 +524,7 @@ def export_csv(filename, data_directory, calib_switch):
         spectrum = data["resultData"]["energySpectrum"]["spectrum"]
         coefficients = data["resultData"]["energySpectrum"]["energyCalibration"]["coefficients"]
     except KeyError:
-        print(f"Error: Missing expected keys in {filename}.json")
+        logger.error(f"Error: Missing expected keys in {filename}.json")
         return
 
     # Ensure the download folder exists
@@ -842,8 +842,6 @@ def get_filename_2_options():
     user_dir = Path(shared.USER_DATA_DIR)
     iso_dir = Path(shared.ISO_DIR)
 
-    print(iso_dir)
-
     # Only include user files at root level of USER_DATA_DIR
     user_files = [
         make_option(f, user_dir)
@@ -1125,7 +1123,7 @@ def get_flag_options():
                 'value': file.name  # Only the filename, not full path
             })
     except Exception as e:
-        print(f"[ERROR] Failed to list flag files in {path}: {e}")
+        loger.error(f"[ERROR] Failed to list flag files in {path}: {e}")
 
     return options
 
@@ -1135,7 +1133,7 @@ def read_flag_data(path):
             data = json.load(f)
         return data
     except Exception as e:
-        print(f"Error reading isotopes data: {e}")
+        logger.error(f"Error reading isotopes data: {e}")
         return []    
 
 # Opens and reads the isotopes.json file
