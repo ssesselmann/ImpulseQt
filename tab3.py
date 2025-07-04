@@ -1,20 +1,22 @@
-from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit,
-    QComboBox, QCheckBox, QGridLayout, QDialog, QDialogButtonBox, QMessageBox
-)
+import matplotlib.dates as mdates
+import matplotlib.pyplot as plt 
+import numpy as np
+import os
+import logging
+import shared
+
 from PySide6.QtCore import QTimer, Qt, Signal
 from PySide6.QtGui import QFont, QBrush, QColor, QIntValidator, QPixmap
 from mpl_toolkits.mplot3d import Axes3D 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from datetime import datetime, timedelta
-import matplotlib.dates as mdates
-import matplotlib.pyplot as plt 
-import numpy as np
-import os
-import logging
-from collections import deque  # Added for efficient data handling
-import shared
+from collections import deque 
+from shared import logger, P1, P2, H1, H2, MONO, START, STOP, FOOTER
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit,
+    QComboBox, QCheckBox, QGridLayout, QDialog, QDialogButtonBox, QMessageBox, QSizePolicy
+)
 from functions import (
     load_histogram_3d, 
     get_options_3d, 
@@ -47,30 +49,34 @@ class Tab3(QWidget):
 
     def init_ui(self):
         # Main layout for the entire widget
-        layout = QHBoxLayout(self)
+        main_layout = QVBoxLayout(self)     
+        tab3_layout = QHBoxLayout()         
+        main_layout.addLayout(tab3_layout) 
 
         # LEFT SIDE PANEL: Split into top/middle/bottom sections
         left_panel_layout = QVBoxLayout()
         control_widget = QWidget()
         control_widget.setLayout(left_panel_layout)
-        layout.addWidget(control_widget, stretch=1)
+        tab3_layout.addWidget(control_widget, stretch=1)
 
         # 1. Top Section — Start/Stop controls and settings
         top_section = QWidget()
         top_layout = QGridLayout(top_section)
 
         self.start_button = QPushButton("START")
-        self.start_button.setStyleSheet("background-color: green; color: white; font-weight: bold;")
+        self.start_button.setStyleSheet(START)
         self.start_button.clicked.connect(self.confirm_overwrite)
         self.start_text = QLabel()
         self.counts_display = QLabel()
+        self.counts_display.setStyleSheet(H1)
         self.max_counts_input = QLineEdit(str(shared.max_counts))
 
         self.stop_button = QPushButton("STOP")
-        self.stop_button.setStyleSheet("background-color: red; color: white; font-weight: bold;")
+        self.stop_button.setStyleSheet(STOP)
         self.stop_button.clicked.connect(self.stop)
         self.stop_text = QLabel()
         self.elapsed_display = QLabel()
+        self.elapsed_display.setStyleSheet(H1)
         self.max_seconds_input = QLineEdit(str(shared.max_seconds))
 
         # Create a horizontal layout for the file selection row
@@ -91,12 +97,8 @@ class Tab3(QWidget):
         file_row.addWidget(self.filename_dropdown)
         file_row.addWidget(self.filename_input)
 
-        # Add the row to your control panel layout (assumes QGridLayout)
-        top_layout.addLayout(file_row, 6, 0, 1, 2)
-
-
-
         self.t_interval_input = QLineEdit(str(shared.t_interval))
+
         self.channel_dropdown = QComboBox()
         self.channel_dropdown.addItem("64", 64)
         self.channel_dropdown.addItem("128", 128)
@@ -106,8 +108,6 @@ class Tab3(QWidget):
         if index != -1:
             self.channel_dropdown.setCurrentIndex(index)
         self.channel_dropdown.currentIndexChanged.connect(self.update_bins_3d)
-
-
 
         self.epb_switch = QCheckBox("Energy by bin")
         self.epb_switch.setChecked(shared.epb_switch)
@@ -146,7 +146,6 @@ class Tab3(QWidget):
         text =  """
                 This section is for information about how to use the 3d spectrum efficiently and what user can do to get better results from their experiments. 
                 """
-
 
         # 2. Middle Section — Instructions
         middle_section = QWidget()
@@ -194,7 +193,19 @@ class Tab3(QWidget):
         # Force an initial draw
         self.canvas.draw()
 
-        layout.addWidget(self.canvas, stretch=2)
+        tab3_layout.addWidget(self.canvas, stretch=2)
+
+
+        #=================
+        # FOOTER
+        #=================
+        footer = QLabel(FOOTER)
+        footer.setStyleSheet("padding: 6px; background: #eee;")
+        footer.setAlignment(Qt.AlignCenter)
+        footer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        footer.setStyleSheet(H1)
+        main_layout.addWidget(footer)  # Add the footer to the bottom
+
 
     def handle_file_selection(self, index):
         if index == 0:
@@ -264,7 +275,7 @@ class Tab3(QWidget):
             self.refresh_timer.start(shared.t_interval * 1000)
             shared.save_settings()
             start_recording(3)
-            self.start_text.setText("Started recording")
+            #self.start_text.setText("Started recording")
             # Clear plot data on start to reset
             self.plot_data.clear()
             self.time_stamps.clear()
@@ -275,7 +286,7 @@ class Tab3(QWidget):
     def stop(self):
         self.refresh_timer.stop()
         stop_recording()
-        self.stop_text.setText("Recording stopped")
+        #self.stop_text.setText("Recording stopped")
 
     
     def update_bins_3d(self):
@@ -299,7 +310,10 @@ class Tab3(QWidget):
             self.ax.set_zlabel('Counts')
             self.canvas.draw()
 
-            logger.info(f"Updated shared.bins_3d → {shared.bins_3d}")
+            shared.bin_size_3d = shared.bin_size * (shared.bins/shared.bins_3d)
+
+            logger.info(f"Updated shared.bins_3d → {shared.bins_3d}\n")
+            logger.info(f"shared.bin_size_3d → {shared.bin_size_3d}\n")
 
 
 
