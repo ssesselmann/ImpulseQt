@@ -35,7 +35,7 @@ from functions import (
     read_flag_data
     )
 from audio_spectrum import play_wav_file
-from shared import logger
+from shared import logger, P1, P2, H1, H2, MONO, START, STOP, FOOTER
 from pathlib import Path
 from calibration_popup import CalibrationPopup
 
@@ -70,14 +70,13 @@ class Tab2(QWidget):
     def __init__(self):
         super().__init__()
 
-        layout = QVBoxLayout()
+        tab2_layout = QVBoxLayout()
 
         # === Plot ===
         self.plot_timer = QTimer()
         self.plot_timer.timeout.connect(self.update_histogram)
         self.plot_widget = pg.PlotWidget(title="2D Count Rate Histogram")
         self.hist_curve = self.plot_widget.plot(shared.histogram, pen='b')
-        self.hist_curve_2 = None  # Will hold the comparison plot
         self.hist_curve_2 = self.plot_widget.plot([], pen=pg.mkPen("r", width=1.5))  # comparison in red
         self.diff_curve = None  # Holds the plotted difference line
         self.plot_widget.setBackground('w')
@@ -88,7 +87,7 @@ class Tab2(QWidget):
         self.plot_widget.addItem(self.vline, ignoreBounds=True)
         self.plot_widget.addItem(self.hline, ignoreBounds=True)
         self.plot_widget.scene().sigMouseMoved.connect(self.on_mouse_moved)
-        layout.addWidget(self.plot_widget)
+        tab2_layout.addWidget(self.plot_widget)
 
         # === 9x4 Grid ===
         grid = QGridLayout()
@@ -99,14 +98,14 @@ class Tab2(QWidget):
             grid.setColumnStretch(i, 1)
 
         # Col 1 Row 1 --------------------------------------------------------------------------
-        self.btn_start = QPushButton("Start")
-        self.btn_start.setStyleSheet("background-color: green; color: white; font-weight: bold;")
+        self.btn_start = QPushButton("START")
+        self.btn_start.setStyleSheet(START)
         self.btn_start.clicked.connect(self.on_start_clicked)
         grid.addWidget(self.labeled_input("Start", self.btn_start), 0, 0)
 
         # Col 1 Row 2
         self.counts_label = QLabel("0")
-        self.counts_label.setStyleSheet("font-weight: bold; font-size: 16px;")
+        self.counts_label.setStyleSheet(H1)
         self.counts_label.setAlignment(Qt.AlignCenter)
         grid.addWidget(self.labeled_input("Total counts", self.counts_label), 1, 0)
 
@@ -122,14 +121,14 @@ class Tab2(QWidget):
 
 
         # Col 2 Row 1 ------------------------------------------------------------------------
-        self.btn_stop = QPushButton("Stop")
-        self.btn_stop.setStyleSheet("background-color: red; color: white; font-weight: bold;")
+        self.btn_stop = QPushButton("STOP")
+        self.btn_stop.setStyleSheet(STOP)
         self.btn_stop.clicked.connect(self.on_stop_clicked)
         grid.addWidget(self.labeled_input("Stop", self.btn_stop), 0, 1)
 
         # Col 2 Row 1
         self.elapsed_label = QLabel("0")
-        self.elapsed_label.setStyleSheet("font-weight: bold; font-size: 16px;")
+        self.elapsed_label.setStyleSheet(H1)
         self.elapsed_label.setAlignment(Qt.AlignCenter)
         grid.addWidget(self.labeled_input("Elapsed time", self.elapsed_label), 1, 1)
 
@@ -153,14 +152,30 @@ class Tab2(QWidget):
         
 
         # Col 3 Row 3
-
-        positive_int_validator = QIntValidator(1, 999999)  # Adjust max as needed
-
-        # PRO wrapper=====================================================
+        positive_int_validator = QIntValidator(1, 999999)  
 
         # Initialize widget lists for visibility control
         self.pro_only_widgets = []
         self.max_only_widgets = []
+        
+        # PRO wrapper=====================================================
+        # Col 3 Row 2: PRO-only Pitch (bin-size) input
+        self.bin_size_container = QWidget()
+        self.bin_size_container.setObjectName("bin_size_container")  # For debugging
+        bin_size_layout = QVBoxLayout(self.bin_size_container)
+        bin_size_layout.setContentsMargins(0, 0, 0, 0)
+        self.bin_size = QLineEdit(str(shared.bin_size))
+        self.bin_size.setAlignment(Qt.AlignCenter)
+        self.bin_size.setToolTip("Pitch (bin-size)")
+        self.bin_size.setValidator(positive_int_validator)
+        self.bin_size.textChanged.connect(lambda text: self.on_text_changed(text, "bin_size"))
+        bin_size_layout.addWidget(self.labeled_input("Pitch (bin size)", self.bin_size))
+        grid.addWidget(self.bin_size_container, 1, 2)
+        self.pro_only_widgets.append(self.bin_size_container)
+        # PRO CLOSE WRAPPER ===============================================
+
+
+        # PRO wrapper=====================================================
 
         # Col 3 Row 3: PRO-only bins container
         self.bins_container = QWidget()
@@ -182,7 +197,7 @@ class Tab2(QWidget):
         self.select_file = QComboBox()
         self.select_file.setEditable(False)
         self.select_file.setInsertPolicy(QComboBox.NoInsert)
-        self.select_file.setStyleSheet("font-weight: bold;")
+        self.select_file.setStyleSheet(P2)
         self.select_file.addItem("— Select file —", "")
         options = []
         options = get_options()
@@ -193,7 +208,6 @@ class Tab2(QWidget):
 
     
         # Col 4 Row 1 -------------------------------------------------------------------
-
         # PRO wrapper for threshold field =========================================
         self.threshold_container = QWidget()
         self.threshold_container.setObjectName("threshold_container")  # For debugging
@@ -237,7 +251,7 @@ class Tab2(QWidget):
         self.select_comparison = QComboBox()
         self.select_comparison.setEditable(False)
         self.select_comparison.setInsertPolicy(QComboBox.NoInsert)
-        self.select_comparison.setStyleSheet("font-weight: bold;")
+        self.select_comparison.setStyleSheet(P2)
         options = get_filename_2_options()
         for opt in options:
             self.select_comparison.addItem(opt['label'], opt['value'])
@@ -272,7 +286,7 @@ class Tab2(QWidget):
         self.select_flags = QComboBox()
         self.select_flags.setEditable(False)
         self.select_flags.setInsertPolicy(QComboBox.NoInsert)
-        self.select_flags.setStyleSheet("font-weight: bold;")
+        self.select_flags.setStyleSheet(P2)
         options = get_flag_options()
         for opt in options:
             self.select_flags.addItem(opt['label'], opt['value'])
@@ -295,7 +309,7 @@ class Tab2(QWidget):
 
         # Col 6 Row 3
         self.cal_switch = QCheckBox()
-        self.cal_switch.setChecked(shared.log_switch) 
+        self.cal_switch.setChecked(shared.cal_switch) 
         self.cal_switch.setToolTip("Calibration on")
         self.cal_switch.stateChanged.connect(lambda state: self.on_checkbox_toggle(state, "cal_switch"))
         grid.addWidget(self.labeled_input("Calibration on", self.cal_switch), 2, 5)
@@ -316,7 +330,7 @@ class Tab2(QWidget):
         self.sigma_slider.setFocus()
         self.sigma_label = QLabel(f"Sigma: {shared.sigma:.1f}")
         self.sigma_label.setAlignment(Qt.AlignCenter)
-        self.sigma_label.setStyleSheet("font-size: 10pt; color: #777;")
+        self.sigma_label.setStyleSheet(P1)
         sigma_layout = QVBoxLayout()
         sigma_layout.addWidget(self.sigma_label)
         sigma_layout.addWidget(self.sigma_slider)
@@ -335,10 +349,10 @@ class Tab2(QWidget):
         self.peakfinder_slider.setFocus()
         self.peakfinder_label = QLabel(f"Peakfinder: {shared.peakfinder}")
         self.peakfinder_label.setAlignment(Qt.AlignCenter)
-        font = QFont()
+        font = QFont("Courier New")
         font.setPointSize(9)
         self.peakfinder_label.setFont(font)
-        self.peakfinder_label.setStyleSheet("color: #777;")
+        self.peakfinder_label.setStyleSheet(P1)
         peakfinder_layout = QVBoxLayout()
         peakfinder_layout.addWidget(self.peakfinder_label)
         peakfinder_layout.addWidget(self.peakfinder_slider)
@@ -350,7 +364,7 @@ class Tab2(QWidget):
         # Col 7 Row 3
         self.poly_label = QLabel(f"E = {round(shared.coeff_1,2)}x² + {round(shared.coeff_2,2)}x + {round(shared.coeff_3,2)}")
         self.poly_label.setAlignment(Qt.AlignCenter)
-        font = QFont()
+        font = QFont("Courier New")
         font.setPointSize(9)
         self.poly_label.setFont(font)
         self.poly_label.setStyleSheet("color: #444; font-style: italic;")
@@ -372,7 +386,7 @@ class Tab2(QWidget):
         self.notes_input.setPlaceholderText("Enter notes about this spectrum...")
         self.notes_input.setToolTip("These notes are saved in the spectrum file")
         self.notes_input.setFixedWidth(260)  # Optional: adjust width
-        self.notes_input.setStyleSheet("font-family: monospace;")
+        self.notes_input.setStyleSheet(MONO)
 
         # Optional: set existing value if shared.spec_notes is loaded
         self.notes_input.setText(shared.spec_notes)
@@ -402,6 +416,7 @@ class Tab2(QWidget):
         self.bins_container,
         self.threshold_container,
         self.tolerance_container,
+        self.bin_size_container
         ]
         self.update_widget_visibility()
 
@@ -410,21 +425,21 @@ class Tab2(QWidget):
         self.label_timer.timeout.connect(self.update_labels)
         self.label_timer.start(1000)  # update every 1 second
 
-        layout.addLayout(grid)
+        tab2_layout.addLayout(grid)
 
         #=================
         # FOOTER
         #=================
-        footer = QLabel(f"impulse v.{shared.__version__}")
+        footer = QLabel(FOOTER)
         footer.setStyleSheet("padding: 6px; background: #eee;")
         footer.setAlignment(Qt.AlignCenter)
         footer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        footer.setStyleSheet("background-color: #0066D1; color: white; font-weight:bold; padding: 5px;")
-        layout.addWidget(footer)
+        footer.setStyleSheet(H1)
+        tab2_layout.addWidget(footer)
 
         
 
-        self.setLayout(layout)
+        self.setLayout(tab2_layout)
 
     # === Timer to update live data ===
         self.timer = QTimer()
@@ -552,9 +567,6 @@ class Tab2(QWidget):
                     brush=QBrush(QColor(255, 0, 0, 80))  # semi-transparent red
                 )
 
-
-
-
             # Optional: peak markers
             if shared.sigma > 0:
                 self.update_peak_markers()
@@ -571,6 +583,7 @@ class Tab2(QWidget):
 
     @Slot()
     def on_start_clicked(self):
+        print("tab2 on_start_clicked)")
         filename = self.filename_input.text().strip()
         file_path = os.path.join(shared.USER_DATA_DIR, f"{filename}.json")
 
@@ -579,6 +592,7 @@ class Tab2(QWidget):
             return
 
         if os.path.exists(file_path):
+            print(f"path exists: {file_path}")
             reply = QMessageBox.question(
                 self, "Confirm Overwrite",
                 f'"{filename}.json" already exists. Overwrite?',
@@ -609,11 +623,12 @@ class Tab2(QWidget):
         self.gauss_curve = None
 
     def start_recording_2d(self, filename):
+        print(f"start_recording_2d {filename}")
         try:
-            dn = shared.device
+            dn  = shared.device
             coi = shared.coi_switch 
             compression = shared.compression
-            t_interval = shared.t_interval
+            t_interval  = shared.t_interval
 
             mode = 4 if coi else 2
 
@@ -633,10 +648,9 @@ class Tab2(QWidget):
                 shproto.dispatcher.process_01(filename, compression, "MAX", t_interval)
 
             else:
+                print("start_recording(2)")
                 start_recording(mode=2)  # fallback
-
-            shared.recording = True
-            self.plot_timer.start(1000)
+                shared.recording = True
 
         except Exception as e:
             QMessageBox.critical(self, "Start Error", f"Error starting: {str(e)}")    
@@ -669,8 +683,17 @@ class Tab2(QWidget):
                 logger.error(f"[ERROR] Failed to load comparison spectrum: {shared.filename_2}")
 
 
-    def on_text_changed(self, text, field_name):
-        setattr(shared, field_name, text.strip())
+    def on_text_changed(self, text, key):
+        try:
+            if key in {"bin_size", "tolerance", "threshold"}:
+                setattr(shared, key, float(text))
+            elif key in {"bins", "max_counts", "max_seconds"}:
+                setattr(shared, key, int(text))
+            else:
+                setattr(shared, key, text)
+        except ValueError:
+            pass  # optionally handle conversion error
+
 
     def on_select_filename_changed(self, index):
         filepath = self.select_file.itemData(index)
@@ -803,7 +826,7 @@ class Tab2(QWidget):
 
                 # Draw label
                 label = pg.TextItem(text=label_text, anchor=(0, 0), color="k")
-                font = QFont()
+                font = QFont("Courier New")
                 font.setPointSize(10)
                 label.setFont(font)
                 label.setPos(x_pos, y)
