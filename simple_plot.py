@@ -1,8 +1,11 @@
+# simple_plot.py
 import sys
-from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel
-from PySide6.QtCore import Qt
 import pyqtgraph as pg
 import numpy as np
+
+from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel
+from PySide6.QtCore import Qt
+from shared import logger
 
 # Configure PyQtGraph for macOS stability
 pg.setConfigOptions(
