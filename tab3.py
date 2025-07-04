@@ -119,24 +119,39 @@ class Tab3(QWidget):
         self.cal_switch.setChecked(shared.cal_switch)
 
         top_layout.addWidget(self.start_button, 0, 0)
-        top_layout.addWidget(QLabel("Max Counts"), 1, 0)
+
+        self.max_counts_label = QLabel("Max Counts")
+        self.max_counts_label.setStyleSheet(P1)
+        top_layout.addWidget(self.max_counts_label, 1, 0)
+
         top_layout.addWidget(self.max_counts_input, 2, 0)
         top_layout.addWidget(self.counts_display, 3, 0)
         top_layout.addWidget(self.start_text, 4, 0)
 
         top_layout.addWidget(self.stop_button, 0, 1)
-        top_layout.addWidget(QLabel("Max Seconds"), 1, 1)
+
+        self.max_seconds_label = QLabel("Max Seconds")
+        self.max_seconds_label.setStyleSheet(P1)
+        top_layout.addWidget(self.max_seconds_label, 1, 1)
+
         top_layout.addWidget(self.max_seconds_input, 2, 1)
         top_layout.addWidget(self.elapsed_display, 3, 1)
         top_layout.addWidget(self.stop_text, 4, 1)
 
-        top_layout.addWidget(QLabel("Select or enter file name:"), 5, 0, 1, 2)
+        self.select_filename_label = QLabel("Select or enter file name:")
+        self.select_filename_label.setStyleSheet(P1)
+        top_layout.addWidget(self.select_filename_label, 5, 0, 1, 2)
+
         top_layout.addLayout(file_row, 6, 0, 1, 2)
 
         top_layout.addWidget(QLabel("Time Interval (sec)"), 9, 0)
         top_layout.addWidget(self.t_interval_input, 9, 1)
 
-        top_layout.addWidget(QLabel("Number of channels (x)"), 10, 1)
+        
+        self.bins_label = QLabel("Number of channels (x)")
+        self.bins_label.setStyleSheet(P1)
+        top_layout.addWidget(self.bins_label, 10, 1)
+
         top_layout.addWidget(self.channel_dropdown, 11, 1)
 
         top_layout.addWidget(self.epb_switch, 10, 0)
