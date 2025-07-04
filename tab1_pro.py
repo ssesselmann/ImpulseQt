@@ -10,12 +10,28 @@ from PySide6.QtWidgets import (
     QTextEdit, QSizePolicy, QPushButton, QSlider,QCheckBox
 )
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont, QBrush, QColor, QIntValidator, QPixmap
+
 from shapecatcher import shapecatcher
 from distortionchecker import distortion_finder
+from shared import logger, P1, P2, H1, H2, MONO
+
+def styled_label(text, style=P2):
+    label = QLabel(text)
+    label.setStyleSheet(style)
+    return label
 
 class Tab1ProWidget(QWidget):
+
+    def styled_label(text, style=P2):
+        label = QLabel(text)
+        label.setStyleSheet(style)
+        return label
+
     def __init__(self):
         super().__init__()
+
+
 
         # --- Selection Controls
         self.device_selector = QComboBox()
@@ -64,15 +80,15 @@ class Tab1ProWidget(QWidget):
 
         top_controls = QHBoxLayout()
         top_controls.setSpacing(15)
-        top_controls.addWidget(QLabel("Device"))
+        top_controls.addWidget(styled_label("Device"))
         top_controls.addWidget(self.device_selector)
-        top_controls.addWidget(QLabel("Sample Rate"))
+        top_controls.addWidget(styled_label("Sample Rate"))
         top_controls.addWidget(self.sample_rate)
-        top_controls.addWidget(QLabel("Sample length"))
+        top_controls.addWidget(styled_label("Sample length"))
         top_controls.addWidget(self.sample_size)
-        top_controls.addWidget(QLabel("Stop Condition"))
+        top_controls.addWidget(styled_label("Stop Condition"))
         top_controls.addWidget(self.pulse_catcher)
-        top_controls.addWidget(QLabel("Buffer Size"))
+        top_controls.addWidget(styled_label("Buffer Size"))
         top_controls.addWidget(self.buffer_size)
         top_controls.addStretch()
 
@@ -80,14 +96,27 @@ class Tab1ProWidget(QWidget):
         self.help_text = QTextEdit()
         self.help_text.setReadOnly(True)
         self.help_text.setHtml("""
+        <center>    
         <h3>Step-by-step Instructions</h3>
+        </center>
         <ol>
-            <li>Select preferred sample rate</li>
-            <li>Choose sample size and buffer size</li>
-            <li>Capture 1000 pulses for shaping</li>
-            <li>View distortion curve to fine-tune</li>
-            <li>Move to Tab 2 when ready</li>
+            <li>Select USB AUDIO CODEC or alternative input</li>
+            <li>Select preferred sample rate higher is better.</li>
+            <li>Select sample length</li>
+            <li>Select number of pulses to average</li>
+            <li>Select buffer size </li>
+            <li>Click "Get pulse shape"...wait</li>
+            <li>If pulse shape looks good, proceed to get distortion curve</li>
+            <li>Note the y value where distortion curve goes vertical, you will need this on tab2</li>
         </ol>
+        <center>
+        <h3>Troubleshooting</h3>
+        </center>
+        * If your pulse looks distorted, try lowering the gain.<br>
+        * No pulse, check you have selected the right input <br>
+        * Nothing is working !@#$... email Steven <br>
+        <br>
+        <br>
         <p>Contact: <a href="mailto:steven@gammaspectacular.com">steven@gammaspectacular.com</a></p>
         """)
         self.help_text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -114,11 +143,11 @@ class Tab1ProWidget(QWidget):
         row_layout.addWidget(self.curve_plot, stretch=1)
 
         # --- Final layout ---
-        full_layout = QVBoxLayout()
-        full_layout.addLayout(top_controls)
-        full_layout.addLayout(row_layout)
-        full_layout.setSpacing(10)
-        full_layout.setContentsMargins(10, 10, 10, 10)
+        tab1_pro_layout = QVBoxLayout()
+        tab1_pro_layout.addLayout(top_controls)
+        tab1_pro_layout.addLayout(row_layout)
+        tab1_pro_layout.setSpacing(10)
+        tab1_pro_layout.setContentsMargins(10, 10, 10, 10)
 
         # --- Control Row Below the 3 Sections ---
         # === First row: stereo checkbox, get pulse, get curve ===
@@ -201,11 +230,14 @@ class Tab1ProWidget(QWidget):
         controls_row_2.addStretch()
 
         # === Add both rows to main layout ===
-        full_layout.addLayout(controls_row_1)
-        full_layout.addLayout(controls_row_2)
+        tab1_pro_layout.addLayout(controls_row_1)
+        tab1_pro_layout.addLayout(controls_row_2)
 
-        self.setLayout(full_layout)
+        self.setLayout(tab1_pro_layout)
         self.plot_saved_shapes()
+
+
+
 
 
     def update_device(self, index):
