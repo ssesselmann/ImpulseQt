@@ -1,12 +1,15 @@
+
+import shared  # ensure shared contains calib_bin_X, calib_e_X, coeff_X
+import numpy as np
+import json
+import shared
+
 #calibration_popup.py
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QGridLayout
 )
-import shared  # ensure shared contains calib_bin_X, calib_e_X, coeff_X
-import numpy as np
-import json
-import shared
+from shared import logger
 
 class CalibrationPopup(QDialog):
     def __init__(self, poly_label=None):
