@@ -9,7 +9,7 @@ import queue
 import shared
 import functions as fn
 
-logger = logging.getLogger(__name__)
+from shared import logger
 
 # Function to save data in a separate thread
 def save_data(save_queue):
@@ -19,7 +19,7 @@ def save_data(save_queue):
             break
         t0                  = data['t0']
         t1                  = data['t1']
-        bins                = data['bins']
+        bins                = int(data['bins'])
         local_counts        = data['local_counts']
         dropped_counts      = data['dropped_counts']
         local_elapsed       = data['local_elapsed']
@@ -45,6 +45,7 @@ def save_data(save_queue):
 
 # Function reads audio stream and finds pulses then outputs time, pulse height, and distortion
 def pulsecatcher(mode, run_flag, run_flag_lock):
+
     # Start timer
     t0                  = datetime.datetime.now()
     time_start          = time.time()
@@ -93,9 +94,7 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
         shared.count_history   = []
 
     if mode == 3:
-        bins = shared.bins_3d
-        bin_size = shared.bin_size * (shared.bins / shared.bins_3d)
-
+        bin_size = shared.bin_size_3d
 
     # Fixed variables
     right_threshold = 1000  # Threshold for right channel   
@@ -189,6 +188,7 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
                     dropped_counts += 1
 
                 elif distortion < tolerance:
+
                     bin_index = int(height / bin_size)
 
                     if bin_index < bins:
@@ -268,3 +268,5 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
     p.terminate()  # closes stream when done
     shared.run_flag.clear()  # Ensure the CPS thread also stops
     return
+
+
