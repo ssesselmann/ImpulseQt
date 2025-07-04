@@ -30,7 +30,7 @@ H1 = "font-family: Helvetica, sans-serif; font-size: 18pt; font-weight: bold; co
 H2 = "font-family: Helvetica, sans-serif; font-size: 12pt; font-weight: bold; color: #333;"
 
 # Monospace 
-MONO = "font-family: Consolas, Menlo, Courier New; font-size: 10pt; color: #555;"
+MONO = "font-family: Menlo, Courier New; font-size: 10pt; color: #555;"
 
 START = "background-color: green; color: white; font-weight: bold;"
 
