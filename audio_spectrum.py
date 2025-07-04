@@ -5,7 +5,9 @@ import scipy.io.wavfile as wavfile
 import pyaudio
 import wave
 import shared
+
 from functions import peak_finder
+from shared import logger
 
 def find_peaks(histogram, threshold_factor=0.01):
     """
