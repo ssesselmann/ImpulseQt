@@ -32,6 +32,7 @@ from datetime import datetime
 from urllib.request import urlopen
 from shproto.dispatcher import process_03, start
 from pathlib import Path
+from shared import logger
 
 logger          = logging.getLogger(__name__)
 cps_list        = []
@@ -129,7 +130,7 @@ def write_histogram_npesv2(t0, t1, bins, counts, dropped_counts, elapsed, filena
 
 
 # Function to create a blank JSON NPESv2 schema filename_3d.json
-def write_blank_json_schema(filename, device):
+def write_blank_json_schema_3d(filename, device):
     jsonfile = get_path(f'{shared.USER_DATA_DIR}/{filename}_3d.json')
     data = {
         "schemaVersion": "NPESv2",
@@ -243,7 +244,6 @@ def update_json_3d_file(t0, t1, bins, counts, elapsed, filename_3d, last_histogr
 
 # This function writes counts per second to JSON
 def write_cps_json(filename, count_history, elapsed, valid_counts, dropped_counts):
-
     data_directory = shared.USER_DATA_DIR
     cps_file_path = os.path.join(data_directory, f"{filename}_cps.json")
     # Ensure count_history is a flat list of integers
@@ -396,16 +396,18 @@ def gaussian_correl(data, sigma):
 
 def start_recording(mode):
 
-    logger.info(f'functions start_recording({mode})\n')
-
     with shared.write_lock:
         filename    = shared.filename
         device      = shared.device
         shared.run_flag.clear()
 
     clear_shared(mode)
-    write_blank_json_schema(filename, device)
+
+    if mode == 3:
+        write_blank_json_schema_3d(filename, device)
+
     write_cps_json(filename, [[0]], 0, 0, 0)
+
 
     with shared.run_flag_lock:
         shared.run_flag.set()  # Set the run flag
@@ -417,6 +419,8 @@ def start_recording(mode):
         try:
             if callable(pulsecatcher):
                 thread = threading.Thread(target=pulsecatcher, args=(mode, shared.run_flag, shared.run_flag_lock))
+                thread.start()
+
                 thread.start()
                 logger.info("2D spectrum recording thread started.\n")
             else:
@@ -452,6 +456,7 @@ def stop_recording():
 # clear variables
 def clear_shared(mode):
     logger.info('1..running clear_shared\n')
+    logger.info(f'2..shared.bins = {shared.bins}\n')
     if mode == 2:
         with shared.write_lock:
             shared.count_history   = []
