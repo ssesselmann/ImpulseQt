@@ -10,6 +10,34 @@ from threading import Lock, Event
 from PySide6.QtCore import QStandardPaths
 from default_settings import DEFAULT_SETTINGS
 
+# --------------------
+# Versioning
+__version__ = "3.0.0"
+# --------------------
+
+SETTINGS = {}  
+
+# -------------
+# FONTS
+# --------------
+
+# Paragraphs
+P1 = "font-family: Verdana, sans-serif; font-size: 10pt; color: #666;"   # Small, light text
+P2 = "font-family: Verdana, sans-serif; font-size: 12pt; color: #444;"  # Medium paragraph
+
+# Headings
+H1 = "font-family: Helvetica, sans-serif; font-size: 18pt; font-weight: bold; color: #0055FF;"
+H2 = "font-family: Helvetica, sans-serif; font-size: 12pt; font-weight: bold; color: #333;"
+
+# Monospace 
+MONO = "font-family: Consolas, Menlo, Courier New; font-size: 10pt; color: #555;"
+
+START = "background-color: green; color: white; font-weight: bold;"
+
+STOP = "background-color: red; color: white; font-weight: bold;"
+
+FOOTER = f"IMPULSE V {__version__} - Science for good - Gammaspectacular.com"
+
 # -------------------------------
 # Paths & Directories
 # -------------------------------
@@ -39,21 +67,19 @@ else:
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 log_file = LOG_DIR / "impulseqt_log.txt"
 
-# Set root logging level and format early
-logging.basicConfig(level=logging.WARNING)
+# Set root logger to DEBUG
+logging.basicConfig(level=logging.DEBUG)
 
-# Suppress noisy matplotlib loggers
+# Suppress noisy loggers
 logging.getLogger('matplotlib').setLevel(logging.WARNING)
 logging.getLogger('matplotlib.font_manager').setLevel(logging.ERROR)
-
-# Prevent matplotlib log propagation to root logger
 logging.getLogger('matplotlib.font_manager').propagate = False
 
-# Custom application logger
+# Create app logger
 logger = logging.getLogger("ImpulseLogger")
 logger.setLevel(logging.DEBUG)
+logger.propagate = False  # Optional: disable bubbling to root
 
-# Avoid duplicate handlers
 if not logger.handlers:
     fh = logging.FileHandler(log_file, mode='w', encoding='utf-8')
     fh.setLevel(logging.DEBUG)
@@ -61,6 +87,7 @@ if not logger.handlers:
     fh.setFormatter(formatter)
     logger.addHandler(fh)
 
+logger.debug("Logger is ready.")
 
 # -------------------------------
 # Environment: Development or Frozen
@@ -231,87 +258,183 @@ window_pos_y = 0
 window_width = 0
 window_height = 0
 
-# --- Versioning ---
-__version__ = "3.0.0"
+
 
 # -------------------------------
 # Settings Keys & Persistence
 # -------------------------------
 
-SETTINGS_KEYS = [
-    "bin_size", "bin_size_2", "bin_size_3d", "bins", "bins_2", "bins_3d",
-    "cached_device_info", "cached_device_info_ts", "cal_switch",
-    "calib_bin_1", "calib_bin_2", "calib_bin_3", "calib_bin_4", "calib_bin_5",
-    "calib_e_1", "calib_e_2", "calib_e_3", "calib_e_4", "calib_e_5",
-    "chunk_size", "coeff_1", "coeff_2", "coeff_3",
-    "coefficients_1", "coefficients_2", "coefficients_3d",
-    "coi_switch", "coi_window", "compression", "compression3d",
-    "count_history", "counts", "counts_2", "cps",
-    "device", "device_type", "dropped_counts",
-    "elapsed", "elapsed_2", "elapsed_3d", "endTime3d", "epb_switch",
-    "filename", "filename_2", "filename_3d", "flags_selected", "flip",
-    "histogram", "histogram_2", "histogram_3d",
-    "log_switch", "comp_switch", "diff_switch",
-    "max_bins", "max_counts", "max_pulse_height", "max_pulse_length", "max_seconds",
-    "peakfinder", "peakshift", "polynomial_fn",
-    "mean_shape_left", "mean_shape_right",
-    "distortion_list_left", "distortion_list_right", "isotope_flags", "rolling_interval",
-    "sample_length", "sample_rate", "serial_number",
-    "shape_lld", "shape_uld", "shapecatches", "sigma", "spec_notes",
-    "startTime3d", "stereo", "suppress_last_bin", "t_interval",
-    "tempcal_base_value", "tempcal_cancelled", "tempcal_delta",
-    "tempcal_num_runs", "tempcal_peak_search_range",
-    "tempcal_poll_interval_sec", "tempcal_smoothing_sigma",
-    "tempcal_spectrum_duration_sec", "tempcal_stability_tolerance",
-    "tempcal_stability_window_sec", "tempcal_table",
-    "theme", "threshold", "tolerance", "iso_switch",
-    "window_pos_x", "window_pos_y", "window_width", "window_height"
-]
+SETTINGS_SCHEMA = {
+    "bin_size": {"type": "float", "default": 0.0},
+    "bin_size_2": {"type": "float", "default": 0.0},
+    "bin_size_3d": {"type": "float", "default": 0.0},
+    "bins": {"type": "int", "default": 0},
+    "bins_2": {"type": "int", "default": 0},
+    "bins_3d": {"type": "int", "default": 0},
+    "cached_device_info": {"type": "str", "default": ""},
+    "cached_device_info_ts": {"type": "int", "default": 0},
+    "cal_switch": {"type": "bool", "default": False},
+    "calib_bin_1": {"type": "float", "default": 0.0},
+    "calib_bin_2": {"type": "float", "default": 0.0},
+    "calib_bin_3": {"type": "float", "default": 0.0},
+    "calib_bin_4": {"type": "float", "default": 0.0},
+    "calib_bin_5": {"type": "float", "default": 0.0},
+    "calib_e_1": {"type": "float", "default": 0.0},
+    "calib_e_2": {"type": "float", "default": 0.0},
+    "calib_e_3": {"type": "float", "default": 0.0},
+    "calib_e_4": {"type": "float", "default": 0.0},
+    "calib_e_5": {"type": "float", "default": 0.0},
+    "chunk_size": {"type": "int", "default": 0},
+    "coeff_1": {"type": "float", "default": []},
+    "coeff_2": {"type": "float", "default": []},
+    "coeff_3": {"type": "float", "default": []},
+    "coefficients_1": {"type": "list", "default": []},
+    "coefficients_2": {"type": "list", "default": []},
+    "coefficients_3d": {"type": "list", "default": []},
+    "coi_switch": {"type": "bool", "default": False},
+    "coi_window": {"type": "int", "default": 0},
+    "compression": {"type": "float", "default": 1.0},
+    "compression3d": {"type": "float", "default": 1.0},
+    "count_history": {"type": "list", "default": []},
+    "counts": {"type": "int", "default": 0},
+    "counts_2": {"type": "int", "default": 0},
+    "cps": {"type": "int", "default": 0},
+    "device": {"type": "int", "default": 0},
+    "device_type": {"type": "str", "default": "PRO"},
+    "dropped_counts": {"type": "int", "default": 0},
+    "elapsed": {"type": "int", "default": 0},
+    "elapsed_2": {"type": "int", "default": 0},
+    "elapsed_3d": {"type": "int", "default": 0},
+    "endTime3d": {"type": "str", "default": ""},
+    "epb_switch": {"type": "bool", "default": False},
+    "filename": {"type": "str", "default": ""},
+    "filename_2": {"type": "str", "default": ""},
+    "filename_3d": {"type": "str", "default": ""},
+    "flags_selected": {"type": "list", "default": []},
+    "flip": {"type": "int", "default": 11},
+    "histogram": {"type": "list", "default": []},
+    "histogram_2": {"type": "list", "default": []},
+    "histogram_3d": {"type": "list", "default": []},
+    "log_switch": {"type": "bool", "default": False},
+    "comp_switch": {"type": "bool", "default": False},
+    "diff_switch": {"type": "bool", "default": False},
+    "max_bins": {"type": "int", "default": 4096},
+    "max_counts": {"type": "int", "default": 10000},
+    "max_pulse_height": {"type": "int", "default": 32767},
+    "max_pulse_length": {"type": "int", "default": 100},
+    "max_seconds": {"type": "int", "default": 600},
+    "peakfinder": {"type": "str", "default": "simple"},
+    "peakshift": {"type": "int", "default": 0},
+    "polynomial_fn": {"type": "list", "default": []},
+    "mean_shape_left": {"type": "list", "default": []},
+    "mean_shape_right": {"type": "list", "default": []},
+    "distortion_list_left": {"type": "list", "default": []},
+    "distortion_list_right": {"type": "list", "default": []},
+    "isotope_flags": {"type": "dict", "default": {}},
+    "rolling_interval": {"type": "int", "default": 60},
+    "sample_length": {"type": "int", "default": 40},
+    "sample_rate": {"type": "int", "default": 44100},
+    "serial_number": {"type": "str", "default": ""},
+    "shape_lld": {"type": "int", "default": 0},
+    "shape_uld": {"type": "int", "default": 4096},
+    "shapecatches": {"type": "int", "default": 0},
+    "sigma": {"type": "float", "default": 1.0},
+    "spec_notes": {"type": "str", "default": ""},
+    "startTime3d": {"type": "str", "default": ""},
+    "stereo": {"type": "bool", "default": False},
+    "suppress_last_bin": {"type": "bool", "default": False},
+    "t_interval": {"type": "int", "default": 1},
+    "tempcal_base_value": {"type": "float", "default": 0.0},
+    "tempcal_cancelled": {"type": "bool", "default": False},
+    "tempcal_delta": {"type": "float", "default": 0.0},
+    "tempcal_num_runs": {"type": "int", "default": 0},
+    "tempcal_peak_search_range": {"type": "int", "default": 10},
+    "tempcal_poll_interval_sec": {"type": "int", "default": 5},
+    "tempcal_smoothing_sigma": {"type": "float", "default": 1.0},
+    "tempcal_spectrum_duration_sec": {"type": "int", "default": 10},
+    "tempcal_stability_tolerance": {"type": "float", "default": 0.1},
+    "tempcal_stability_window_sec": {"type": "int", "default": 60},
+    "tempcal_table": {"type": "list", "default": []},
+    "theme": {"type": "str", "default": "light"},
+    "threshold": {"type": "int", "default": 1000},
+    "tolerance": {"type": "float", "default": 1.0},
+    "iso_switch": {"type": "bool", "default": False},
+    "window_pos_x": {"type": "int", "default": 100},
+    "window_pos_y": {"type": "int", "default": 100},
+    "window_width": {"type": "int", "default": 800},
+    "window_height": {"type": "int", "default": 600}
+}
+
 
 def to_settings():
-    return {key: globals().get(key) for key in SETTINGS_KEYS}
+    return {key: globals().get(key, meta["default"]) for key, meta in SETTINGS_SCHEMA.items()}
+
 
 def from_settings(settings: dict):
     if not isinstance(settings, dict):
         logger.error("[from_settings] ERROR: settings is not a dictionary.")
         return
-    for key in SETTINGS_KEYS:
-        if key in settings:
-            try:
-                globals()[key] = settings[key]
-            except Exception as e:
-                logger.info(f"[from_settings] WARNING: Could not set {key}: {e}")
+
+    for key, meta in SETTINGS_SCHEMA.items():
+        expected_type = meta["type"]
+        default_value = meta["default"]
+
+        raw_value = settings.get(key, default_value)
+
+        try:
+            # Type conversion based on schema
+            if expected_type == "int":
+                value = int(raw_value)
+            elif expected_type == "float":
+                value = float(raw_value)
+            elif expected_type == "bool":
+                value = bool(raw_value)
+            elif expected_type == "str":
+                value = str(raw_value)
+            elif expected_type == "list":
+                value = list(raw_value)
+            elif expected_type == "dict":
+                value = dict(raw_value)
+            else:
+                value = raw_value  # Fallback, unknown type
+
+            globals()[key] = value  # Assign as simple variable
+            SETTINGS[key] = value   # Optional: keep in SETTINGS dict too
+
+        except Exception as e:
+            logger.warning(f"[from_settings] Failed to load '{key}' as {expected_type}. Using default. Error: {e}")
+            globals()[key] = default_value
+            SETTINGS[key] = default_value
+
 
 def load_settings():
     try:
         with open(SETTINGS_FILE, "r") as f:
-            settings = json.load(f)
-            from_settings(settings)
+            loaded = json.load(f)
+            from_settings(loaded)
             logger.info("Settings loaded successfully.")
     except Exception as e:
-        logger.warning("Using defaults due to settings load failure.")
+        logger.warning(f"[load_settings] Using defaults due to error: {e}")
+        from_settings({})  # fallback to defaults
 
 def save_default_settings():
-    with write_lock:
-        try:
-            with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
-                json.dump(DEFAULT_SETTINGS, f, indent=2)
-            logger.info("Default settings saved successfully.")
-        except Exception as e:
-            logger.error(f"[save_default_settings] Error saving default settings: {e}")
+    try:
+        defaults = {k: v["default"] for k, v in SETTINGS_SCHEMA.items()}
+        with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+            json.dump(defaults, f, indent=2)
+        logger.info("Default settings saved successfully.")
+    except Exception as e:
+        logger.error(f"[save_default_settings] Error: {e}")
 
 def save_settings():
-    with write_lock:
-        try:
-            settings = to_settings()
-            with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
-                json.dump(settings, f, indent=2)
-            logger.info("Runtime settings saved successfully.")
-        except Exception as e:
-            logger.error(f"[save_settings] Error saving runtime settings: {e}")
-            
+    try:
+        with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+            json.dump(to_settings(), f, indent=2)
+        logger.info("Runtime settings saved successfully.")
+    except Exception as e:
+        logger.error(f"[save_settings] Error: {e}")
+
 def ensure_settings_exists():
-    """Check if settings file exists; if not, save default settings."""
     if not SETTINGS_FILE.exists():
-        logger.info("No settings file found, writing default settings...")
+        logger.info("No settings file found. Saving default settings...")
         save_default_settings()
