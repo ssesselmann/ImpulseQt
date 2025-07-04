@@ -4,9 +4,7 @@ import logging
 import functions as fn
 import shared
 
-# Setup logging
-logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.DEBUG)
+from shared import logger
 
 # Function to catch pulses and output time, pulse height, and distortion
 def distortion_finder(stereo):
