@@ -8,9 +8,11 @@ from PySide6.QtWidgets import (
     QFrame, QHBoxLayout, QSizePolicy, QApplication, QMessageBox
 )
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont, QBrush, QColor, QIntValidator, QPixmap
 from tab1_pro import Tab1ProWidget 
 from tab1_max import Tab1MaxWidget
-from shared import logger
+from shared import logger, P1, P2, H1, H2, MONO, FOOTER
+
 
 class Tab1(QWidget):
     def __init__(self):
@@ -18,7 +20,9 @@ class Tab1(QWidget):
         device_type = shared.device_type
 
         # === Top controls ===
-        header_label = QLabel("Change Device Type and restart:")
+        
+        header_label = QLabel("Select device and restart:")
+        header_label.setStyleSheet(P2)
         header_label.setAlignment(Qt.AlignLeft)
 
         self.selector = QComboBox()
@@ -37,26 +41,28 @@ class Tab1(QWidget):
         self.main_area = QFrame()
         self.main_area.setFrameShape(QFrame.StyledPanel)
         self.main_area.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.main_layout = QVBoxLayout(self.main_area)
+        self.main_layout = QVBoxLayout()
+        self.main_area.setLayout(self.main_layout)
 
         # Load the appropriate widget at startup
         self.set_main_content(device_type)
 
         # === Footer/banner ===
-        footer = QLabel("IMPULSE — Gamma Spectrometry System")
+        footer = QLabel(FOOTER)
         footer.setFixedHeight(30)
         footer.setAlignment(Qt.AlignCenter)
-        footer.setStyleSheet("background-color: #0066D1; color: white; padding: 5px;")
+        footer.setStyleSheet(H1)
 
         # === Full layout ===
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(10)
-        layout.addLayout(header_layout)
-        layout.addWidget(self.main_area)
-        layout.addWidget(footer)
+        device_tab_layout = QVBoxLayout()
+        device_tab_layout.setContentsMargins(20, 20, 20, 20)
+        device_tab_layout.setSpacing(10)
+        device_tab_layout.addLayout(header_layout)
+        device_tab_layout.addWidget(self.main_area)
+        device_tab_layout.addWidget(footer)
 
-        self.setLayout(layout)
+        self.setLayout(device_tab_layout) 
+
 
     def switch_device_type(self, value):
             if value == shared.device_type:
