@@ -2,17 +2,16 @@
 
 import sys
 import shutil
-from pathlib import Path
-
-from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget
-
 import shared
+
 from tab1 import Tab1
 from tab2 import Tab2
 from tab3 import Tab3
 from tab4 import Tab4
 from tab5 import Tab5
-
+from pathlib import Path
+from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget
+from shared import logger
 
 # --------------------------------------
 # One-time setup for user data folders
@@ -24,11 +23,11 @@ def initialize_user_data():
     if not target_lib.exists():
         try:
             shutil.copytree(source_lib, target_lib)
-            shared.logger.info(f"Copied default lib directory to: {target_lib}")
+            logger.info(f"Copied default lib directory to: {target_lib}")
         except Exception as e:
-            shared.logger.error(f"Error copying default lib directory: {e}")
+            logger.error(f"Error copying default lib directory: {e}")
     else:
-        shared.logger.info("User lib already exists, skipping initialization.")
+        logger.info("User lib already exists, skipping initialization.")
 
 
 # --------------------------------------
