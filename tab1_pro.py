@@ -92,6 +92,8 @@ class Tab1ProWidget(QWidget):
         top_controls.addWidget(self.buffer_size)
         top_controls.addStretch()
 
+        # Left Column --------------------------------------------
+
         # --- Instructional Text ---
         self.help_text = QTextEdit()
         self.help_text.setReadOnly(True)
@@ -154,44 +156,28 @@ class Tab1ProWidget(QWidget):
         controls_row_1 = QHBoxLayout()
 
         # Stereo checkbox container
-        stereo_container = QWidget()
-        stereo_layout = QVBoxLayout()
-        stereo_layout.setContentsMargins(0, 0, 0, 0)
+        left_column = QWidget()
+        left_layout = QVBoxLayout()
+        left_layout.setContentsMargins(0, 0, 0, 0)
         self.stereo_checkbox = QCheckBox("Stereo Mode")
         self.stereo_checkbox.setChecked(shared.stereo)
         self.stereo_checkbox.stateChanged.connect(lambda state: setattr(shared, "stereo", bool(state)))
-        stereo_layout.addWidget(self.stereo_checkbox)
-        stereo_container.setLayout(stereo_layout)
-        stereo_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        left_layout.addWidget(self.stereo_checkbox)
+        left_column.setLayout(left_layout)
+        left_column.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
-        # Get Pulse button container
-        pulse_container = QWidget()
-        pulse_layout = QVBoxLayout()
-        pulse_layout.setContentsMargins(0, 0, 0, 0)
+        # Middle Column -----------------------------------------------------------------------
+        middle_column = QWidget()
+        middle_layout = QVBoxLayout()
+        middle_layout.setContentsMargins(0, 0, 0, 0)
         self.get_pulse_button = QPushButton("Get Pulse Shape")
         self.get_pulse_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.get_pulse_button.clicked.connect(self.run_shapecatcher)
-        pulse_layout.addWidget(self.get_pulse_button)
-        pulse_container.setLayout(pulse_layout)
-        pulse_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        middle_layout.addWidget(self.get_pulse_button)
+        middle_column.setLayout(middle_layout)
+        middle_column.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
-        # Distortion Curve button container
-        distortion_container = QWidget()
-        distortion_layout = QVBoxLayout()
-        distortion_layout.setContentsMargins(0, 0, 0, 0)
-        self.get_distortion_button = QPushButton("Get Distortion Curve")
-        self.get_distortion_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.get_distortion_button.clicked.connect(self.run_distortion_finder)
-        distortion_layout.addWidget(self.get_distortion_button)
-        distortion_container.setLayout(distortion_layout)
-        distortion_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
-        # Add containers to row
-        controls_row_1.addWidget(stereo_container)
-        controls_row_1.addWidget(pulse_container)
-        controls_row_1.addWidget(distortion_container)
-
-        # === Second row: centered slider below ===
         slider_label = QLabel("Peak Shifter")
         slider_label.setAlignment(Qt.AlignCenter)
 
@@ -201,9 +187,7 @@ class Tab1ProWidget(QWidget):
         self.peak_slider.setValue(0)
         self.peak_slider.setTickInterval(5)
         self.peak_slider.setTickPosition(QSlider.TicksBelow)
-
         self.peak_slider.valueChanged.connect(lambda val: setattr(shared, "peakshift", val))
-
 
         slider_layout = QVBoxLayout()
         slider_layout.addWidget(slider_label)
@@ -229,15 +213,45 @@ class Tab1ProWidget(QWidget):
         controls_row_2.addWidget(slider_widget)
         controls_row_2.addStretch()
 
+        # Right column ---------------------------------------------------------------
+        
+        right_column = QWidget()
+        right_layout = QVBoxLayout()
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        self.get_distortion_button = QPushButton("Get Distortion Curve")
+        self.get_distortion_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.get_distortion_button.clicked.connect(self.run_distortion_finder)
+
+        # Logo widget below button
+        logo_label = QLabel()
+        logo_label.setAlignment(Qt.AlignCenter)
+        logo_label.setStyleSheet("padding: 10px;")
+        pixmap = QPixmap("assets/impulse.gif")
+        scaled_pixmap = pixmap.scaledToHeight(100, Qt.SmoothTransformation)
+        logo_label.setPixmap(scaled_pixmap)
+
+        # Adding widgets
+        right_layout.addWidget(self.get_distortion_button)
+        right_layout.addWidget(logo_label)
+        right_layout.addStretch()
+        right_column.setLayout(right_layout)
+        right_column.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+
+        left_layout.addStretch()
+        middle_layout.addStretch()
+        right_layout.addStretch()
+
+        # Add containers to row
+        controls_row_1.addWidget(left_column, alignment=Qt.AlignTop)
+        controls_row_1.addWidget(middle_column, alignment=Qt.AlignTop)
+        controls_row_1.addWidget(right_column, alignment=Qt.AlignTop)
+
+
         # === Add both rows to main layout ===
         tab1_pro_layout.addLayout(controls_row_1)
-        tab1_pro_layout.addLayout(controls_row_2)
 
         self.setLayout(tab1_pro_layout)
         self.plot_saved_shapes()
-
-
-
 
 
     def update_device(self, index):
@@ -250,7 +264,7 @@ class Tab1ProWidget(QWidget):
             pulses_left, pulses_right = shapecatcher()
 
             # Save to shared if needed elsewhere
-            shared.pulse_shape_left = pulses_left
+            shared.pulse_shape_left  = pulses_left
             shared.pulse_shape_right = pulses_right
 
             # Determine X range from shared.sample_length

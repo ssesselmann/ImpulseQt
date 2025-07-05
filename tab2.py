@@ -1,6 +1,8 @@
 import pyqtgraph as pg
 import shared  
 import os
+import csv
+import platform
 import json
 import numpy as np
 
@@ -35,7 +37,7 @@ from functions import (
     read_flag_data
     )
 from audio_spectrum import play_wav_file
-from shared import logger, P1, P2, H1, H2, MONO, START, STOP, FOOTER
+from shared import logger, P1, P2, H1, H2, MONO, START, STOP, BTN, FOOTER, DLD_DIR
 from pathlib import Path
 from calibration_popup import CalibrationPopup
 
@@ -241,10 +243,15 @@ class Tab2(QWidget):
         self.tolerance_input.textChanged.connect(lambda text: self.on_text_changed(text, "tolerance"))
 
         tolerance_layout.addWidget(self.labeled_input("Distortion tolerance", self.tolerance_input))
-        grid.addWidget(self.tolerance_container, 2, 3)
+        grid.addWidget(self.tolerance_container, 1, 3)
         self.pro_only_widgets.append(self.tolerance_container)
         # PRO CLOSE wrapper =======================================================
 
+        # Col 4 Row 3 - Download csv button
+        self.dld_csv_btn = QPushButton("Download csv")
+        self.dld_csv_btn.setStyleSheet(BTN)
+        self.dld_csv_btn.clicked.connect(self.on_dld_csv_btn)
+        grid.addWidget(self.labeled_input("Start", self.dld_csv_btn), 2, 3)
 
 
         # Col 4 Row 4
@@ -362,7 +369,7 @@ class Tab2(QWidget):
         self.peakfinder_slider.valueChanged.connect(self.on_peakfinder_changed)
 
         # Col 7 Row 3
-        self.poly_label = QLabel(f"E = {round(shared.coeff_1,2)}x² + {round(shared.coeff_2,2)}x + {round(shared.coeff_3,2)}")
+        self.poly_label = QLabel(f"E = {shared.coeff_1:.3f}x² + {shared.coeff_2:.3f}x + {shared.coeff_3:.3f}")
         self.poly_label.setAlignment(Qt.AlignCenter)
         font = QFont("Courier New")
         font.setPointSize(9)
@@ -402,7 +409,6 @@ class Tab2(QWidget):
         logo_label = QLabel()
         logo_label.setAlignment(Qt.AlignCenter)
         logo_label.setStyleSheet("padding: 10px;")
-
         # Load and scale logo (optional height: adjust as needed)
         pixmap = QPixmap("assets/impulse.gif")
         scaled_pixmap = pixmap.scaledToHeight(80, Qt.SmoothTransformation)
@@ -473,108 +479,6 @@ class Tab2(QWidget):
         except ValueError:
             pass  # skip if input is invalid    
 
-
-    def update_histogram(self):
-        try:
-            self.plot_widget.clear()
-            self.plot_widget.addItem(self.vline, ignoreBounds=True)
-            self.plot_widget.addItem(self.hline, ignoreBounds=True)
-            self.plot_widget.setLogMode(x=False, y=shared.log_switch)
-
-            self.hist_curve = None
-            self.comp_curve = None
-            self.diff_curve = None
-            self.gauss_curve = None
-
-            # === Prepare calibration coefficients ===
-            coeff_abc = [shared.coeff_1, shared.coeff_2, shared.coeff_3]
-
-            # Base histogram (blue)
-            if shared.histogram and not shared.diff_switch:
-                x_vals = list(range(len(shared.histogram)))
-
-                if shared.cal_switch and any(coeff_abc):
-                    x_vals = np.polyval(np.poly1d(coeff_abc), x_vals)
-
-                y_vals = (
-                    [y * x for x, y in enumerate(shared.histogram)]
-                    if shared.epb_switch else shared.histogram
-                )
-
-                self.hist_curve = self.plot_widget.plot(x_vals, y_vals, pen=pg.mkPen("b", width=1.5))
-
-            # Comparison histogram (red)
-            if shared.comp_switch and shared.histogram_2 and not shared.diff_switch:
-                x_vals2 = list(range(len(shared.histogram_2)))
-
-                if shared.cal_switch and any(coeff_abc):
-                    x_vals2 = np.polyval(np.poly1d(coeff_abc), x_vals2)
-
-                y_vals2 = (
-                    [y * x for x, y in enumerate(shared.histogram_2)]
-                    if shared.epb_switch else shared.histogram_2
-                )
-
-                if shared.log_switch:
-                    y_vals2 = [max(1, y2) for y2 in y_vals2]
-
-                self.comp_curve = self.plot_widget.plot(x_vals2, y_vals2, pen=pg.mkPen("r", width=1.5))
-
-            # Difference plot (black)
-            if shared.diff_switch and shared.histogram and shared.histogram_2:
-                len1 = len(shared.histogram)
-                len2 = len(shared.histogram_2)
-                max_len = max(len1, len2)
-                hist1 = shared.histogram + [0] * (max_len - len1)
-                hist2 = shared.histogram_2 + [0] * (max_len - len2)
-
-                diff = [a - b for a, b in zip(hist1, hist2)]
-                x_vals = list(range(max_len))
-                y_vals = (
-                    [y * x for x, y in enumerate(diff)]
-                    if shared.epb_switch else diff
-                )
-
-                self.diff_curve = self.plot_widget.plot(x_vals, y_vals, pen=pg.mkPen("k", width=1.5))
-
-            # Gaussian correlation (red)
-            if shared.sigma > 0 and shared.histogram and not shared.diff_switch:
-                corr = gaussian_correl(shared.histogram, shared.sigma)
-                x_vals = list(range(len(corr)))
-
-                if shared.cal_switch and any(coeff_abc):
-                    x_vals = np.polyval(np.poly1d(coeff_abc), x_vals)
-
-                # Match histogram amplitude — same as Dash version
-                max_hist = max(shared.histogram)
-                max_corr = max(corr) if corr else 1
-                if max_corr > 0:
-                    corr = [y * (max_hist / max_corr) for y in corr]
-
-                # Now apply EPB transformation if needed
-                if shared.epb_switch:
-                    corr = [y * x for x, y in enumerate(corr)]
-
-                # Apply floor for log mode — avoids zeroes collapsing plot
-                if shared.log_switch:
-                    corr = [max(1, y) for y in corr]
-
-                self.gauss_curve = self.plot_widget.plot(
-                    x_vals,
-                    corr,
-                    pen=pg.mkPen("r", width=1.5),
-                    fillLevel=0,
-                    brush=QBrush(QColor(255, 0, 0, 80))  # semi-transparent red
-                )
-
-            # Optional: peak markers
-            if shared.sigma > 0:
-                self.update_peak_markers()
-
-        except Exception as e:
-            logger.error(f"[ERROR] Plot update failed: {e}")
-
-
     def make_cell(self, text):
         label = QLabel(text)
         label.setFrameStyle(QFrame.Box | QFrame.Plain)
@@ -631,6 +535,8 @@ class Tab2(QWidget):
             t_interval  = shared.t_interval
 
             mode = 4 if coi else 2
+
+            self.plot_timer.start(1000)  # re-enable it every time
 
             if dn >= 100:
                 shproto.dispatcher.spec_stopflag = 0
@@ -715,6 +621,8 @@ class Tab2(QWidget):
 
         # Reset selector to "— Select file —"
         QTimer.singleShot(0, lambda: self.select_file.setCurrentIndex(0))
+
+        self.update_plot()
 
 
     def on_select_filename_2_changed(self, index):
@@ -875,4 +783,167 @@ class Tab2(QWidget):
             logger.error(f"[ERROR] Failed to update notes in JSON: {e}")
 
 
-    
+    def on_dld_csv_btn(self):
+        try:
+            filename_stem = Path(shared.filename).stem if shared.filename else "spectrum"
+            csv_path = os.path.join(shared.DLD_DIR, f"{filename_stem}.csv")
+            histogram = shared.histogram
+
+            if not histogram:
+                QMessageBox.warning(self, "Download Failed", "No histogram data to save.")
+                return
+
+            if os.path.exists(csv_path):
+                result = QMessageBox.question(
+                    self, "Overwrite Confirmation",
+                    f"The file {filename_stem}.csv already exists.\nDo you want to overwrite it?",
+                    QMessageBox.Yes | QMessageBox.No
+                )
+                if result != QMessageBox.Yes:
+                    return  # Abort if user chooses "No"
+
+            with open(csv_path, mode='w', newline='') as file:
+                writer = csv.writer(file)
+
+                if shared.cal_switch:
+                    # Write calibrated energy axis
+                    poly = np.poly1d([shared.coeff_1, shared.coeff_2, shared.coeff_3])
+                    energies = poly(np.arange(len(histogram)))
+                    writer.writerow(["Energy", "Counts"])
+                    writer.writerows(zip(np.round(energies, 3), histogram))
+                else:
+                    # Write raw bin axis
+                    writer.writerow(["Bin", "Counts"])
+                    writer.writerows(enumerate(histogram))
+
+            QMessageBox.information(self, "Download Complete", f"CSV saved to:\n{csv_path}")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to save CSV:\n{str(e)}")
+
+
+    def apply_calibration(self, x_vals):
+        coeffs = [shared.coeff_1, shared.coeff_2, shared.coeff_3]
+        if shared.cal_switch and any(coeffs):
+            return np.polyval(np.poly1d(coeffs), x_vals)
+        return x_vals
+
+
+    def apply_epb(self, x_vals, y_vals):
+        if shared.epb_switch:
+            return [y * x for x, y in zip(x_vals, y_vals)]
+        return y_vals
+
+    def apply_log_scale(self, y_vals):
+        if shared.log_switch:
+            self.plot_widget.setLogMode(x=False, y=True)
+            return [max(1, y) for y in y_vals]
+        else:
+            self.plot_widget.setLogMode(x=False, y=False)
+            return y_vals
+
+    def update_histogram(self):
+        try:
+            self.plot_widget.clear()
+            self.plot_widget.addItem(self.vline, ignoreBounds=True)
+            self.plot_widget.addItem(self.hline, ignoreBounds=True)
+            self.plot_widget.setLogMode(x=False, y=shared.log_switch)
+
+            self.hist_curve = None
+            self.comp_curve = None
+            self.diff_curve = None
+            self.gauss_curve = None
+
+            # === Prepare calibration coefficients ===
+            coeff_abc = [shared.coeff_1, shared.coeff_2, shared.coeff_3]
+
+            # Base histogram (blue)
+            if shared.histogram and not shared.diff_switch:
+                x_vals = list(range(len(shared.histogram)))
+                y_vals = shared.histogram
+
+                # Apply EPB (use raw bin numbers)
+                if shared.epb_switch:
+                    y_vals = [y * x for x, y in zip(x_vals, y_vals)]
+
+                # Now apply calibration to x_vals (not earlier!)
+                if shared.cal_switch and any(coeff_abc):
+                    x_vals = np.polyval(np.poly1d(coeff_abc), x_vals)
+
+                # Apply log scale if needed
+                if shared.log_switch:
+                    y_vals = [max(1, y) for y in y_vals]
+
+                self.hist_curve = self.plot_widget.plot(x_vals, y_vals, pen=pg.mkPen("b", width=1.5))
+
+
+            # Comparison histogram (red)
+            if shared.comp_switch and shared.histogram_2 and not shared.diff_switch:
+                x_vals2 = list(range(len(shared.histogram_2)))
+
+                if shared.cal_switch and any(coeff_abc):
+                    x_vals2 = np.polyval(np.poly1d(coeff_abc), x_vals2)
+
+                y_vals2 = (
+                    [y * x for x, y in enumerate(shared.histogram_2)]
+                    if shared.epb_switch else shared.histogram_2
+                )
+
+                if shared.log_switch:
+                    y_vals2 = [max(1, y2) for y2 in y_vals2]
+
+                self.comp_curve = self.plot_widget.plot(x_vals2, y_vals2, pen=pg.mkPen("r", width=1.5))
+
+            # Difference plot (black)
+            if shared.diff_switch and shared.histogram and shared.histogram_2:
+                len1 = len(shared.histogram)
+                len2 = len(shared.histogram_2)
+                max_len = max(len1, len2)
+                hist1 = shared.histogram + [0] * (max_len - len1)
+                hist2 = shared.histogram_2 + [0] * (max_len - len2)
+
+                diff = [a - b for a, b in zip(hist1, hist2)]
+                x_vals = list(range(max_len))
+                y_vals = (
+                    [y * x for x, y in enumerate(diff)]
+                    if shared.epb_switch else diff
+                )
+
+                self.diff_curve = self.plot_widget.plot(x_vals, y_vals, pen=pg.mkPen("k", width=1.5))
+
+            # Gaussian correlation (red)
+            if shared.sigma > 0 and shared.histogram and not shared.diff_switch:
+                corr = gaussian_correl(shared.histogram, shared.sigma)
+                x_vals = list(range(len(corr)))
+
+                if shared.cal_switch and any(coeff_abc):
+                    x_vals = np.polyval(np.poly1d(coeff_abc), x_vals)
+
+                # Match histogram amplitude — same as Dash version
+                max_hist = max(shared.histogram)
+                max_corr = max(corr) if corr else 1
+                if max_corr > 0:
+                    corr = [y * (max_hist / max_corr) for y in corr]
+
+                # Now apply EPB transformation if needed
+                if shared.epb_switch:
+                    corr = [y * x for x, y in enumerate(corr)]
+
+                # Apply floor for log mode — avoids zeroes collapsing plot
+                if shared.log_switch:
+                    corr = [max(1, y) for y in corr]
+
+                self.gauss_curve = self.plot_widget.plot(
+                    x_vals,
+                    corr,
+                    pen=pg.mkPen("r", width=1.5),
+                    fillLevel=0,
+                    brush=QBrush(QColor(255, 0, 0, 80))  # semi-transparent red
+                )
+
+            # Optional: peak markers
+            if shared.sigma > 0:
+                self.update_peak_markers()
+
+        except Exception as e:
+            logger.error(f"[ERROR] Plot update failed: {e}")  

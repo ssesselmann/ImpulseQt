@@ -36,7 +36,9 @@ START = "background-color: green; color: white; font-weight: bold;"
 
 STOP = "background-color: red; color: white; font-weight: bold;"
 
-FOOTER = f"IMPULSE V {__version__} - Science for good - Gammaspectacular.com"
+BTN  = "background-color: orange; color: white; font-weight: bold;"
+
+FOOTER = f"IMPULSE V {__version__} - Gammaspectacular.com  - Atoms for good"
 
 # -------------------------------
 # Paths & Directories
@@ -59,10 +61,16 @@ TBL_DIR = LIB_DIR / "tbl"
 # -------------------------------
 if platform.system() == "Darwin":
     LOG_DIR = Path.home() / "Library" / "Logs" / APP_NAME
+    DLD_DIR = Path.home() / "Downloads"
+
 elif platform.system() == "Windows":
     LOG_DIR = Path(getenv("APPDATA", str(Path.home() / "AppData" / "Roaming"))) / APP_NAME / "logs"
+    DLD_DIR = Path(getenv("USERPROFILE", str(Path.home()))) / "Downloads"
+
 else:
     LOG_DIR = Path.home() / f".{APP_NAME.lower()}" / "logs"
+    DLD_DIR = Path.home() / "Downloads"
+    
 
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 log_file = LOG_DIR / "impulseqt_log.txt"
@@ -177,9 +185,13 @@ coeff_1 = 0
 coeff_2 = 0
 coeff_3 = 0
 
-coefficients_1 = []
-coefficients_2 = []
-coefficients_3d = []
+comp_coeff_1 = 0
+comp_coeff_2 = 0
+comp_coeff_3 = 0
+
+# coefficients_1 = []
+# coefficients_2 = []
+# coefficients_3d = []
 
 # --- Counts & Timing ---
 counts = 0
@@ -288,9 +300,9 @@ SETTINGS_SCHEMA = {
     "coeff_1": {"type": "float", "default": []},
     "coeff_2": {"type": "float", "default": []},
     "coeff_3": {"type": "float", "default": []},
-    "coefficients_1": {"type": "list", "default": []},
-    "coefficients_2": {"type": "list", "default": []},
-    "coefficients_3d": {"type": "list", "default": []},
+    "comp_coeff_1": {"type": "float", "default": []},
+    "comp_coeff_2": {"type": "float", "default": []},
+    "comp_coeff_3": {"type": "float", "default": []},
     "coi_switch": {"type": "bool", "default": False},
     "coi_window": {"type": "int", "default": 0},
     "compression": {"type": "float", "default": 1.0},

@@ -408,7 +408,6 @@ def start_recording(mode):
 
     write_cps_json(filename, [[0]], 0, 0, 0)
 
-
     with shared.run_flag_lock:
         shared.run_flag.set()  # Set the run flag
         logger.info(f"Recording started in mode {mode}.\n")
@@ -419,8 +418,6 @@ def start_recording(mode):
         try:
             if callable(pulsecatcher):
                 thread = threading.Thread(target=pulsecatcher, args=(mode, shared.run_flag, shared.run_flag_lock))
-                thread.start()
-
                 thread.start()
                 logger.info("2D spectrum recording thread started.\n")
             else:
@@ -548,49 +545,49 @@ def export_csv(filename, data_directory, calib_switch):
 
 
 
-def update_coeff(filename):
-    with shared.write_lock:
-        data_directory = shared.DATA_DIR
-        coefficients_1 = shared.coefficients_1
+# def update_coeff(filename):
+#     with shared.write_lock:
+#         data_directory = shared.DATA_DIR
+#         coefficients_1 = shared.coefficients_1
 
-    file_path = os.path.join(data_directory, filename + ".json")
+#     file_path = os.path.join(data_directory, filename + ".json")
 
-    # Read the existing JSON file with error handling
-    try:
-        with open(file_path, 'r') as f:
-            data = json.load(f)
-    except FileNotFoundError:
-        logger.error(f"File not found: {file_path}")
-        return
-    except json.JSONDecodeError:
-        logger.error(f"Error decoding JSON from file: {file_path}")
-        return
+#     # Read the existing JSON file with error handling
+#     try:
+#         with open(file_path, 'r') as f:
+#             data = json.load(f)
+#     except FileNotFoundError:
+#         logger.error(f"File not found: {file_path}")
+#         return
+#     except json.JSONDecodeError:
+#         logger.error(f"Error decoding JSON from file: {file_path}")
+#         return
 
-    # Update the coefficients based on schema version
-    try:
-        if data["schemaVersion"] == "NPESv1":
-            data["resultData"]["energySpectrum"]["energyCalibration"]["coefficients"] = coefficients_1
+#     # Update the coefficients based on schema version
+#     try:
+#         if data["schemaVersion"] == "NPESv1":
+#             data["resultData"]["energySpectrum"]["energyCalibration"]["coefficients"] = coefficients_1
         
-        elif data["schemaVersion"] == "NPESv2":
-            data["data"][0]["resultData"]["energySpectrum"]["energyCalibration"]["coefficients"] = coefficients_1
+#         elif data["schemaVersion"] == "NPESv2":
+#             data["data"][0]["resultData"]["energySpectrum"]["energyCalibration"]["coefficients"] = coefficients_1
 
-        else:
-            raise ValueError(f"Unknown schemaVersion: {data['schemaVersion']}")
+#         else:
+#             raise ValueError(f"Unknown schemaVersion: {data['schemaVersion']}")
     
-    except KeyError as e:
-        logger.error(f"Missing expected key in JSON data: {e}")
-        return
+#     except KeyError as e:
+#         logger.error(f"Missing expected key in JSON data: {e}")
+#         return
 
-    # Write the updated JSON back to the file with error handling
-    try:
-        with shared.write_lock:
-            with open(file_path, 'w') as f:
-                json.dump(data, f, separators=(',', ':'))
-    except IOError as e:
-        logger.error(f"Error writing to file: {file_path} - {e}")
-        return
+#     # Write the updated JSON back to the file with error handling
+#     try:
+#         with shared.write_lock:
+#             with open(file_path, 'w') as f:
+#                 json.dump(data, f, separators=(',', ':'))
+#     except IOError as e:
+#         logger.error(f"Error writing to file: {file_path} - {e}")
+#         return
 
-    logger.info(f"Coefficients updated in {file_path}")
+#     logger.info(f"Coefficients updated in {file_path}")
 
 
 
@@ -653,34 +650,34 @@ def publish_spectrum(filename):
         logger.error(f'Error from /code/functions/publish_spectrum: {e}\n')
         return f'Error from /code/functions/publish_spectrum: {e}'
 
-def update_json_notes(filename, spec_notes):
-    with shared.write_lock:
-        data_directory = shared.USER_DATA_DIR
-        coefficients_1 = shared.coefficients_1
+# def update_json_notes(filename, spec_notes):
+#     with shared.write_lock:
+#         data_directory = shared.USER_DATA_DIR
+#         coefficients_1 = shared.coefficients_1
 
-    try:
-        file_path = f'{data_directory}/{filename}.json'
+#     try:
+#         file_path = f'{data_directory}/{filename}.json'
         
-        # Read the existing JSON file
-        with open(file_path, 'r') as f:
-            data = json.load(f)
+#         # Read the existing JSON file
+#         with open(file_path, 'r') as f:
+#             data = json.load(f)
         
-        # Update the notes
-        if "data" in data and isinstance(data["data"], list) and "sampleInfo" in data["data"][0]:
-            data["data"][0]["sampleInfo"]["note"] = spec_notes
-            data["data"][0]["resultData"]["energySpectrum"]["energyCalibration"]["coefficients"] = coefficients_1[::-1]
-        else:
-            logger.error(f"Unexpected JSON structure in {filename}.json\n")
-            return
+#         # Update the notes
+#         if "data" in data and isinstance(data["data"], list) and "sampleInfo" in data["data"][0]:
+#             data["data"][0]["sampleInfo"]["note"] = spec_notes
+#             data["data"][0]["resultData"]["energySpectrum"]["energyCalibration"]["coefficients"] = coefficients_1[::-1]
+#         else:
+#             logger.error(f"Unexpected JSON structure in {filename}.json\n")
+#             return
         
-        # Write the updated JSON back to the file
-        with open(file_path, 'w') as f:
-            json.dump(data, f, separators=(',', ':'))
+#         # Write the updated JSON back to the file
+#         with open(file_path, 'w') as f:
+#             json.dump(data, f, separators=(',', ':'))
         
-        logger.info(f'Notes updated: {spec_notes}\n')
+#         logger.info(f'Notes updated: {spec_notes}\n')
         
-    except Exception as e:
-        logger.error(f'Error in update_json_notes: {e}\n')
+#     except Exception as e:
+#         logger.error(f'Error in update_json_notes: {e}\n')
 
 
 
@@ -933,31 +930,35 @@ def load_histogram(filename):
     with shared.write_lock:
         data_directory = shared.USER_DATA_DIR
 
-    data = {}
     path = get_path(os.path.join(data_directory, filename))
 
     try:
-        # Read the JSON file
-        with open(path, 'r') as file:
+        with open(path, "r", encoding="utf-8") as file:
             data = json.load(file)
 
-            # Validate the schema version
-            if data["schemaVersion"] == "NPESv2":
-                data = data["data"][0]
+        if data.get("schemaVersion") == "NPESv2":
+            data = data["data"][0]
 
-            with shared.write_lock:
-                shared.histogram       = data["resultData"]["energySpectrum"]["spectrum"]
-                shared.bins            = data["resultData"]["energySpectrum"]["numberOfChannels"]
-                shared.elapsed         = data["resultData"]["energySpectrum"]["measurementTime"]
-                shared.coefficients_1  = data["resultData"]["energySpectrum"]["energyCalibration"]["coefficients"][::-1]
-                shared.spec_notes      = data["sampleInfo"]["note"]
-                shared.counts          = sum(shared.histogram)
-                shared.dropped_counts  = data["resultData"]["energySpectrum"]["droppedPulseCounts"]
+        spectrum_data = data["resultData"]["energySpectrum"]
+        calibration = spectrum_data.get("energyCalibration", {})
+        coefficients = calibration.get("coefficients", [0.0, 0.0, 0.0])[::-1]
 
-            return True
+        with shared.write_lock:
+            shared.histogram       = spectrum_data["spectrum"]
+            shared.bins            = spectrum_data["numberOfChannels"]
+            shared.elapsed         = spectrum_data["measurementTime"]
+            shared.counts          = sum(shared.histogram)
+            shared.dropped_counts  = spectrum_data.get("droppedPulseCounts", 0)
+            shared.spec_notes      = data["sampleInfo"].get("note", "")
+
+            shared.coeff_1 = coefficients[0]
+            shared.coeff_2 = coefficients[1]
+            shared.coeff_3 = coefficients[2]
+
+        return True
 
     except Exception as e:
-        logger.info(f"Error in functions load_histogram({e})\n")
+        logger.info(f"Error in load_histogram('{filename}'): {e}")
         return False
 
 def load_histogram_2(filename):
@@ -977,8 +978,11 @@ def load_histogram_2(filename):
             shared.histogram_2     = data["resultData"]["energySpectrum"]["spectrum"]
             shared.bins_2          = data["resultData"]["energySpectrum"]["numberOfChannels"]
             shared.elapsed_2       = data["resultData"]["energySpectrum"]["measurementTime"]
-            shared.coefficients_2  = data["resultData"]["energySpectrum"]["energyCalibration"]["coefficients"][::-1]
             shared.counts_2        = sum(shared.histogram_2)
+
+            shared.comp_coeff_1 = coefficients[0]
+            shared.Comp_coeff_2 = coefficients[1]
+            shared.comp_coeff_3 = coefficients[2]
 
             return True
 

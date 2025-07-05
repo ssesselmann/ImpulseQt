@@ -10,7 +10,7 @@ from tab3 import Tab3
 from tab4 import Tab4
 from tab5 import Tab5
 from pathlib import Path
-from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget
+from PySide6.QtWidgets import QMainWindow, QTabWidget, QWidget, QVBoxLayout, QApplication
 from shared import logger
 
 # --------------------------------------
@@ -48,7 +48,13 @@ class MainWindow(QMainWindow):
         tabs.addTab(Tab4(), "Count Rate")
         tabs.addTab(Tab5(), "Manual")
 
-        self.setCentralWidget(tabs)
+        container = QWidget()
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 20, 0, 0)  # <-- top margin: 10px
+        layout.addWidget(tabs)
+        container.setLayout(layout)
+
+        self.setCentralWidget(container)
 
     def closeEvent(self, event):
         pos = self.pos()

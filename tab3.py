@@ -5,6 +5,7 @@ import os
 import logging
 import shared
 
+from pathlib import Path
 from PySide6.QtCore import QTimer, Qt, Signal
 from PySide6.QtGui import QFont, QBrush, QColor, QIntValidator, QPixmap
 from mpl_toolkits.mplot3d import Axes3D 
@@ -12,7 +13,7 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from datetime import datetime, timedelta
 from collections import deque 
-from shared import logger, P1, P2, H1, H2, MONO, START, STOP, FOOTER
+from shared import logger, P1, P2, H1, H2, MONO, START, STOP, BTN, FOOTER, DLD_DIR
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit,
     QComboBox, QCheckBox, QGridLayout, QDialog, QDialogButtonBox, QMessageBox, QSizePolicy
@@ -27,8 +28,6 @@ from functions import (
 )
 
 logger = logging.getLogger(__name__)
-
-
 
 class Tab3(QWidget):
     def __init__(self):
@@ -111,12 +110,16 @@ class Tab3(QWidget):
 
         self.epb_switch = QCheckBox("Energy by bin")
         self.epb_switch.setChecked(shared.epb_switch)
+        self.epb_switch.stateChanged.connect(self.update_graph)
 
         self.log_switch = QCheckBox("Show log(y)")
         self.log_switch.setChecked(shared.log_switch)
+        self.log_switch.stateChanged.connect(self.update_graph)
 
         self.cal_switch = QCheckBox("Calibration")
         self.cal_switch.setChecked(shared.cal_switch)
+        self.cal_switch.stateChanged.connect(self.update_graph)
+
 
         top_layout.addWidget(self.start_button, 0, 0)
 
@@ -153,6 +156,13 @@ class Tab3(QWidget):
         top_layout.addWidget(self.bins_label, 10, 1)
 
         top_layout.addWidget(self.channel_dropdown, 11, 1)
+
+        # Download array button
+        self.dld_array_btn = QPushButton("Download array")
+        self.dld_array_btn.setStyleSheet(BTN)
+        self.dld_array_btn.clicked.connect(self.download_array_csv)
+        top_layout.addWidget(self.dld_array_btn, 12, 1)
+
 
         top_layout.addWidget(self.epb_switch, 10, 0)
         top_layout.addWidget(self.log_switch, 11, 0)
@@ -330,6 +340,50 @@ class Tab3(QWidget):
             logger.info(f"Updated shared.bins_3d → {shared.bins_3d}\n")
             logger.info(f"shared.bin_size_3d → {shared.bin_size_3d}\n")
 
+    def download_array_csv(self):
+        try:
+            import csv
+
+            if not self.plot_data:
+                QMessageBox.warning(self, "No Data", "There is no spectrum data to download.")
+                return
+
+            filename = Path(shared.filename_3d).stem or "spectrum3d"
+            csv_path = shared.DLD_DIR / f"{filename}_3d.csv"
+
+            if csv_path.exists():
+                result = QMessageBox.question(
+                    self, "Overwrite Confirmation",
+                    f"The file {filename}.csv already exists.\nDo you want to overwrite it?",
+                    QMessageBox.Yes | QMessageBox.No
+                )
+                if result != QMessageBox.Yes:
+                    return  # Abort if user chooses "No"
+
+            with open(csv_path, mode='w', newline='') as file:
+                writer = csv.writer(file)
+
+                # Prepare header row: Energy if calibrated, Bin otherwise
+                if self.cal_switch.isChecked():
+                    factor = shared.bins / self.fixed_bins
+                    scaled_bins = [int(b * factor) for b in range(self.fixed_bins)]
+                    poly = np.poly1d([shared.coeff_1, shared.coeff_2, shared.coeff_3])
+                    energies = poly(scaled_bins)
+                    header = [f"{e:.3f}" for e in energies]
+                    writer.writerow(["Energy (keV)"] + header)
+                else:
+                    header = [f"Bin {i}" for i in range(self.fixed_bins)]
+                    writer.writerow(["Time Step"] + header)
+
+                for i, row in enumerate(self.plot_data):
+                    padded_row = list(row) + [0] * (self.fixed_bins - len(row))
+                    writer.writerow([i] + padded_row[:self.fixed_bins])
+
+            QMessageBox.information(self, "Download Complete", f"CSV saved to:\n{csv_path}")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to save CSV:\n{str(e)}")
+
 
 
     def update_graph(self):
@@ -338,29 +392,18 @@ class Tab3(QWidget):
 
         try:
             if shared.run_flag:
-                # Dynamic/live mode: update with latest row
                 histogram = shared.histogram_3d
-
                 if not histogram or not isinstance(histogram[-1], list):
                     logger.warning("Latest histogram data is empty or invalid.")
                     return
 
                 latest_row = histogram[-1][:self.fixed_bins] + [0] * max(0, self.fixed_bins - len(histogram[-1]))
                 latest_row = np.array(latest_row, dtype=float)
-
-                if self.epb_switch.isChecked():
-                    # Multiply each bin (z value) by its corresponding energy (x value)
-                    energy_axis = np.arange(len(latest_row))  # Or use calibrated x-axis if available
-                    latest_row = latest_row * energy_axis
-
-
                 self.plot_data.append(latest_row)
 
-                # Update timestamps
                 start_time = getattr(shared, 'start_time', datetime.now() - timedelta(seconds=shared.t_interval * (len(self.plot_data) - 1)))
                 self.time_stamps.append(start_time + timedelta(seconds=shared.t_interval * len(self.plot_data)))
-            
-            # --- Static mode: just redraw what’s already in plot_data ---
+
             Z = np.array(self.plot_data)
             if len(Z) < self.fixed_secs:
                 pad_rows = np.zeros((self.fixed_secs - len(Z), self.fixed_bins))
@@ -372,7 +415,15 @@ class Tab3(QWidget):
             if self.cal_switch.isChecked():
                 factor = shared.bins / self.fixed_bins
                 scaled_bins = [int(b * factor) for b in y_vals]
-                y_vals = np.polyval(np.poly1d([shared.coeff_3, shared.coeff_2, shared.coeff_1]), scaled_bins)
+                poly = np.poly1d([shared.coeff_1, shared.coeff_2, shared.coeff_3])
+                y_vals = poly(scaled_bins)
+
+            if self.epb_switch.isChecked():
+                energy_axis = np.arange(self.fixed_bins)
+                if self.cal_switch.isChecked():
+                    poly = np.poly1d([shared.coeff_1, shared.coeff_2, shared.coeff_3])
+                    energy_axis = poly(energy_axis)
+                Z = Z * energy_axis[np.newaxis, :]
 
             X, Y = np.meshgrid(elapsed_secs, y_vals, indexing='ij')
 
@@ -400,7 +451,6 @@ class Tab3(QWidget):
 
             self.canvas.draw()
 
-            # Only update counters if running
             if shared.run_flag:
                 self.counts_display.setText(str(shared.counts))
                 self.elapsed_display.setText(str(shared.elapsed))
