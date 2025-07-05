@@ -100,10 +100,10 @@ class Tab2(QWidget):
             grid.setColumnStretch(i, 1)
 
         # Col 1 Row 1 --------------------------------------------------------------------------
-        self.btn_start = QPushButton("START")
-        self.btn_start.setStyleSheet(START)
-        self.btn_start.clicked.connect(self.on_start_clicked)
-        grid.addWidget(self.labeled_input("Start", self.btn_start), 0, 0)
+        self.start_button = QPushButton("START")
+        self.start_button.setStyleSheet(START)
+        self.start_button.clicked.connect(self.on_start_clicked)
+        grid.addWidget(self.labeled_input("Start", self.start_button), 0, 0)
 
         # Col 1 Row 2
         self.counts_label = QLabel("0")
@@ -123,10 +123,10 @@ class Tab2(QWidget):
 
 
         # Col 2 Row 1 ------------------------------------------------------------------------
-        self.btn_stop = QPushButton("STOP")
-        self.btn_stop.setStyleSheet(STOP)
-        self.btn_stop.clicked.connect(self.on_stop_clicked)
-        grid.addWidget(self.labeled_input("Stop", self.btn_stop), 0, 1)
+        self.stop_button = QPushButton("STOP")
+        self.stop_button.setStyleSheet(STOP)
+        self.stop_button.clicked.connect(self.on_stop_clicked)
+        grid.addWidget(self.labeled_input("Stop", self.stop_button), 0, 1)
 
         # Col 2 Row 1
         self.elapsed_label = QLabel("0")
@@ -403,7 +403,6 @@ class Tab2(QWidget):
 
         # Add to layout (row 0, col 7, rowspan 3, colspan 1)
         grid.addWidget(self.labeled_input("Spectrum Notes", self.notes_input), 0, 8, 2, 1)
-
 
         # --- Logo widget ---
         logo_label = QLabel()

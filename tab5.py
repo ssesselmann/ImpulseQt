@@ -1,14 +1,29 @@
-# tab5
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QTextBrowser
+from PySide6.QtCore import Qt
+import shared
 
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel
-from PySide6.QtGui import QFont, QBrush, QColor, QIntValidator, QPixmap
-from shared import logger, P1, P2, H1, H2, MONO
-
+# Conditional import based on device
+if shared.device <= 100:
+    from manual_pro import html, heading
+else:
+    from manual_max import html
 
 class Tab5(QWidget):
     def __init__(self):
         super().__init__()
+        self.setWindowTitle("User Manual")
 
-        tab5_layout = QVBoxLayout()
-        tab5_layout.addWidget(QLabel("This is the Manual."))
-        self.setLayout(tab5_layout)
+        self.textbox = QTextBrowser()
+        self.textbox.setFixedWidth(700)
+        self.textbox.setStyleSheet("""
+            QTextBrowser {
+                background-color: white;
+                padding: 15px;
+                border: none;
+            }
+        """)
+        self.textbox.setHtml(html)
+
+        layout = QVBoxLayout()
+        layout.addWidget(self.textbox, alignment=Qt.AlignHCenter)
+        self.setLayout(layout)
