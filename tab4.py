@@ -1,15 +1,17 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
-    QCheckBox, QSlider, QSizePolicy, QLineEdit, QLabel, QMessageBox
+    QCheckBox, QSlider, QSizePolicy, QLineEdit, QLabel, QMessageBox, QComboBox
 )
 from PySide6.QtCore import Qt, Slot, QTimer
 from PySide6.QtGui import QPixmap
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from shared import logger, START, STOP, BTN, FOOTER, H1, P1, P2, DLD_DIR
-from functions import start_recording, stop_recording
+from functions import start_recording, stop_recording, get_options, load_cps_file
+from pathlib import Path
 import numpy as np
 import shared 
+import json
 import os
 
 class Tab4(QWidget):
@@ -17,7 +19,7 @@ class Tab4(QWidget):
     @Slot(int)
     def update_slider_label(self, value):
         self.slider_label.setText(f"Smoothing sec: {value}")
-
+        self.last_loaded_filename = Path(rel_path).stem
 
     def __init__(self):
         super().__init__()
@@ -26,6 +28,7 @@ class Tab4(QWidget):
         self.plot_timer.timeout.connect(self.update_plot)
         self.setWindowTitle("Count Rate")
         self.sum_n = 1
+        self.last_loaded_filename = None
 
         self.layout = QVBoxLayout(self)
 
@@ -70,42 +73,39 @@ class Tab4(QWidget):
         # Add the slider section to your main layout or controls row
         self.layout.addLayout(slider_section)
 
-
-
         # === Controls Row: Start/Stop/Download ===
         controls_layout = QHBoxLayout()
         controls_layout.addStretch()
 
-        # === Filename input field ===
-        self.filename_label = QLabel("Filename:")
-        self.filename_label.setStyleSheet(P2)
-        controls_layout.addWidget(self.filename_label)
-        controls_layout.setAlignment(self.filename_label, Qt.AlignTop)
-
-        self.filename_input = QLineEdit()
-        self.filename_input.setText(shared.filename or "")
-        self.filename_input.setFixedWidth(200)
-        controls_layout.addWidget(self.filename_input)
-        controls_layout.setAlignment(self.filename_input, Qt.AlignTop)
-
-
-
-        self.start_button = QPushButton("START")
-        self.start_button.setStyleSheet(START)
-        self.start_button.clicked.connect(self.on_start_clicked)
-
-        self.stop_button = QPushButton("STOP")
-        self.stop_button.setStyleSheet(STOP)
-        self.stop_button.clicked.connect(self.on_stop_clicked)
-
+        # Col 3 Row 3
+        self.select_file = QComboBox()
+        self.select_file.setEditable(False)
+        self.select_file.setInsertPolicy(QComboBox.NoInsert)
+        self.select_file.setStyleSheet(P2)
+        self.select_file.addItem("— Select file —", "")
+        options = []
+        options = get_options("cps")
+        for opt in options:
+            self.select_file.addItem(opt['label'], opt['value'])
+        self.select_file.currentIndexChanged.connect(self.on_select_filename_changed)
+        self.select_file
 
         self.download_button = QPushButton("Download CSV")
         self.download_button.setStyleSheet(BTN)
         self.download_button.clicked.connect(self.on_download_clicked)
 
-        for btn in (self.start_button, self.stop_button, self.download_button):
-            controls_layout.addWidget(btn)
-            controls_layout.setAlignment(btn, Qt.AlignTop)
+
+
+        self.selected_label = QLabel("No file loaded")
+        self.selected_label.setStyleSheet(P2)
+        self.selected_label.setAlignment(Qt.AlignLeft)
+        controls_layout.addWidget(self.selected_label)
+        
+        controls_layout.addWidget(self.select_file)
+        controls_layout.setAlignment(self.select_file, Qt.AlignTop)
+        controls_layout.addWidget(self.download_button)
+        controls_layout.setAlignment(self.download_button, Qt.AlignTop)
+
 
         self.layout.addLayout(controls_layout)
         
@@ -154,46 +154,41 @@ class Tab4(QWidget):
         self.sum_n = value
         self.update_plot()
 
+    def on_select_filename_changed(self, index):
+        rel_path = self.select_file.itemData(index)
+        if not rel_path:
+            return
 
-    @Slot()
-    def on_start_clicked(self):
-        print("Tab4 on_start_clicked")
-        filename = "counts"  # or generate one if needed
-        file_path = os.path.join(shared.USER_DATA_DIR, f"{filename}.json")
-
-        if os.path.exists(file_path):
-            reply = QMessageBox.question(
-                self, "Confirm Overwrite",
-                f'"{filename}.json" already exists. Overwrite?',
-                QMessageBox.Yes | QMessageBox.No
-            )
-            if reply != QMessageBox.Yes:
-                return
-
-        self.clear_session()
-        self.start_recording_counts(filename)
-
-    @Slot()
-    def on_stop_clicked(self):
-        stop_recording()
-
-    
-    @Slot()
-    def on_download_clicked(self):
         try:
-            # Get the filename from the input field
-            filename = self.filename_input.text().strip()
-            if not filename:
-                QMessageBox.warning(self, "Missing Filename", "Please enter a filename.")
-                return
+            full_path = os.path.join(shared.USER_DATA_DIR, rel_path)
+            load_cps_file(full_path)
 
-            # Ensure it ends in .csv
-            if not filename.lower().endswith("_cps.csv"):
-                filename += ".csv"
+            self.last_loaded_filename = Path(rel_path).stem
+            self.selected_label.setText(f"{self.last_loaded_filename}")
+            self.update_plot()
+
+        except Exception as e:
+            QMessageBox.critical(self, "File Error", str(e))
+
+        QTimer.singleShot(0, lambda: self.select_file.setCurrentIndex(0))
+
+
+
+    @Slot()
+    def on_download_clicked(self, filename=None):
+        try:
+            if not filename:
+                if self.last_loaded_filename:
+                    # Remove "_cps" if present in name
+                    base = self.last_loaded_filename.replace("_cps", "")
+                    filename = f"{base}_cps.csv"
+                else:
+                    filename = "counts_cps.csv"
+            else:
+                filename = f"{filename}_cps.csv"
 
             file_path = os.path.join(shared.DLD_DIR, filename)
 
-            # Check for overwrite
             if os.path.exists(file_path):
                 reply = QMessageBox.question(
                     self, "Confirm Overwrite",
@@ -203,7 +198,6 @@ class Tab4(QWidget):
                 if reply != QMessageBox.Yes:
                     return
 
-            # Write CSV
             with open(file_path, "w") as f:
                 f.write("Second,Counts\n")
                 for i, count in enumerate(shared.count_history):
@@ -215,6 +209,7 @@ class Tab4(QWidget):
             QMessageBox.critical(self, "Download Error", str(e))
 
 
+
     def clear_session(self):
         shared.counts = []
         shared.counts_left = []
@@ -223,35 +218,6 @@ class Tab4(QWidget):
         self.ax.clear()
         self.canvas.draw()
 
-    def start_recording_counts(self, filename):
-        print(f"start_recording_counts: {filename}")
-        try:
-            dn = shared.device
-            compression = shared.compression
-            t_interval = shared.t_interval
-
-            if dn >= 100:
-                shproto.dispatcher.spec_stopflag = 0
-
-                dispatcher = threading.Thread(target=shproto.dispatcher.start)
-                dispatcher.start()
-
-                time.sleep(0.4)
-                shproto.dispatcher.process_03('-mode 0')
-                time.sleep(0.4)
-                shproto.dispatcher.process_03('-rst')
-                time.sleep(0.4)
-                shproto.dispatcher.process_03('-sta')
-                time.sleep(0.4)
-                shproto.dispatcher.process_01(filename, compression, "MAX", t_interval)
-
-            else:
-                start_recording(mode=2)
-                shared.recording = True
-
-        except Exception as e:
-            QMessageBox.critical(self, "Start Error", f"Error starting: {str(e)}")
-     
     def update_plot(self):
         try:
             # Use real count history

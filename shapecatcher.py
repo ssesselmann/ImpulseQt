@@ -1,6 +1,5 @@
 import pyaudio
 import numpy as np
-import pyaudio
 import wave
 import time
 import shared
@@ -61,16 +60,8 @@ def capture_channel_polarity(channel_data, sample_length, shape_lld, peak):
     return None
 
 #   Capture initial pulses to determine polarity.
-def capture_pulse_polarity(timeout=30):
-    with shared.write_lock:
-        device = int(shared.device)
-        stereo = bool(shared.stereo)
-        sample_rate = int(shared.sample_rate)
-        chunk_size = int(shared.chunk_size)
-        device = int(shared.device) 
-        sample_length = int(shared.sample_length)
-        shape_lld = int(shared.shape_lld)
-        peak = int((sample_length - 1) / 2 + shared.peakshift)
+def capture_pulse_polarity(device, stereo, sample_rate, chunk_size, sample_length, shape_lld, peak, timeout=30):
+
 
     p = pyaudio.PyAudio()
 
@@ -163,6 +154,10 @@ def shapecatcher():
         shape_uld       = shared.shape_uld
         pc              = 0
 
+    print(f'shape_lld = {shape_lld}')
+
+    print(f'shape_uld = {shape_uld}')
+
     peak = int(((sample_length - 1) / 2) + peakshift)
 
     logger.info(f"Shapecatcher shape_lld fixed at {shape_lld}")
@@ -172,7 +167,7 @@ def shapecatcher():
     time.sleep(0.1)
 
     # Determine pulse polarity
-    pulse_sign_left, pulse_sign_right = capture_pulse_polarity(peak)
+    pulse_sign_left, pulse_sign_right = capture_pulse_polarity(device, stereo, sample_rate, chunk_size, sample_length, shape_lld, peak)
 
     if stereo and pulse_sign_right is None:
         sc_info.append('No pulse on right channel... Exiting.')
@@ -247,7 +242,12 @@ def shapecatcher():
         # Ensure equal length
         max_length = max(len(mean_shape_left), len(mean_shape_right))
         mean_shape_left += [0] * (max_length - len(mean_shape_left))
-        mean_shape_right += [0] * (max_length - len(mean_shape_right))
+
+
+        if stereo:
+            mean_shape_right += [0] * (max_length - len(mean_shape_right))
+        else:
+            mean_shape_right = []
 
         with shared.write_lock:
             shared.mean_shape_left = mean_shape_left

@@ -4,6 +4,10 @@ import numpy as np
 import os
 import logging
 import shared
+import shproto
+import threading
+import time
+import csv
 
 from pathlib import Path
 from PySide6.QtCore import QTimer, Qt, Signal
@@ -11,9 +15,10 @@ from PySide6.QtGui import QFont, QBrush, QColor, QIntValidator, QPixmap
 from mpl_toolkits.mplot3d import Axes3D 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
+from matplotlib import cm
 from datetime import datetime, timedelta
 from collections import deque 
-from shared import logger, P1, P2, H1, H2, MONO, START, STOP, BTN, FOOTER, DLD_DIR
+from shared import logger, P1, P2, H1, H2, MONO, START, STOP, BTN, FOOTER, DLD_DIR, USER_DATA_DIR
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit,
     QComboBox, QCheckBox, QGridLayout, QDialog, QDialogButtonBox, QMessageBox, QSizePolicy
@@ -32,19 +37,16 @@ logger = logging.getLogger(__name__)
 class Tab3(QWidget):
     def __init__(self):
         super().__init__()
-        shared.histogram_3d = [[0] * 64 for _ in range(64)]
-        shared.filename_3d = "filename"         # Prevent misleading file reference
         
         self.ready_to_plot = True      # Block update_graph until ready
-        self.plot_data = deque(maxlen=shared.bins_3d)  # Store up to fixed_secs rows
-        self.time_stamps = deque(maxlen=60)  # Store corresponding times
-        self.fixed_bins = shared.bins_3d  # Number of bins
-        self.fixed_secs = 60  # Maximum time steps to display
+        self.plot_window_size = 60  # seconds of history to show
+        self.plot_data = deque(maxlen=self.plot_window_size)
+        self.time_stamps = deque(maxlen=self.plot_window_size)
         self.ax = None  # Initialize axes for plotting
         self.init_ui()
         self.refresh_timer = QTimer()
         self.refresh_timer.timeout.connect(self.update_graph)
-        #self.refresh_timer.start(shared.t_interval * 1000)
+        
 
     def init_ui(self):
         # Main layout for the entire widget
@@ -62,12 +64,23 @@ class Tab3(QWidget):
         top_section = QWidget()
         top_layout = QGridLayout(top_section)
 
+        with shared.write_lock:
+            bins = shared.bins
+
+        self.bins = bins    
+        self.Z = np.zeros((self.plot_window_size, bins), dtype=int)
+
+        self.row_ptr      = 0
+        self.time_buf     = deque(maxlen=self.plot_window_size)
+        self.last_plot_ts = -1                        #  ←  ensures attribute exists
+
         self.start_button = QPushButton("START")
         self.start_button.setStyleSheet(START)
         self.start_button.clicked.connect(self.confirm_overwrite)
         self.start_text = QLabel()
         self.counts_display = QLabel()
         self.counts_display.setStyleSheet(H1)
+
         self.max_counts_input = QLineEdit(str(shared.max_counts))
 
         self.stop_button = QPushButton("STOP")
@@ -82,62 +95,92 @@ class Tab3(QWidget):
         file_row = QHBoxLayout()
 
         self.filename_dropdown = QComboBox()
-        #self.filename_dropdown.setMaximumWidth(180)
         self.filename_dropdown.addItem("Select or enter >")
         self.file_options = [opt['label'] for opt in get_options_3d()]
         self.filename_dropdown.addItems(self.file_options)
         self.filename_dropdown.currentIndexChanged.connect(self.handle_file_selection)
 
         self.filename_input = QLineEdit(shared.filename_3d)
-        #self.filename_input.setMaximumWidth(180)
         self.filename_input.setText(shared.filename_3d)
+        self.filename_input.textChanged.connect(lambda text: self.on_text_changed(text, "filename"))
 
         # Add both widgets to the row
         file_row.addWidget(self.filename_dropdown)
         file_row.addWidget(self.filename_input)
 
         self.t_interval_input = QLineEdit(str(shared.t_interval))
+        self.t_interval_input.textChanged.connect(lambda text: self.on_text_changed(text, "t_interval"))
 
-        self.channel_dropdown = QComboBox()
-        self.channel_dropdown.addItem("64", 64)
-        self.channel_dropdown.addItem("128", 128)
-        self.channel_dropdown.addItem("256", 256)
-        # Restore saved selection
-        index = self.channel_dropdown.findData(shared.bins_3d)
-        if index != -1:
-            self.channel_dropdown.setCurrentIndex(index)
-        self.channel_dropdown.currentIndexChanged.connect(self.update_bins_3d)
+
+
+        # UNIFIED BIN Selector ================================================
+        self.bins_container = QWidget()
+        self.bins_container.setObjectName("bins_container_unified")
+        bins_layout = QVBoxLayout(self.bins_container)
+        bins_layout.setContentsMargins(0, 0, 0, 0)
+        self.bins_label = QLabel("Select number of bins")
+        self.bins_label.setStyleSheet(P1)
+        self.bins_selector = QComboBox()
+        self.bins_selector.setToolTip("Select number of channels (lower = more compression)")
+        self.bins_selector.addItem("128 Bins", 64)
+        self.bins_selector.addItem("256 Bins", 32)
+        self.bins_selector.addItem("512 Bins", 16)
+        self.bins_selector.addItem("1024 Bins", 8)
+        self.bins_selector.addItem("2048 Bins", 4)
+        self.bins_selector.addItem("4096 Bins", 2)
+        self.bins_selector.addItem("8192 Bins", 1)
+
+        bins_layout.addWidget(self.bins_label)
+        bins_layout.addWidget(self.bins_selector)
+
+        # Determine the current index from shared.compression
+        compression_values = [64, 32, 16, 8, 4, 2, 1]
+
+        try:
+            with shared.write_lock:
+                current_compression = shared.compression
+            index = compression_values.index(current_compression)
+        except ValueError:
+            index = 6  # default to 8192 bins (compression=1)
+        self.bins_selector.setCurrentIndex(index)
+ 
+        self.bins_selector.currentIndexChanged.connect(self.on_select_bins_changed)
+
 
         self.epb_switch = QCheckBox("Energy by bin")
         self.epb_switch.setChecked(shared.epb_switch)
         self.epb_switch.stateChanged.connect(self.update_graph)
+        self.epb_switch.stateChanged.connect(lambda state: self.on_checkbox_toggle("epb_switch", state))
 
         self.log_switch = QCheckBox("Show log(y)")
         self.log_switch.setChecked(shared.log_switch)
         self.log_switch.stateChanged.connect(self.update_graph)
+        self.log_switch.stateChanged.connect(lambda state: self.on_checkbox_toggle("log_switch", state))
+
 
         self.cal_switch = QCheckBox("Calibration")
         self.cal_switch.setChecked(shared.cal_switch)
         self.cal_switch.stateChanged.connect(self.update_graph)
-
+        self.cal_switch.stateChanged.connect(lambda state: self.on_checkbox_toggle("cal_switch", state))
 
         top_layout.addWidget(self.start_button, 0, 0)
 
         self.max_counts_label = QLabel("Max Counts")
         self.max_counts_label.setStyleSheet(P1)
         top_layout.addWidget(self.max_counts_label, 1, 0)
-
         top_layout.addWidget(self.max_counts_input, 2, 0)
+        self.max_counts_input.textChanged.connect(lambda text: self.on_text_changed(text, "max_counts"))
+
         top_layout.addWidget(self.counts_display, 3, 0)
         top_layout.addWidget(self.start_text, 4, 0)
-
         top_layout.addWidget(self.stop_button, 0, 1)
 
         self.max_seconds_label = QLabel("Max Seconds")
         self.max_seconds_label.setStyleSheet(P1)
         top_layout.addWidget(self.max_seconds_label, 1, 1)
-
         top_layout.addWidget(self.max_seconds_input, 2, 1)
+        self.max_seconds_input.textChanged.connect(lambda text: self.on_text_changed(text, "max_seconds"))
+
         top_layout.addWidget(self.elapsed_display, 3, 1)
         top_layout.addWidget(self.stop_text, 4, 1)
 
@@ -149,13 +192,12 @@ class Tab3(QWidget):
 
         top_layout.addWidget(QLabel("Time Interval (sec)"), 9, 0)
         top_layout.addWidget(self.t_interval_input, 9, 1)
-
         
         self.bins_label = QLabel("Number of channels (x)")
         self.bins_label.setStyleSheet(P1)
         top_layout.addWidget(self.bins_label, 10, 1)
 
-        top_layout.addWidget(self.channel_dropdown, 11, 1)
+        top_layout.addWidget(self.bins_selector, 11, 1)
 
         # Download array button
         self.dld_array_btn = QPushButton("Download array")
@@ -168,14 +210,14 @@ class Tab3(QWidget):
         top_layout.addWidget(self.log_switch, 11, 0)
         top_layout.addWidget(self.cal_switch, 12, 0)
 
-        text =  """
-                This section is for information about how to use the 3d spectrum efficiently and what user can do to get better results from their experiments. 
-                """
+        text =  """This 3D spectrum gets it's calibration ssettings from the 2D spectrum on tab2. 3D spectra quickly become large arrays, for this reason the number of channels have been restricted to less than 1024 channels. Calibration is automatically adjusted accordingly. The plot shows the last 60 seconds, to see the entire file download the csv and open the array in a third party application."""
 
+        text2 = "\n\nMore detailed arrays can be achieved by increasing the interval time."
         # 2. Middle Section — Instructions
         middle_section = QWidget()
         middle_layout = QVBoxLayout(middle_section)
-        self.instructions_label = QLabel(text)
+        self.instructions_label = QLabel(text+text2)
+        self.instructions_label.setStyleSheet(P1)
         self.instructions_label.setWordWrap(True)
         middle_layout.addWidget(self.instructions_label)
 
@@ -206,8 +248,8 @@ class Tab3(QWidget):
         self.ax = self.figure.add_subplot(111, projection='3d')
 
         # Set axis limits
-        self.ax.set_xlim(0, self.fixed_bins)
-        self.ax.set_ylim(0, self.fixed_bins)
+        self.ax.set_xlim(0, self.bins)
+        self.ax.set_ylim(0, self.plot_window_size)
         self.ax.set_zlim(0, 1)  # or a small Z range just to show the axis
 
         # Set axis labels
@@ -231,50 +273,92 @@ class Tab3(QWidget):
         footer.setStyleSheet(H1)
         main_layout.addWidget(footer)  # Add the footer to the bottom
 
+    def on_checkbox_toggled(self, checked):
+        print("Checkbox toggled")  # See if this prints instantly
+
+
+
+    def on_text_changed(self, text, key):
+        try:
+            if key in {"max_counts", "t_interval", "max_seconds"}:
+                with shared.write_lock:
+                    setattr(shared, key, int(text))
+            elif key == "filename":
+                filename = text.strip()
+                with shared.write_lock:
+                    shared.filename_3d = filename
+                shared.save_settings()
+        except Exception as e:
+            logger.warning(f"Invalid input for {key}: {text} ({e})")
+
+
+    def on_checkbox_toggle(self, key, state):
+        with shared.write_lock:
+            setattr(shared, key, bool(state))
+            shared.save_settings()
+
+    def refresh_file_list(self):
+        folder = Path(USER_DATA_DIR)
+        pattern = "*_3d.json"
+        files = sorted(folder.glob(pattern), reverse=True)
+
+        # Save original filenames and display names without extension
+        self.file_options = [f.stem.replace("_3d", "") for f in files]  # just the base names
+
+        self.filename_dropdown.blockSignals(True)  # prevent accidental signal firing
+        self.filename_dropdown.clear()
+        self.filename_dropdown.addItem("Select file to load")
+        self.filename_dropdown.addItems(self.file_options)
+        self.filename_dropdown.blockSignals(False)
+
 
     def handle_file_selection(self, index):
         if index == 0:
-            return  # Ignore placeholder selection
-        filename = self.file_options[index - 1]  # Adjust index due to placeholder
-        self.load_selected_file(filename)
-        # Reset dropdown to placeholder after selection
-        self.filename_dropdown.setCurrentIndex(0)
+            return  # Ignore placeholder
+
+        selected_name = self.file_options[index - 1]
+        full_filename = f"{selected_name}_3d.json"
+        self.load_selected_file(full_filename)
+
+        # Update text input to reflect selected file
+        self.filename_input.setText(selected_name)
 
 
     def load_selected_file(self, filename):
         try:
             load_histogram_3d(filename)
-            self.filename_input.setText(filename)
-            shared.filename_3d = filename
+            logger.info(f"Loaded: {filename}")
+
+            # Strip "_3d" and update input
+            input_name = Path(filename).stem.replace("_3d", "")
+            self.filename_input.setText(input_name)
+
             self.ready_to_plot = True
-            logger.info("Loaded file in static mode: timer stopped, run_flag set to False")
             self.refresh_timer.stop()
 
-
-            # Fill plot_data with entire loaded file
-            histogram = shared.histogram_3d[-self.fixed_secs:]  # last 64 rows max
-            self.plot_data.clear()
+            # Clear and update plot
+            self.plot_data = []
             self.time_stamps.clear()
-
-            start_time = datetime.now() - timedelta(seconds=shared.t_interval * len(histogram))
-
-            for i, row in enumerate(histogram):
-                row_padded = row[:self.fixed_bins] + [0] * max(0, self.fixed_bins - len(row))
-                self.plot_data.append(np.array(row_padded, dtype=float))
-                self.time_stamps.append(start_time + timedelta(seconds=i * shared.t_interval))
-
-            self.update_graph()  # Force redraw once
+            self.update_graph()
 
         except Exception as e:
             logger.warning(f"Failed to load 3D file: {e}")
-            self.ready_to_plot = False
-            shared.run_flag = False
+            with shared.write_lock:
+                self.ready_to_plot = False
+                shared.run_flag = False
+
+
+    def stop(self):
+        self.refresh_timer.stop()
+        self.refresh_file_list()
+        self.filename_dropdown.setCurrentIndex(0)
+        stop_recording()
 
 
 
     def confirm_overwrite(self):
         filename = self.filename_input.text()
-        file_path = os.path.join(shared.USER_DATA_DIR, f"{filename}_3d.json")
+        file_path = os.path.join(USER_DATA_DIR, f"{filename}_3d.json")
         if os.path.exists(file_path):
             result = QMessageBox.question(
                 self, "Overwrite Confirmation",
@@ -283,177 +367,234 @@ class Tab3(QWidget):
             )
             if result == QMessageBox.No:
                 return
-        self.start()
+        self.start_recording_3d(filename)
 
-    def start(self):
+
+
+    def start_recording_3d(self, filename):
+
+        print(f"filename={filename}")
+
         try:
-            filename = self.filename_input.text().strip()
-            if not filename:
-                QMessageBox.warning(self, "Missing filename", "Please enter or select a filename before starting.")
-                return
-            interval = int(self.t_interval_input.text())
-            shared.filename_3d = filename
-            shared.t_interval = interval
-            shared.bins_3d = 64
-            shared.max_counts = int(self.max_counts_input.text())
-            shared.max_seconds = int(self.max_seconds_input.text())
-            self.refresh_timer.start(shared.t_interval * 1000)
-            shared.save_settings()
-            start_recording(3)
-            #self.start_text.setText("Started recording")
-            # Clear plot data on start to reset
             self.plot_data.clear()
-            self.time_stamps.clear()
-        except Exception as e:
-            logger.error(f"Start error: {e}")
-            self.start_text.setText(f"Error: {str(e)}")
 
-    def stop(self):
-        self.refresh_timer.stop()
-        stop_recording()
-        #self.stop_text.setText("Recording stopped")
-
-    
-    def update_bins_3d(self):
-        value = self.channel_dropdown.currentData()
-        if value is not None:
-            shared.bins_3d = int(value)
-            shared.save_settings()
-
-            # Update internal fields
-            self.fixed_bins = shared.bins_3d
-            self.plot_data = deque(maxlen=self.fixed_secs)  # Reinitialize to match new size
-            shared.histogram_3d = [[0] * self.fixed_bins for _ in range(self.fixed_secs)]
+            with shared.write_lock:
+                shared.filename = filename
+                coi             = shared.coi_switch
+                device_type     = shared.device_type
+                t_interval      = shared.t_interval
             
-            # Clear and redraw the canvas with new axis limits
-            self.ax.clear()
-            self.ax.set_xlim(0, self.fixed_secs * shared.t_interval)
-            self.ax.set_ylim(0, self.fixed_bins)
-            self.ax.set_zlim(0, 1)
-            self.ax.set_xlabel('Time (s)')
-            self.ax.set_ylabel('Channels')
-            self.ax.set_zlabel('Counts')
-            self.canvas.draw()
+            mode = 3
 
-            shared.bin_size_3d = shared.bin_size * (shared.bins/shared.bins_3d)
+            # --- Reset plotting ---
+            self.refresh_timer.stop()
+            self.refresh_timer.start(t_interval * 1000)
 
-            logger.info(f"Updated shared.bins_3d → {shared.bins_3d}\n")
-            logger.info(f"shared.bin_size_3d → {shared.bin_size_3d}\n")
+            # Call the centralized recording logic
+            thread = start_recording(mode, device_type)
+            
+            if thread:
+                self.process_thread = thread
+
+        except Exception as e:
+            QMessageBox.critical(self, "Start Error", f"Error starting: {str(e)}")
+
+
+    def update_bins_selector(self):
+        compression_values = [64, 32, 16, 8, 4, 2, 1]
+        try:
+            with shared.write_lock:
+                current_compression = shared.compression
+            index = compression_values.index(current_compression)
+        except ValueError:
+            index = 6  # Default to 8192 bins
+
+        self.bins_selector.setCurrentIndex(index)
+
+
+    def on_select_bins_changed(self, index):
+        self.plot_data.clear()
+        compression = self.bins_selector.itemData(index)
+        if compression is not None:
+            with shared.write_lock:
+                shared.compression = compression
+                shared.bins = shared.bins_abs // compression
+                logger.info(f"Compression set to {compression}, bins = {shared.bins}")
+
 
     def download_array_csv(self):
-        try:
-            import csv
+        # ── Any data to save? ───────────────────────────────────────────────
+        if not self.plot_data:
+            QMessageBox.warning(self, "No Data", "There is no spectrum data to download.")
+            return
 
-            if not self.plot_data:
-                QMessageBox.warning(self, "No Data", "There is no spectrum data to download.")
-                return
-
+        # ── File name & key shared values ──────────────────────────────────
+        with shared.write_lock:
             filename = Path(shared.filename_3d).stem or "spectrum3d"
             csv_path = shared.DLD_DIR / f"{filename}_3d.csv"
+            bins     = shared.bins
+            coeff_1  = shared.coeff_1
+            coeff_2  = shared.coeff_2
+            coeff_3  = shared.coeff_3
 
-            if csv_path.exists():
-                result = QMessageBox.question(
-                    self, "Overwrite Confirmation",
-                    f"The file {filename}.csv already exists.\nDo you want to overwrite it?",
-                    QMessageBox.Yes | QMessageBox.No
-                )
-                if result != QMessageBox.Yes:
-                    return  # Abort if user chooses "No"
+        # ── Confirm overwrite if the file is already there ────────────────
+        if csv_path.exists():
+            if QMessageBox.question(
+                self, "Overwrite Confirmation",
+                f"{csv_path.name} exists – overwrite?",
+                QMessageBox.Yes | QMessageBox.No
+            ) != QMessageBox.Yes:
+                return
 
-            with open(csv_path, mode='w', newline='') as file:
-                writer = csv.writer(file)
+        try:
+            with open(csv_path, "w", newline="") as fh:
+                writer = csv.writer(fh)
 
-                # Prepare header row: Energy if calibrated, Bin otherwise
-                if self.cal_switch.isChecked():
-                    factor = shared.bins / self.fixed_bins
-                    scaled_bins = [int(b * factor) for b in range(self.fixed_bins)]
-                    poly = np.poly1d([shared.coeff_1, shared.coeff_2, shared.coeff_3])
-                    energies = poly(scaled_bins)
+                # ── Header line ────────────────────────────────────────────
+                if self.cal_switch.isChecked():  # Calibrated
+                    poly = np.poly1d([coeff_3, coeff_2, coeff_1])
+                    energies = poly(np.arange(bins))
                     header = [f"{e:.3f}" for e in energies]
                     writer.writerow(["Energy (keV)"] + header)
-                else:
-                    header = [f"Bin {i}" for i in range(self.fixed_bins)]
-                    writer.writerow(["Time Step"] + header)
+                else:  # Raw bin numbers
+                    writer.writerow(["Time Step"] + [f"Bin {i}" for i in range(bins)])
 
-                for i, row in enumerate(self.plot_data):
-                    padded_row = list(row) + [0] * (self.fixed_bins - len(row))
-                    writer.writerow([i] + padded_row[:self.fixed_bins])
+                # ── Data rows ───────────────────────────────────────────────
+                for t, row in enumerate(self.plot_data):
+                    # Ensure each row is exactly bins long
+                    if len(row) < bins:
+                        row = list(row) + [0] * (bins - len(row))
+                    elif len(row) > bins:
+                        row = row[:bins]
+
+                    writer.writerow([t] + row)
 
             QMessageBox.information(self, "Download Complete", f"CSV saved to:\n{csv_path}")
 
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to save CSV:\n{str(e)}")
+            logger.error(f"Error saving CSV: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to save CSV:\n{e}")
 
 
+
+    # ------------------------------------------------------------------
 
     def update_graph(self):
         if not self.ready_to_plot:
             return
 
         try:
-            if shared.run_flag:
-                histogram = shared.histogram_3d
-                if not histogram or not isinstance(histogram[-1], list):
-                    logger.warning("Latest histogram data is empty or invalid.")
-                    return
 
-                latest_row = histogram[-1][:self.fixed_bins] + [0] * max(0, self.fixed_bins - len(histogram[-1]))
-                latest_row = np.array(latest_row, dtype=float)
-                self.plot_data.append(latest_row)
+            # ── Snapshot shared state ───────────────────────────────────────
+            run_flag = hist3d = t_interval = log_switch = epb_switch = cal_switch = counts = elapsed = bins = coeffs = None
+            with shared.write_lock:
+                run_flag   = shared.run_flag
+                hist3d     = list(shared.histogram_3d)
+                t_interval = shared.t_interval
+                log_switch = shared.log_switch
+                epb_switch = shared.epb_switch
+                cal_switch = shared.cal_switch
+                counts     = shared.counts
+                elapsed    = shared.elapsed
+                bins       = shared.bins
+                coeffs     = [shared.coeff_3, shared.coeff_2, shared.coeff_1]
 
-                start_time = getattr(shared, 'start_time', datetime.now() - timedelta(seconds=shared.t_interval * (len(self.plot_data) - 1)))
-                self.time_stamps.append(start_time + timedelta(seconds=shared.t_interval * len(self.plot_data)))
+            # ── Ensure data is present and valid ────────────────────────────
+            if not hist3d or not isinstance(hist3d[-1], list):
+                logger.warning("No valid histogram row to display.")
+                return
 
-            Z = np.array(self.plot_data)
-            if len(Z) < self.fixed_secs:
-                pad_rows = np.zeros((self.fixed_secs - len(Z), self.fixed_bins))
-                Z = np.vstack([pad_rows, Z])
+            if len(hist3d[-1]) != bins:
+                return
 
-            elapsed_secs = np.arange(len(Z)) * shared.t_interval
-            y_vals = np.arange(self.fixed_bins)
+            # ── Append to plot data ─────────────────────────────────────────
+            self.plot_data.append(hist3d[-1])
+            if len(self.plot_data) > 60:
+                self.plot_data.pop(0)
 
-            if self.cal_switch.isChecked():
-                factor = shared.bins / self.fixed_bins
-                scaled_bins = [int(b * factor) for b in y_vals]
-                poly = np.poly1d([shared.coeff_1, shared.coeff_2, shared.coeff_3])
-                y_vals = poly(scaled_bins)
+            self.time_stamps.append(elapsed)
+            if len(self.time_stamps) > 60:
+                self.time_stamps.pop(0)
 
-            if self.epb_switch.isChecked():
-                energy_axis = np.arange(self.fixed_bins)
-                if self.cal_switch.isChecked():
-                    poly = np.poly1d([shared.coeff_1, shared.coeff_2, shared.coeff_3])
-                    energy_axis = poly(energy_axis)
-                Z = Z * energy_axis[np.newaxis, :]
 
-            X, Y = np.meshgrid(elapsed_secs, y_vals, indexing='ij')
+            if not self.plot_data:
+                logger.warning("Plot data is empty.")
+                return
 
+            # ── Build Z matrix ──────────────────────────────────────────────
+            Z = np.asarray(self.plot_data, dtype=float)
+
+            if Z.ndim != 2 or Z.shape[1] != bins:
+                logger.error(f"Z shape mismatch: {Z.shape}, expected (n_rows, {bins})")
+                return
+
+            # ── Y Axis: Time vector ─────────────────────────────────────────
+            num_rows = Z.shape[0]
+            if self.time_stamps and len(self.time_stamps) == num_rows:
+                y_axis = np.array(self.time_stamps, float)
+            else:
+                y_axis = np.linspace(elapsed - num_rows * t_interval, elapsed, num_rows)
+
+            # ── X Axis: Bin or Energy ───────────────────────────────────────
+            bin_indices = np.arange(bins)
+            if cal_switch:
+                x_axis = coeffs[2] * bin_indices**2 + coeffs[1] * bin_indices + coeffs[0]
+            else:
+                x_axis = bin_indices
+
+            # ── Meshgrid for 3D plot ────────────────────────────────────────
+            X, Y = np.meshgrid(x_axis, y_axis, indexing='ij')
+
+            # ── Apply log and energy-per-bin scaling ────────────────────────
+            if log_switch:
+                Z[Z <= 0] = 0.1
+                Z = np.log10(Z)
+
+            if epb_switch:
+                Z *= X.T  # Transpose X to broadcast across rows
+
+
+            # ── Plot Surface ────────────────────────────────────────────────
             if self.ax is None:
                 self.figure.clf()
                 self.ax = self.figure.add_subplot(111, projection='3d')
             else:
                 self.ax.clear()
 
-            if self.log_switch.isChecked():
-                Z = np.log10(Z + 1)
+            # various plot styles
+            #self.ax.plot_surface(X, Y, Z.T,cmap='turbo', shade=True,linewidth=1, antialiased=False)
+            #self.ax.plot_trisurf(X.flatten(), Y.flatten(), Z.T.flatten(),cmap='viridis',shade=False,linewidth=0,antialiased=True)
+            #self.ax.plot_wireframe(X, Y, Z.T, rstride=2, cstride=2, color='blue', linewidth=0.5, antialiased=True)
+            #self.ax.contour3D(X, Y, Z.T,levels=20, cmap='viridis',linewidths=0.5,antialiased=True)
+            self.ax.plot_surface(X, Y, Z.T, cmap='turbo',shade=False, linewidth=0.5, color='gray', antialiased=True, rstride=1, cstride=1)
 
-            self.ax.plot_surface(X, Y, Z, cmap='turbo', shade=True)
-            self.ax.set_xlabel("Time from Start (s)")
-            self.ax.set_ylabel("Channels (y)" if not self.cal_switch.isChecked() else "Energy (y)")
-            self.ax.set_zlabel("Counts (z)" if not self.log_switch.isChecked() else "Log(Counts)")
-            self.ax.set_xlim(0, self.fixed_secs * shared.t_interval)
-            self.ax.set_ylim(min(y_vals), max(y_vals))
-            self.ax.set_zlim(0, Z.max() * 1.1 if Z.max() > 0 else 10)
-            tick_indices = np.arange(0, self.fixed_secs, 10)
-            tick_labels = [f"{int(i * shared.t_interval)}" for i in tick_indices]
-            self.ax.set_xticks(tick_indices * shared.t_interval)
-            self.ax.set_xticklabels(tick_labels, rotation=45, ha='right')
-            self.ax.view_init(elev=30, azim=150)
 
+
+            self.ax.view_init(elev=30, azim=45)
+            self.ax.set_xlabel("Energy (keV)" if cal_switch else "Bin #")
+            self.ax.set_ylabel("Time (s)")
+            self.ax.set_zlabel("log₁₀(Counts)" if log_switch else "Counts")
+            self.ax.set_xlim(x_axis.min(), x_axis.max())
+
+            y_min, y_max = y_axis.min(), y_axis.max()
+            if y_min == y_max:
+                y_min -= 1
+                y_max += 1
+            self.ax.set_ylim(y_min, y_max)
+
+            if Z.size > 0:
+                zmax = float(Z.max())
+                zmin = float(Z.min())
+            else:
+                zmax = 1.0
+                zmin = 0.1
+
+            self.ax.set_zlim(zmin, max(zmax * 1.1, zmin * 10))
             self.canvas.draw()
 
-            if shared.run_flag:
-                self.counts_display.setText(str(shared.counts))
-                self.elapsed_display.setText(str(shared.elapsed))
+            if run_flag:
+                self.counts_display.setText(str(counts))
+                self.elapsed_display.setText(str(elapsed))
 
-        except Exception as e:
-            logger.error(f"Update graph error: {e}")
+        except Exception as exc:
+            logger.error(f"update_graph() error: {exc}", exc_info=True)

@@ -14,6 +14,8 @@ import shared
 from struct import *
 from datetime import datetime
 
+from shared import USER_DATA_DIR
+
 max_bins            = 8192
 logger              = logging.getLogger(__name__)
 
@@ -47,7 +49,6 @@ cps_list            = []
 serial_number       = ""
 calibration         = [0., 1., 0., 0., 0.]
 inf_str             = ''
-data_directory      = ''
 _dispatcher_thread  = None
 _dispatcher_started = False
 
@@ -83,6 +84,9 @@ def start(sn=None):
         nano.flushOutput()
     logger.info("MAX connected successfully.\n")
     response = shproto.packet()
+
+    # Track whether the CSV file has been initialized
+    pulse_file_initialized = False  
 
     while not shproto.dispatcher.stopflag:
 
@@ -148,6 +152,7 @@ def start(sn=None):
                 shproto.dispatcher.pkts03 += 1
                 resp_decoded = bytes(response.payload[:len(response.payload) - 2])
                 resp_lines = []
+
                 try:
                     resp_decoded = resp_decoded.decode("ascii")
                     resp_lines = resp_decoded.splitlines()
@@ -196,8 +201,7 @@ def start(sn=None):
                 response.clear()
 
             # ----- cmd pulse mode -------------------------------------    
-            # Track whether the CSV file has been initialized
-            pulse_file_initialized = False  
+            #logger.debug(f"[RX] cmd={response.cmd} len={response.len} first 10 bytes: {response.payload[:10]}")
 
             if response.cmd == shproto.MODE_PULSE:
                 pulse_data = []
@@ -217,9 +221,8 @@ def start(sn=None):
 
                 # Open the CSV file only once per script execution
                 if not pulse_file_initialized:
-                    with shared.write_lock:
-                        data_directory = shared.data_directory
-                        csv_file_path = os.path.join(data_directory, "_max-pulse-shape.csv")
+
+                    csv_file_path = os.path.join(USER_DATA_DIR, "_max-pulse-shape.csv")
 
                     # Check if the file already exists (to avoid overwriting existing data)
                     file_exists = os.path.isfile(csv_file_path)
@@ -237,6 +240,7 @@ def start(sn=None):
                     fd_pulses.write(",".join(map(str, pulse_data)) + "\n")
 
                 response.clear()
+
             # ------- cmd stat mode --------------------------
             elif response.cmd == shproto.MODE_STAT:
                 shproto.dispatcher.pkts04 += 1
@@ -267,16 +271,17 @@ def start(sn=None):
 
 # This process records the 2D histogram (spectrum)
 def process_01(filename, compression, device, t_interval):
-    logger.info(f'shproto.dispatcher.process_01({filename})\n')
+    
+    logger.info(f'process_01({filename})\n')
 
     global counts, last_counts
 
     counts              = 0
     last_counts         = 0
-    compression         = int(compression)
+    elapsed             = 0
     max_bins            = 8192
     t0                  = time.time()
-    elapsed             = 0
+    compression         = int(compression)
     compressed_bins     = int(max_bins / compression)
 
     with shared.write_lock:
@@ -287,8 +292,9 @@ def process_01(filename, compression, device, t_interval):
         coeff_2             = shared.coeff_2
         coeff_3             = shared.coeff_3
         max_seconds         = shared.max_seconds
-        t_interval          = shared.t_interval
-        suppress_last_bin   = shared.suppress_last_bin
+        suppress_last_bin   = shared.slb_switch
+
+    logger.info("passed all variables")
 
     # Define the histogram list
     hst = [0] * max_bins  # Initialize the original histogram list
@@ -300,7 +306,16 @@ def process_01(filename, compression, device, t_interval):
     # Initialize count history
     count_history = []
 
-    while not (shproto.dispatcher.spec_stopflag or shproto.dispatcher.stopflag) and (counts < max_counts and elapsed <= max_seconds):
+    while True:
+        if shproto.dispatcher.spec_stopflag or shproto.dispatcher.stopflag:
+            logger.info("MAX process_01 received stop signal.")
+            save_spectrum_json(filename, device, compressed_hst, count_history, elapsed, [coeff_3, coeff_2, coeff_1], spec_notes, start_time, end_time)
+            break
+
+        if counts >= max_counts or elapsed > max_seconds:
+            logger.info("MAX process_01 reached stopping condition (counts or time).")
+            save_spectrum_json(filename, device, compressed_hst, count_history, elapsed, [coeff_3, coeff_2, coeff_1], spec_notes, start_time, end_time)
+            break
 
         time.sleep(t_interval)
 
@@ -342,106 +357,40 @@ def process_01(filename, compression, device, t_interval):
         # Update global variables once per second
         if t1 - last_update_time >= 1 * t_interval:
             with shared.write_lock:
-                data_directory              = shared.data_directory
                 shared.counts          = counts
                 shared.elapsed         = elapsed
                 shared.count_history   = count_history 
                 shared.histogram       = compressed_hst
                 shared.cps             = cps
-                spec_notes                  = shared.spec_notes
+                spec_notes             = shared.spec_notes
 
             last_update_time = t1
 
         # Save JSON files once every 60 seconds
         if t1 - last_save_time >= 60 or shproto.dispatcher.spec_stopflag or shproto.dispatcher.stopflag:
+            save_spectrum_json(filename, device, compressed_hst, count_history, elapsed, [coeff_3, coeff_2, coeff_1], spec_notes, start_time, end_time)
 
-            logger.info(f'shproto process_01 saving {filename}.json\n')
-
-            data = {
-                "schemaVersion": "NPESv2",
-                "data": [
-                    {
-                        "deviceData": {
-                            "softwareName": "IMPULSE",
-                            "deviceName": "{}{}".format(device, shproto.dispatcher.serial_number)
-                        },
-                        "sampleInfo": {
-                            "name": filename,
-                            "location": "",
-                            "note": spec_notes,
-                        },
-                        "resultData": {
-                            "startTime": start_time.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
-                            "endTime": end_time.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
-                            "energySpectrum": {
-                                "numberOfChannels": compressed_bins,
-                                "energyCalibration": {
-                                    "polynomialOrder": 2,
-                                    "coefficients": [coeff_3, coeff_2, coeff_1]
-                                },
-                                "validPulseCount": counts,
-                                "measurementTime": elapsed,
-                                "spectrum": compressed_hst
-                            }
-                        }
-                    }
-                ]
-            }
-
-            json_data = json.dumps(data, separators=(",", ":"))
-
-            # Construct the full path to the file
-            file_path = os.path.join(data_directory, f'{filename}.json')
-
-            logger.info(f'file saved to: {file_path}\n')
-
-            # Open the JSON file in "write" mode for each iteration
-            with open(file_path, "w") as wjf:
-                wjf.write(json_data)
-
-            # Save CPS data to a separate JSON file
-            cps_data = {
-                "filename": filename,
-                "count_history": count_history,
-                "elapsed": elapsed,
-                "droppedPulseCount": 0
-            }
-
-            cps_file_path = os.path.join(data_directory, f'{filename}_cps.json')
-
-            logger.info(f'CPS file saved to: {cps_file_path}\n')
-
-            # Open the CPS JSON file in "write" mode for each iteration
-            with open(cps_file_path, "w") as cps_wjf:
-                json.dump(cps_data, cps_wjf)
-
-            last_save_time = t1
-
+        last_save_time = t1
         last_counts = counts
 
     return
 
 # This process records the 3D histogram 9spectrum)
-def process_02(filename_3d, compression, device, t_interval):  # Compression reduces the number of channels by 8, 4, or 2
+def process_02(filename_3d, compression3d, device, t_interval):  # Compression reduces the number of channels by 8, 4, or 2
     logger.info(f'dispatcher.process_02 ({filename_3d})\n')
 
     global counts, last_counts, histogram_3d
 
+    t0                  = time.time()
     counts              = 0
     last_counts         = 0
     total_counts        = 0
-    compression3d         = int(compression)
-    max_bins            = 8192
-    t0                  = time.time()
     elapsed             = 0
     hst3d               = []
-    compressed_bins     = int(max_bins / compression3d)
+    compressed_bins     = int(8192 / compression3d)
     last_hst            = [0] * compressed_bins
 
     with shared.write_lock:
-        data_directory      = shared.data_directory
-        shared.bins3d    = int(max_bins / compression3d)
-        # Set local variables
         max_counts          = shared.max_counts
         coeff_1             = shared.coeff_1
         coeff_2             = shared.coeff_2
@@ -459,7 +408,14 @@ def process_02(filename_3d, compression, device, t_interval):  # Compression red
     # Initialize count history
     count_history = []
 
-    while not (shproto.dispatcher.spec_stopflag or shproto.dispatcher.stopflag) and (counts < max_counts and elapsed <= max_seconds):
+    while True:
+        if shproto.dispatcher.spec_stopflag or shproto.dispatcher.stopflag:
+            logger.info("MAX process_01 received stop signal.")
+            break
+
+        if counts >= max_counts or elapsed > max_seconds:
+            logger.info("MAX process_01 reached stopping condition (counts or time).")
+            break
 
         time.sleep(t_interval)
 
@@ -481,7 +437,7 @@ def process_02(filename_3d, compression, device, t_interval):  # Compression red
         hst[-1] = 0
 
         # Combine every 'compression' elements into one for compression
-        compressed_hst = [sum(hst[i:i + compression]) for i in range(0, max_bins, compression)]
+        compressed_hst = [sum(hst[i:i + compression3d]) for i in range(0, max_bins, compression3d)]
 
         # Sum total counts
         counts = sum(compressed_hst)
@@ -498,11 +454,14 @@ def process_02(filename_3d, compression, device, t_interval):  # Compression red
         # Update global variables once per second
         if t1 - last_update_time >= 1 * t_interval:
 
+            # Retain only last 60 updates for plotting
+            histogram_3d_window = hst3d[-60:]
+
             with shared.write_lock:
-                shared.counts          = counts
-                shared.elapsed         = elapsed
-                shared.count_history   = count_history  # Update count history
-                shared.histogram_3d    = hst3d
+                shared.counts        = counts
+                shared.elapsed       = elapsed
+                shared.count_history = count_history
+                shared.histogram_3d  = histogram_3d_window
 
             with cps_lock:
                 shared.cps             = cps    
@@ -548,7 +507,7 @@ def process_02(filename_3d, compression, device, t_interval):  # Compression red
             json_data = json.dumps(data, separators=(",", ":"))
 
             # Construct the full path to the file
-            file_path = os.path.join(data_directory, f'{filename_3d}_3d.json')
+            file_path = os.path.join(USER_DATA_DIR, f'{filename_3d}_3d.json')
 
             logger.info(f'file path = {file_path}\n')
 
@@ -556,51 +515,31 @@ def process_02(filename_3d, compression, device, t_interval):  # Compression red
             with open(file_path, "w") as wjf:
                 wjf.write(json_data)
 
-            # Save CPS data to a separate JSON file
-            cps_data = {
-                "filename": filename_3d,
-                "count_history": count_history,
-                "elapsed": elapsed
-            }
+            # # Save CPS data to a separate JSON file
+            # cps_data = {
+            #     "filename": filename_3d,
+            #     "count_history": count_history,
+            #     "elapsed": elapsed
+            # }
 
-            cps_file_path = os.path.join(data_directory, f'{filename_3d}_cps.json')
+            # cps_file_path = os.path.join(USER_DATA_DIR, f'{filename_3d}_cps.json')
 
-            logger.info(f'CPS file path = {cps_file_path}\n')
+            # logger.info(f'CPS file path = {cps_file_path}\n')
 
-            # Open the CPS JSON file in "write" mode for each iteration
-            with open(cps_file_path, "w") as cps_wjf:
-                json.dump(cps_data, cps_wjf)
+            # # Open the CPS JSON file in "write" mode for each iteration
+            # with open(cps_file_path, "w") as cps_wjf:
+            #     json.dump(cps_data, cps_wjf)
 
             last_save_time = t1
+            hst3d = []
+            count_history = []
 
         last_counts = counts
         last_hst    = compressed_hst
 
     return
 
-def load_json_data(file_path):
-    logger.info(f'dispatcher.load_json_data({file_path})\n')
-    if os.path.exists(file_path):
-        with open(file_path, "r") as rjf:
-            return json.load(rjf)
-    else:
-        return {
-            "schemaVersion": "NPESv1",
-            "resultData": {
-                "startTime": int(time.time() * 1e6),  # Convert seconds to microseconds
-                "energySpectrum": {
-                    "numberOfChannels": 0,
-                    "energyCalibration": {
-                        "polynomialOrder": 2,
-                        "coefficients": []
-                    },
-                    "validPulseCount": 0,
-                    "totalPulseCount": 0,
-                    "measurementTime": 0,
-                    "spectrum": []
-                }
-            }
-        }
+
 
 # This process is used for sending commands to the Nano device
 def process_03(cmd):
@@ -641,3 +580,81 @@ def clear():
         shproto.dispatcher.lost_impulses        = 0
         shproto.dispatcher.total_pulse_width    = 0
         shproto.dispatcher.dropped              = 0
+
+
+def save_spectrum_json(filename, device, compressed_hst, count_history, elapsed, coeffs, spec_notes, start_time, end_time):
+    try:
+        data = {
+            "schemaVersion": "NPESv2",
+            "data": [
+                {
+                    "deviceData": {
+                        "softwareName": "IMPULSE",
+                        "deviceName": f"{device}{shproto.dispatcher.serial_number}"
+                    },
+                    "sampleInfo": {
+                        "name": filename,
+                        "location": "",
+                        "note": spec_notes,
+                    },
+                    "resultData": {
+                        "startTime": start_time.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+                        "endTime": end_time.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+                        "energySpectrum": {
+                            "numberOfChannels": len(compressed_hst),
+                            "energyCalibration": {
+                                "polynomialOrder": 2,
+                                "coefficients": coeffs
+                            },
+                            "validPulseCount": sum(compressed_hst),
+                            "measurementTime": elapsed,
+                            "spectrum": compressed_hst
+                        }
+                    }
+                }
+            ]
+        }
+
+        json_path = os.path.join(USER_DATA_DIR, f"{filename}.json")
+        with open(json_path, "w") as f:
+            json.dump(data, f, separators=(",", ":"))
+        logger.info(f"[OK] Spectrum saved to {json_path}")
+
+        cps_data = {
+            "filename": filename,
+            "count_history": count_history,
+            "elapsed": elapsed,
+            "droppedPulseCount": 0
+        }
+
+        cps_path = os.path.join(USER_DATA_DIR, f"{filename}_cps.json")
+        with open(cps_path, "w") as f:
+            json.dump(cps_data, f, indent=2)
+        logger.info(f"[OK] CPS saved to {cps_path}")
+
+    except Exception as e:
+        logger.error(f"[ERROR] Failed to save spectrum: {e}")
+
+def load_json_data(file_path):
+    logger.info(f'dispatcher.load_json_data({file_path})\n')
+    if os.path.exists(file_path):
+        with open(file_path, "r") as rjf:
+            return json.load(rjf)
+    else:
+        return {
+            "schemaVersion": "NPESv1",
+            "resultData": {
+                "startTime": int(time.time() * 1e6),  # Convert seconds to microseconds
+                "energySpectrum": {
+                    "numberOfChannels": 0,
+                    "energyCalibration": {
+                        "polynomialOrder": 2,
+                        "coefficients": []
+                    },
+                    "validPulseCount": 0,
+                    "totalPulseCount": 0,
+                    "measurementTime": 0,
+                    "spectrum": []
+                }
+            }
+        }

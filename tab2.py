@@ -5,6 +5,9 @@ import csv
 import platform
 import json
 import numpy as np
+import shproto
+import threading
+import time
 
 from PySide6.QtWidgets import (
     QWidget, 
@@ -23,7 +26,7 @@ from PySide6.QtWidgets import (
     QTextEdit
 )
 from PySide6.QtCore import Qt, QTimer, Slot
-from PySide6.QtGui import QFont, QBrush, QColor, QIntValidator, QPixmap
+from PySide6.QtGui import QFont, QBrush, QColor, QIntValidator, QPixmap, QDoubleValidator
 from functions import (
     start_recording, 
     get_options, 
@@ -37,7 +40,7 @@ from functions import (
     read_flag_data
     )
 from audio_spectrum import play_wav_file
-from shared import logger, P1, P2, H1, H2, MONO, START, STOP, BTN, FOOTER, DLD_DIR
+from shared import logger, device_type, P1, P2, H1, H2, MONO, START, STOP, BTN, FOOTER, DLD_DIR, USER_DATA_DIR
 from pathlib import Path
 from calibration_popup import CalibrationPopup
 
@@ -68,17 +71,30 @@ class Tab2(QWidget):
         container.setLayout(layout)
         return container
 
+    def safe_float(val):
+        try:
+            return float(val)
+        except:
+            return 0.0
 
     def __init__(self):
         super().__init__()
 
         tab2_layout = QVBoxLayout()
 
+        positive_int_validator = QIntValidator(1, 9999999)  
+        positive_float_validator = QDoubleValidator()
+        positive_float_validator.setNotation(QDoubleValidator.StandardNotation)
+        positive_float_validator.setDecimals(2) 
+
         # === Plot ===
         self.plot_timer = QTimer()
+        self.process_thread = None
         self.plot_timer.timeout.connect(self.update_histogram)
         self.plot_widget = pg.PlotWidget(title="2D Count Rate Histogram")
-        self.hist_curve = self.plot_widget.plot(shared.histogram, pen='b')
+        with shared.write_lock:
+            histogram_data = shared.histogram.copy()
+        self.hist_curve = self.plot_widget.plot(histogram_data, pen='b')
         self.hist_curve_2 = self.plot_widget.plot([], pen=pg.mkPen("r", width=1.5))  # comparison in red
         self.diff_curve = None  # Holds the plotted difference line
         self.plot_widget.setBackground('w')
@@ -99,6 +115,32 @@ class Tab2(QWidget):
         for i in range(9):
             grid.setColumnStretch(i, 1)
 
+        with shared.write_lock:
+            device_type = shared.device_type
+            max_counts  = shared.max_counts
+            max_seconds = shared.max_seconds
+            filename    = shared.filename
+            bin_size    = shared.bin_size
+            bins        = shared.bins
+            compression = shared.compression
+            threshold   = shared.threshold
+            tolerance   = shared.tolerance 
+            comp_switch = shared.comp_switch
+            diff_switch = shared.diff_switch
+            coi_switch  = shared.coi_switch
+            epb_switch  = shared.epb_switch
+            log_switch  = shared.log_switch
+            cal_switch  = shared.cal_switch
+            iso_switch  = shared.iso_switch
+            sigma       = shared.sigma
+            peakfinder  = shared.peakfinder
+            coeff_1     = shared.coeff_1
+            coeff_2     = shared.coeff_2
+            coeff_3     = shared.coeff_3
+            spec_notes  = shared.spec_notes
+            slb_switch  = shared.slb_switch
+            t_interval  = shared.t_interval
+
         # Col 1 Row 1 --------------------------------------------------------------------------
         self.start_button = QPushButton("START")
         self.start_button.setStyleSheet(START)
@@ -112,8 +154,9 @@ class Tab2(QWidget):
         grid.addWidget(self.labeled_input("Total counts", self.counts_label), 1, 0)
 
         # Col 1 Row 3 
-        self.max_counts_input = QLineEdit(str(shared.max_counts))
+        self.max_counts_input = QLineEdit(str(int(max_counts)))
         self.max_counts_input.setAlignment(Qt.AlignCenter)
+        self.max_counts_input.setValidator(QIntValidator(0, 9999999))
         grid.addWidget(self.labeled_input("Stop at counts.", self.max_counts_input), 2, 0)
 
         # Col 1 Row 4
@@ -135,9 +178,11 @@ class Tab2(QWidget):
         grid.addWidget(self.labeled_input("Elapsed time", self.elapsed_label), 1, 1)
 
         # Col 2 Row 3
-        self.max_seconds_input = QLineEdit(str(shared.max_seconds))
+        self.max_seconds_input = QLineEdit(str(int(max_seconds)))
         self.max_seconds_input.setAlignment(Qt.AlignCenter)
+        self.max_seconds_input.setValidator(QIntValidator(0, 9999999))  
         grid.addWidget(self.labeled_input("Stop at seconds", self.max_seconds_input), 2, 1)
+
 
         # Col 2 Row 4
         self.cps_label = QLabel("0")
@@ -147,14 +192,13 @@ class Tab2(QWidget):
 
 
         # Col 3 Row 1 -------------------------------------------------------------------------
-        self.filename_input = QLineEdit(shared.filename)
+        clean_filename = filename.removesuffix(".json") if filename else ""
+        self.filename_input = QLineEdit(clean_filename)
         self.filename_input.textChanged.connect(lambda text: self.on_text_changed(text, "filename"))
         grid.addWidget(self.labeled_input("Filename", self.filename_input), 0, 2)
 
-        
 
         # Col 3 Row 3
-        positive_int_validator = QIntValidator(1, 999999)  
 
         # Initialize widget lists for visibility control
         self.pro_only_widgets = []
@@ -166,10 +210,10 @@ class Tab2(QWidget):
         self.bin_size_container.setObjectName("bin_size_container")  # For debugging
         bin_size_layout = QVBoxLayout(self.bin_size_container)
         bin_size_layout.setContentsMargins(0, 0, 0, 0)
-        self.bin_size = QLineEdit(str(shared.bin_size))
+        self.bin_size = QLineEdit(str(bin_size))
         self.bin_size.setAlignment(Qt.AlignCenter)
         self.bin_size.setToolTip("Pitch (bin-size)")
-        self.bin_size.setValidator(positive_int_validator)
+        self.bin_size.setValidator(positive_float_validator)
         self.bin_size.textChanged.connect(lambda text: self.on_text_changed(text, "bin_size"))
         bin_size_layout.addWidget(self.labeled_input("Pitch (bin size)", self.bin_size))
         grid.addWidget(self.bin_size_container, 1, 2)
@@ -177,23 +221,88 @@ class Tab2(QWidget):
         # PRO CLOSE WRAPPER ===============================================
 
 
-        # PRO wrapper=====================================================
-
-        # Col 3 Row 3: PRO-only bins container
+        # UNIFIED BIN Selector ================================================
         self.bins_container = QWidget()
-        self.bins_container.setObjectName("bins_container")  # For debugging
+        self.bins_container.setObjectName("bins_container_unified")
         bins_layout = QVBoxLayout(self.bins_container)
         bins_layout.setContentsMargins(0, 0, 0, 0)
-        self.bins = QLineEdit(str(shared.bins))
-        self.bins.setAlignment(Qt.AlignCenter)
-        self.bins.setToolTip("Bins")
-        self.bins.setValidator(positive_int_validator)
-        self.bins.textChanged.connect(lambda text: self.on_text_changed(text, "bins"))
-        bins_layout.addWidget(self.labeled_input("Number of channels", self.bins))
-        grid.addWidget(self.bins_container, 2, 2)
-        self.pro_only_widgets.append(self.bins_container)
-        # PRO CLOSE WRAPPER ===============================================
+        self.bins_label = QLabel("Select number of bins")
+        self.bins_label.setStyleSheet(P1)
+        self.bins_selector = QComboBox()
+        self.bins_selector.setToolTip("Select number of channels (lower = more compression)")
+        self.bins_selector.addItem("128 Bins", 64)
+        self.bins_selector.addItem("256 Bins", 32)
+        self.bins_selector.addItem("512 Bins", 16)
+        self.bins_selector.addItem("1024 Bins", 8)
+        self.bins_selector.addItem("2048 Bins", 4)
+        self.bins_selector.addItem("4096 Bins", 2)
+        self.bins_selector.addItem("8192 Bins", 1)
 
+        bins_layout.addWidget(self.bins_label)
+        bins_layout.addWidget(self.bins_selector)
+
+        # Determine the current index from shared.compression
+        compression_values = [64, 32, 16, 8, 4, 2, 1]
+        try:
+            with shared.write_lock:
+                current_compression = shared.compression
+            index = compression_values.index(current_compression)
+        except ValueError:
+            index = 6  # default to 8192 bins (compression=1)
+        self.bins_selector.setCurrentIndex(index)
+
+        if device_type == "MAX":
+            grid.addWidget(self.bins_container, 1, 2)
+            self.max_only_widgets.append(self.bins_container) 
+
+        elif device_type == "PRO":
+            grid.addWidget(self.bins_container, 2, 2)
+            self.pro_only_widgets.append(self.bins_container)    
+
+        self.bins_selector.currentIndexChanged.connect(self.on_select_bins_changed)
+
+
+        #================================================================
+
+        # MAX OPEN WRAPPER =============================================
+        self.slb_container_max = self.make_checkbox_container(
+            label="Suppress last bin",
+            checked=slb_switch,
+            tooltip="Suppress last bin",
+            shared_key="slb_switch"
+        )
+        grid.addWidget(self.slb_container_max, 2, 2)
+        self.max_only_widgets.append(self.slb_container_max)
+        # MAX CLOSE WRAPPER =============================================
+
+
+
+        # MAX OPEN WRAPPER =============================================
+        self.cmd_container = QWidget()
+        cmd_layout = QVBoxLayout(self.cmd_container)
+        cmd_layout.setContentsMargins(0, 0, 0, 0)
+        self.cmd_selector_label = QLabel("Serial Command:")
+        self.cmd_selector_label.setStyleSheet(P1)        
+        self.cmd_selector = QComboBox()
+
+        # Default prompt item (no value)
+        self.cmd_selector.addItem("- Select action -", None)
+
+        # Actual commands
+        self.cmd_selector.addItem("Pause MCA", "-sto")
+        self.cmd_selector.addItem("Restart MCA", "-sta")
+        self.cmd_selector.addItem("Reset Histogram", "-rst")
+
+        cmd_layout.addWidget(self.cmd_selector_label)
+        cmd_layout.addWidget(self.cmd_selector)
+
+        grid.addWidget(self.cmd_container, 1, 3)
+        self.max_only_widgets.append(self.cmd_container)
+
+        # Connect signal
+        self.cmd_selector.currentIndexChanged.connect(self.send_selected_command)
+
+        # MAX CLOSE WRAPPER =============================================
 
         # Col 3 Row 3
         self.select_file = QComboBox()
@@ -216,13 +325,13 @@ class Tab2(QWidget):
         threshold_layout = QVBoxLayout(self.threshold_container)
         threshold_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.threshold = QLineEdit(str(shared.threshold))
+        self.threshold = QLineEdit(str(threshold))
         self.threshold.setAlignment(Qt.AlignCenter)
-        self.threshold.setToolTip("LLD threshold")
+        self.threshold.setToolTip("LLD threshold (bins)")
         self.threshold.setValidator(positive_int_validator)  # Optional if you use a validator
         self.threshold.textChanged.connect(lambda text: self.on_text_changed(text, "threshold"))
 
-        threshold_layout.addWidget(self.labeled_input("LLD Threshold", self.threshold))
+        threshold_layout.addWidget(self.labeled_input("LLD Threshold (bins)", self.threshold))
         grid.addWidget(self.threshold_container, 0, 3)
         self.pro_only_widgets.append(self.threshold_container)
         # PRO CLOSE wrapper =======================================================
@@ -236,7 +345,7 @@ class Tab2(QWidget):
         tolerance_layout = QVBoxLayout(self.tolerance_container)
         tolerance_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.tolerance_input = QLineEdit(str(shared.tolerance))
+        self.tolerance_input = QLineEdit(str(tolerance))
         self.tolerance_input.setAlignment(Qt.AlignCenter)
         self.tolerance_input.setToolTip("Distortion tolerance threshold")
         self.tolerance_input.setValidator(positive_int_validator)
@@ -251,7 +360,7 @@ class Tab2(QWidget):
         self.dld_csv_btn = QPushButton("Download csv")
         self.dld_csv_btn.setStyleSheet(BTN)
         self.dld_csv_btn.clicked.connect(self.on_dld_csv_btn)
-        grid.addWidget(self.labeled_input("Start", self.dld_csv_btn), 2, 3)
+        grid.addWidget(self.labeled_input("Download csv File", self.dld_csv_btn), 0, 3)
 
 
         # Col 4 Row 4
@@ -268,74 +377,105 @@ class Tab2(QWidget):
 
 
         # Col 5 Row 1 ---------------------------------------------------------------------
-        self.comp_switch = QCheckBox()
-        self.comp_switch.setChecked(shared.comp_switch) 
-        self.comp_switch.setToolTip("Comparison Spectrum")
-        self.comp_switch.stateChanged.connect(lambda state: self.on_checkbox_toggle(state, "comp_switch"))
-        grid.addWidget(self.labeled_input("Show comparison", self.comp_switch), 0, 4)   
+        self.comp_container = self.make_checkbox_container(
+            label="Show comparison",
+            checked=comp_switch,
+            tooltip="Comparison Spectrum",
+            shared_key="comp_switch"
+        )
+        grid.addWidget(self.comp_container, 2, 3)
 
 
-        # Col 5 Row 2
-        self.diff_switch = QCheckBox()
-        self.diff_switch.setChecked(shared.diff_switch)
-        self.diff_switch.setToolTip("Subtract comparison")
-        self.diff_switch.stateChanged.connect(lambda state: self.on_checkbox_toggle(state, "diff_switch"))
-        grid.addWidget(self.labeled_input("Subtract comparison", self.diff_switch), 1, 4)
+        # PRO OPEN WRAPPER =============================================
+        self.coi_container = self.make_checkbox_container(
+            label="Coincidence",
+            checked=coi_switch,
+            tooltip="Coincidence spectrum",
+            shared_key="coi_switch"
+        )
+        grid.addWidget(self.coi_container, 1, 4)
+        self.pro_only_widgets.append(self.coi_container)
+        # PRO CLOSE WRAPPER =============================================
 
-        # Col 5 Row 3
-        self.coi_switch = QCheckBox()
-        self.coi_switch.setChecked(shared.coi_switch) 
-        self.coi_switch.setToolTip("Coincidence spectrum")
-        self.coi_switch.stateChanged.connect(lambda state: self.on_checkbox_toggle(state, "coi_switch"))
-        grid.addWidget(self.labeled_input("Coincidence", self.coi_switch), 2, 4)
+         # Col 5 Row 3
+        self.diff_container = self.make_checkbox_container(
+            label="Subtract comparison",
+            checked=diff_switch,
+            tooltip="Subtract comparison",
+            shared_key="diff_switch"
+        )
+        grid.addWidget(self.diff_container, 2, 4)
+
 
         # Col 5 Row 4
-        self.select_flags = QComboBox()
-        self.select_flags.setEditable(False)
-        self.select_flags.setInsertPolicy(QComboBox.NoInsert)
-        self.select_flags.setStyleSheet(P2)
+        self.select_flag_table = QComboBox()
+        self.select_flag_table.setEditable(False)
+        self.select_flag_table.setInsertPolicy(QComboBox.NoInsert)
+        self.select_flag_table.setStyleSheet(P2)
         options = get_flag_options()
         for opt in options:
-            self.select_flags.addItem(opt['label'], opt['value'])
-        self.select_flags.currentIndexChanged.connect(self.on_select_flags_changed)    
-        grid.addWidget(self.labeled_input("Select Isotope Library", self.select_flags), 3, 4)
+            self.select_flag_table.addItem(opt['label'], opt['value'])
+
+        # Restore previously selected isotope table from shared settings
+        saved_tbl = shared.isotope_tbl
+        if saved_tbl:
+            index = self.select_flag_table.findData(saved_tbl)
+            if index != -1:
+                self.select_flag_table.setCurrentIndex(index)
+                self.on_select_flag_table_changed(index)  
+
+        self.select_flag_table.currentIndexChanged.connect(self.on_select_flag_table_changed)    
+        grid.addWidget(self.labeled_input("Select Isotope Library", self.select_flag_table), 3, 4)
+
 
         # Col 6 Row 1 ----------------------------------------------------------------------------------
-        self.epb_switch = QCheckBox()
-        self.epb_switch.setChecked(shared.epb_switch) 
-        self.epb_switch.setToolTip("Energy by bin")
-        self.epb_switch.stateChanged.connect(lambda state: self.on_checkbox_toggle(state, "epb_switch"))
-        grid.addWidget(self.labeled_input("Energy per bin", self.epb_switch), 0, 5)
+        self.epb_container = self.make_checkbox_container(
+            label="Energy per bin",
+            checked=epb_switch,
+            tooltip="Energy by bin",
+            shared_key="epb_switch"
+        )
+        grid.addWidget(self.epb_container, 0, 5)
+
         
         # Col 6 Row 2 
-        self.log_switch = QCheckBox()
-        self.log_switch.setChecked(shared.log_switch) 
-        self.log_switch.setToolTip("Energy by bin")
-        self.log_switch.stateChanged.connect(lambda state: self.on_checkbox_toggle(state, "log_switch"))
-        grid.addWidget(self.labeled_input("Show log(y)", self.log_switch), 1, 5)
+        self.log_container = self.make_checkbox_container(
+            label="Show log(y)",
+            checked=log_switch,
+            tooltip="Energy by bin",
+            shared_key="log_switch"
+        )
+        grid.addWidget(self.log_container, 1, 5)
+
 
         # Col 6 Row 3
-        self.cal_switch = QCheckBox()
-        self.cal_switch.setChecked(shared.cal_switch) 
-        self.cal_switch.setToolTip("Calibration on")
-        self.cal_switch.stateChanged.connect(lambda state: self.on_checkbox_toggle(state, "cal_switch"))
-        grid.addWidget(self.labeled_input("Calibration on", self.cal_switch), 2, 5)
+        self.cal_container = self.make_checkbox_container(
+            label="Calibration on",
+            checked=cal_switch,
+            tooltip="Calibration on",
+            shared_key="cal_switch"
+        )
+        grid.addWidget(self.cal_container, 2, 5)
+
 
         # Col 6 Row 4
-        self.iso_switch = QCheckBox()
-        self.iso_switch.setChecked(shared.iso_switch) 
-        self.iso_switch.setToolTip("values or isotopes")
-        self.iso_switch.stateChanged.connect(lambda state: self.on_checkbox_toggle(state, "iso_switch"))
-        grid.addWidget(self.labeled_input("Show Isotopes", self.iso_switch), 3, 5)
+        self.iso_container = self.make_checkbox_container(
+            label="Show Isotopes",
+            checked=iso_switch,
+            tooltip="values or isotopes",
+            shared_key="iso_switch"
+        )
+        grid.addWidget(self.iso_container, 3, 5)
+
 
         # Col 7 Row 1
         self.sigma_slider = QSlider(Qt.Horizontal)
         self.sigma_slider.setRange(0, 30)  # 0.0 to 3.0 in steps of 0.1
         self.sigma_slider.setSingleStep(1)
-        self.sigma_slider.setValue(int(shared.sigma * 10))
+        self.sigma_slider.setValue(int(sigma * 10))
         self.sigma_slider.setFocusPolicy(Qt.StrongFocus)
         self.sigma_slider.setFocus()
-        self.sigma_label = QLabel(f"Sigma: {shared.sigma:.1f}")
+        self.sigma_label = QLabel(f"Sigma: {sigma:.1f}")
         self.sigma_label.setAlignment(Qt.AlignCenter)
         self.sigma_label.setStyleSheet(P1)
         sigma_layout = QVBoxLayout()
@@ -351,10 +491,10 @@ class Tab2(QWidget):
         self.peakfinder_values = [0] + list(range(100, 0, -1))  # [0, 100, 99, ..., 1]
         self.peakfinder_slider.setRange(0, 100)
         self.peakfinder_slider.setSingleStep(1)
-        self.peakfinder_slider.setValue(int(shared.peakfinder))
+        self.peakfinder_slider.setValue(int(peakfinder))
         self.peakfinder_slider.setFocusPolicy(Qt.StrongFocus)
         self.peakfinder_slider.setFocus()
-        self.peakfinder_label = QLabel(f"Peakfinder: {shared.peakfinder}")
+        self.peakfinder_label = QLabel(f"Peakfinder: {peakfinder}")
         self.peakfinder_label.setAlignment(Qt.AlignCenter)
         font = QFont("Courier New")
         font.setPointSize(9)
@@ -367,9 +507,12 @@ class Tab2(QWidget):
         peakfinder_widget.setLayout(peakfinder_layout)
         grid.addWidget(peakfinder_widget, 1, 6)
         self.peakfinder_slider.valueChanged.connect(self.on_peakfinder_changed)
+        self.on_peakfinder_changed(self.peakfinder_slider.value())
+
 
         # Col 7 Row 3
-        self.poly_label = QLabel(f"E = {shared.coeff_1:.3f}x² + {shared.coeff_2:.3f}x + {shared.coeff_3:.3f}")
+        self.poly_label = QLabel(f"E = {coeff_1:.3f}x² + {coeff_2:.3f}x + {coeff_3:.3f}")
+
         self.poly_label.setAlignment(Qt.AlignCenter)
         font = QFont("Courier New")
         font.setPointSize(9)
@@ -396,7 +539,7 @@ class Tab2(QWidget):
         self.notes_input.setStyleSheet(MONO)
 
         # Optional: set existing value if shared.spec_notes is loaded
-        self.notes_input.setText(shared.spec_notes)
+        self.notes_input.setText(spec_notes)
 
         # Connect submit signal
         self.notes_input.textChanged.connect(self.on_notes_changed)
@@ -421,14 +564,15 @@ class Tab2(QWidget):
         self.bins_container,
         self.threshold_container,
         self.tolerance_container,
-        self.bin_size_container
+        self.bin_size_container,
+        self.coi_container
         ]
         self.update_widget_visibility()
 
         # Label stuff
         self.label_timer = QTimer()
         self.label_timer.timeout.connect(self.update_labels)
-        self.label_timer.start(1000)  # update every 1 second
+        self.label_timer.start(t_interval)  # update every 1 second
 
         tab2_layout.addLayout(grid)
 
@@ -442,41 +586,79 @@ class Tab2(QWidget):
         footer.setStyleSheet(H1)
         tab2_layout.addWidget(footer)
 
-        
-
+    
         self.setLayout(tab2_layout)
 
     # === Timer to update live data ===
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_labels)
-        self.plot_timer.start(1000)
+        self.plot_timer.start(t_interval)
 
     
+    def make_checkbox_container(self, label, checked, tooltip, shared_key):
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        checkbox = QCheckBox()
+        checkbox.setChecked(checked)
+        checkbox.setToolTip(tooltip)
+        checkbox.stateChanged.connect(lambda state: self.on_checkbox_toggle(state, shared_key))
+
+        layout.addWidget(self.labeled_input(label, checkbox))
+        return container
+
+
+
     def update_widget_visibility(self):
-        logger.info(f"Updating visibility, device_type: {shared.device_type}")
+        with shared.write_lock:
+            device_type = shared.device_type
+
+        logger.info(f"Updating visibility, device_type: {device_type}")
         for widget in getattr(self, "pro_only_widgets", []):
-            widget.setVisible(shared.device_type == "PRO")
+            widget.setVisible(device_type == "PRO")
         for widget in getattr(self, "max_only_widgets", []):
-            widget.setVisible(shared.device_type == "MAX")
+            widget.setVisible(device_type == "MAX")
 
     def on_device_type_changed(self, new_device_type):
-        shared.device_type = new_device_type
+        with shared.write_lock:
+            shared.device_type = new_device_type
+
         shared.save_settings()
         logger.info(f"Device type changed to: {new_device_type}")
         self.update_widget_visibility()
 
     def update_labels(self):
-        self.counts_label.setText(str(shared.counts))
-        self.elapsed_label.setText(str(shared.elapsed))
-        self.dropped_label.setText(str(shared.dropped_counts))
-        self.cps_label.setText(str(shared.cps))
+        with shared.write_lock:
+            counts  = shared.counts
+            elapsed = shared.elapsed
+            dropped = shared.dropped_counts
+            cps     = shared.cps 
+
+        self.counts_label.setText(str(counts))
+        self.elapsed_label.setText(str(elapsed))
+        self.dropped_label.setText(str(dropped))
+        self.cps_label.setText(str(cps))
 
         try:
-            shared.max_counts = int(self.max_counts_input.text())
-            shared.max_seconds = int(self.max_seconds_input.text())
-            shared.tolerance = float(self.tolerance_input.text())
+            with shared.write_lock:
+                shared.max_counts = int(self.max_counts_input.text())
+                shared.max_seconds = int(self.max_seconds_input.text())
+                shared.tolerance = float(self.tolerance_input.text())
+
         except ValueError:
             pass  # skip if input is invalid    
+
+    def update_bins_selector(self):
+        compression_values = [64, 32, 16, 8, 4, 2, 1]
+        try:
+            with shared.write_lock:
+                current_compression = shared.compression
+            index = compression_values.index(current_compression)
+        except ValueError:
+            index = 6  # Default to 8192 bins
+
+        self.bins_selector.setCurrentIndex(index)
 
     def make_cell(self, text):
         label = QLabel(text)
@@ -486,16 +668,14 @@ class Tab2(QWidget):
 
     @Slot()
     def on_start_clicked(self):
-        print("tab2 on_start_clicked)")
         filename = self.filename_input.text().strip()
-        file_path = os.path.join(shared.USER_DATA_DIR, f"{filename}.json")
+        file_path = os.path.join(USER_DATA_DIR, f"{filename}.json")
 
         if filename.startswith("i/"):
             QMessageBox.warning(self, "Invalid filename", 'Cannot overwrite files in "i/" directory.')
             return
 
         if os.path.exists(file_path):
-            print(f"path exists: {file_path}")
             reply = QMessageBox.question(
                 self, "Confirm Overwrite",
                 f'"{filename}.json" already exists. Overwrite?',
@@ -504,103 +684,135 @@ class Tab2(QWidget):
             if reply != QMessageBox.Yes:
                 return
 
+        if self.process_thread and self.process_thread.is_alive():
+            logger.warning("Previous thread still running, attempting to stop...")
+            stop_recording()
+            self.process_thread.join(timeout=2)
+            logger.info("Previous thread joined.")
+       
         self.clear_session()
         self.start_recording_2d(filename)
+
+    def clear_session(self):
+        self.plot_widget.clear()
+        self.peak_markers = []
+        self.hist_curve   = None
+        self.hist_curve_2 = None
+        self.comp_curve   = None
+        self.diff_curve   = None
+        self.gauss_curve  = None
+        with shared.write_lock:
+            shared.histogram = []
+            shared.histogram_2 = []
+            shared.gauss_curve = None
+
+    def start_recording_2d(self, filename):
+
+        with shared.write_lock:
+            shared.filename = filename
+            coi             = shared.coi_switch
+            device_type     = shared.device_type
+            t_interval      = shared.t_interval
+
+        mode = 4 if coi else 2
+
+        # --- Reset plotting ---
+        self.plot_timer.stop()
+        self.clear_session()
+        self.plot_timer.start(t_interval)
+
+        try:
+            # Call the centralized recording logic
+            thread = start_recording(mode, device_type)
+
+            if thread:
+                self.process_thread = thread
+
+        except Exception as e:
+            QMessageBox.critical(self, "Start Error", f"Error starting: {str(e)}")
 
 
     @Slot()
     def on_stop_clicked(self):
+
         stop_recording()
+
+        if self.process_thread and self.process_thread.is_alive():
+            logger.info("Waiting for recording thread to finish...")
+            self.process_thread.join(timeout=2)
+            logger.info("Recording thread stopped.")
+
+        self.process_thread = None
         self.plot_timer.stop()
 
-    def clear_session(self):
-        self.plot_widget.clear()
-        shared.histogram = []
-        shared.histogram_2 = []
-        shared.gauss_curve = None
-        shared.diff_curve = None
-        self.peak_markers = []
-        self.hist_curve = None
-        self.comp_curve = None
-        self.diff_curve = None
-        self.gauss_curve = None
-
-    def start_recording_2d(self, filename):
-        print(f"start_recording_2d {filename}")
-        try:
-            dn  = shared.device
-            coi = shared.coi_switch 
-            compression = shared.compression
-            t_interval  = shared.t_interval
-
-            mode = 4 if coi else 2
-
-            self.plot_timer.start(1000)  # re-enable it every time
-
-            if dn >= 100:
-                shproto.dispatcher.spec_stopflag = 0
-
-                dispatcher = threading.Thread(target=shproto.dispatcher.start)
-                dispatcher.start()
-
-                time.sleep(0.4)
-                shproto.dispatcher.process_03('-mode 0')
-                time.sleep(0.4)
-                shproto.dispatcher.process_03('-rst')
-                time.sleep(0.4)
-                shproto.dispatcher.process_03('-sta')
-                time.sleep(0.4)
-                shproto.dispatcher.process_01(filename, compression, "MAX", t_interval)
-
-            else:
-                print("start_recording(2)")
-                start_recording(mode=2)  # fallback
-                shared.recording = True
-
-        except Exception as e:
-            QMessageBox.critical(self, "Start Error", f"Error starting: {str(e)}")    
 
     def on_mouse_moved(self, pos):
         vb = self.plot_widget.getViewBox()
         mouse_point = vb.mapSceneToView(pos)
         x = int(mouse_point.x())
-        y = mouse_point.y()
 
-        if 0 <= x < len(shared.histogram):
-            bin_val = shared.histogram[x]
+        with shared.write_lock:
+            histogram = shared.histogram[:]  # safe shallow copy if needed
+
+        if 0 <= x < len(histogram):
+            bin_val = histogram[x]
             self.vline.setPos(x)
             self.hline.setPos(bin_val)
             self.plot_widget.setToolTip(f"Bin: {x}, Counts: {bin_val}")
+
     
     def on_checkbox_toggle(self, state, name):
+        
         value = bool(state)
-        setattr(shared, name, value)
 
-        if name in ("epb_switch", "log_switch", "diff_switch"):
+        with shared.write_lock:
+            setattr(shared, name, value)
+
+            logger.info(f"[TOGGLE] {name} set to {value}")
+
+            update_hist = name in ("epb_switch", "log_switch", "diff_switch")
+            comp_switch_on = name == "comp_switch" and value
+
+            # Grab filename while still in lock
+            filename_2 = self.select_file.currentData() if comp_switch_on else None
+            if comp_switch_on:
+                shared.filename_2 = filename_2
+
+        if update_hist:
             self.update_histogram()
 
-        elif name == "comp_switch" and value:
-            shared.filename_2 = self.select_file.currentData()
-            success = load_histogram_2(shared.filename_2)
+        elif comp_switch_on and filename_2:
+            success = load_histogram_2(filename_2)
             if success:
-                logger.info(f"[OK] Loaded comparison spectrum: {shared.filename_2}")
+                logger.info(f"[OK] Loaded comparison spectrum: {filename_2}")
             else:
-                logger.error(f"[ERROR] Failed to load comparison spectrum: {shared.filename_2}")
+                logger.error(f"[ERROR] Failed to load comparison spectrum: {filename_2}")
 
 
     def on_text_changed(self, text, key):
         try:
             if key in {"bin_size", "tolerance", "threshold"}:
                 setattr(shared, key, float(text))
-            elif key in {"bins", "max_counts", "max_seconds"}:
+            elif key in {"max_counts", "max_seconds"}:
                 setattr(shared, key, int(text))
             else:
                 setattr(shared, key, text)
         except ValueError:
             pass  # optionally handle conversion error
 
+    @Slot(int)
+    def on_select_bins_changed(self, index):
+        compression = self.bins_selector.itemData(index)
+        if compression is not None:
+            with shared.write_lock:
+                shared.compression = compression
+                shared.bins = shared.bins_abs // compression
+                logger.info(f"Compression set to {compression}, bins = {shared.bins}")
+                print(f"shared.bins updated: {shared.bins}")
+
 
     def on_select_filename_changed(self, index):
+
         filepath = self.select_file.itemData(index)
 
         # Ignore placeholder
@@ -612,126 +824,171 @@ class Tab2(QWidget):
 
         # Update input field and shared state
         self.filename_input.setText(filename_no_ext)
+
         shared.filename = filepath
+
         load_histogram(filepath)
 
-        # Refresh the note text box
-        self.notes_input.setText(shared.spec_notes)
+        # Get value while locked
+        with shared.write_lock:
+            note = shared.spec_notes
 
-        # Reset selector to "— Select file —"
+        # Safe GUI update outside the lock
+        self.notes_input.setText(note)
+
+        # Selection spring back function
         QTimer.singleShot(0, lambda: self.select_file.setCurrentIndex(0))
 
-        self.update_plot()
-
+        #self.update_plot()
 
     def on_select_filename_2_changed(self, index):
-        filename = self.select_comparison.itemData(index)
-        if filename:
-            shared.filename_2 = filename
-            data = load_histogram_2(filename)
+        filename_2 = self.select_comparison.itemData(index)
 
-            if data is not None and self.hist_curve_2:
-                x = data.get("bins", [])
-                y = data.get("counts", [])
+        if filename_2:
+            with shared.write_lock:
+                shared.filename_2 = filename_2
+
+            success = load_histogram_2(filename_2)
+
+            if success and self.hist_curve_2:
+                with shared.write_lock:
+                    x = list(range(len(shared.histogram_2)))
+                    y = shared.histogram_2
                 self.hist_curve_2.setData(x, y)
 
-    def on_select_flags_changed(self, index):
-        # Get the selected file path
-        filepath = self.select_flags.itemData(index)
-
-        if not filepath:
+    def on_select_flag_table_changed(self, index):
+        # Get the selected file name (e.g. "norm.json")
+        isotope_tbl = self.select_flag_table.itemData(index)
+        if not isotope_tbl:
             return
 
-        # Full path (relative to USER_DATA_DIR/lib/tbl/)
-        full_path = Path(shared.USER_DATA_DIR) / "lib" / "tbl" / filepath
+        # Build full path
+        isotope_tbl_path = Path(shared.USER_DATA_DIR) / "lib" / "tbl" / isotope_tbl
 
-        # Read isotope flags from the file
-        flags = read_flag_data(full_path)
+        # Load isotope flags
+        flags = read_flag_data(isotope_tbl_path)
 
+        with shared.write_lock:
+            shared.isotope_tbl = isotope_tbl  # remember filename only, not full path
+            shared.isotope_flags = flags if flags else []
+            shared.save_settings()  # <-- Persist selection
+
+        # Log result
         if flags:
-            shared.isotope_flags = flags
-            logger.info(f"[INFO] Loaded {len(flags)} isotope flags from {filepath}")
+            logger.info(f"[INFO] Loaded {len(flags)} isotope flags from {isotope_tbl}")
         else:
-            shared.isotope_flags = []
-            logger.warning(f"[WARN] No isotope flags loaded from {filepath}")
-
+            logger.warning(f"[WARN] No isotope flags loaded from {isotope_tbl}")
         
     def on_sigma_changed(self, val):
         sigma = val / 10.0
-        shared.sigma = sigma
+        with shared.write_lock:
+            shared.sigma = sigma
         self.sigma_label.setText(f"Sigma: {sigma:.1f}")
 
 
     def on_peakfinder_changed(self, position):
         value = self.peakfinder_values[position]
-        shared.peakfinder = value
+        with shared.write_lock:
+            shared.peakfinder = value
         if value == 0:
             self.peakfinder_label.setText(f"Peaks Off")
         elif value > 0:
             self.peakfinder_label.setText(f"More peaks >>")
     
-    def update_peak_markers(self):
-        if shared.peakfinder == 0:
-            return
+    def update_peak_markers(self): #WL Compliant
+
+        with shared.write_lock:
+            if shared.peakfinder == 0 or not shared.histogram:
+                return
+
+            histogram     = list(shared.histogram)
+            epb_switch    = shared.epb_switch
+            peakfinder    = shared.peakfinder
+            sigma         = shared.sigma
+            coeff_abc     = [shared.coeff_1, shared.coeff_2, shared.coeff_3]
+            cal_switch    = shared.cal_switch
+            iso_switch    = shared.iso_switch
+            log_switch    = shared.log_switch
+            isotope_flags = shared.isotope_flags   
+
 
         # Remove old markers
         for marker in getattr(self, "peak_markers", []):
             self.plot_widget.removeItem(marker)
         self.peak_markers = []
 
-        if not shared.histogram:
-            return
-
         # Apply epb switch if needed
-        y_data = [
-            y * x if shared.epb_switch else y
-            for x, y in enumerate(shared.histogram)
-        ]
+        y_data = [y * x if epb_switch else y for x, y in enumerate(histogram)]
 
         try:
             peaks, fwhm = peak_finder(
                 y_values=y_data,
-                prominence=shared.peakfinder,
-                min_width=shared.sigma,
+                prominence=peakfinder,
+                min_width=sigma,
                 smoothing_window=3
             )
 
-            coeff_abc = [shared.coeff_1, shared.coeff_2, shared.coeff_3]
-            use_cal = shared.cal_switch and any(coeff_abc)
-            use_iso = shared.iso_switch and shared.isotope_flags and use_cal
-            sigma = shared.sigma
+            use_cal = cal_switch and any(coeff_abc)
+            use_iso = iso_switch and isotope_flags and use_cal
 
             for p, width in zip(peaks, fwhm):
-                y = y_data[p]
+                if p >= len(y_data):
+                    logger.warning(f"[WARN] Peak index {p} out of bounds for y_data with length {len(y_data)}")
+                    continue
+
+                y_raw = y_data[p]
+
+
+                y = np.log10(y_raw) if log_switch and y_raw > 0 else y_raw
+
+                offset = 0.1 if log_switch else 10
+
                 resolution = (width / p) * 100 if p != 0 else 0
 
-                # Energy calibration if enabled
                 energy = float(np.polyval(np.poly1d(coeff_abc), p)) if use_cal else p
-                x_pos = energy if use_cal else p
 
-                # Isotope label if enabled and cal_switch is True
+                x_offset = 5
+                x_pos    = (energy if use_cal else p) + offset
+
                 isotope_labels = []
-                if shared.iso_switch and shared.cal_switch and shared.isotope_flags:
-                    for iso in shared.isotope_flags:
+
+                if use_iso:
+
+                    if sigma == 0:
+                        warning = pg.TextItem("Set sigma > 0 to find isotope match", anchor=(0, 0), color="r")
+                        font = QFont("Arial")
+                        font.setPointSize(12)
+                        warning.setFont(font)
+                        warning.setPos(800, max(y_data) * 0.9 if y_data else 10)  # near top-left
+                        self.plot_widget.addItem(warning)
+                        self.peak_markers.append(warning)  # so it clears next update
+                        return
+
+                    for iso in isotope_flags:
                         iso_energy = iso.get("energy")
-                        if iso_energy is None:
+                        try:
+                            iso_energy = float(iso_energy)
+                        except (TypeError, ValueError):
+                            logger.warning(f"[WARN] Skipping isotope with invalid energy: {iso_energy}")
                             continue
-                        if abs(iso_energy - energy) <= shared.sigma:
+
+                        if abs(iso_energy - energy) <= sigma:
                             isotope_labels.append(
-                                f"{iso['isotope']} {iso['energy']:.1f} keV ({iso['intensity'] * 100:.1f}%)"
-                        )
+                                f"{iso['isotope']} {iso_energy:.1f} keV ({iso['intensity'] * 100:.1f}%)"
+                            )
 
 
                 # Build label text
                 if isotope_labels:
-                    label_text = "\n".join(isotope_labels)  # omit resolution
+                    label_text = "\n".join(isotope_labels)
                 elif use_cal:
                     label_text = f"{energy:.1f} keV\n{resolution:.1f}%"
                 else:
                     label_text = f"Bin {p}\n{resolution:.1f}%"
 
 
-                # Draw label
+    
+
                 label = pg.TextItem(text=label_text, anchor=(0, 0), color="k")
                 font = QFont("Courier New")
                 font.setPointSize(10)
@@ -744,21 +1001,23 @@ class Tab2(QWidget):
             logger.error(f"[ERROR] Peak annotation failed: {e}")
 
 
+
     def open_calibration_popup(self):
         self.calibration_popup = CalibrationPopup(self.poly_label)
 
         self.calibration_popup.show()
 
-    def on_notes_changed(self):
+    def on_notes_changed(self): # WL Compliant
 
         new_note          = self.notes_input.toPlainText().strip()
-        shared.spec_notes = new_note
-        filename          = shared.filename 
+        with shared.write_lock:
+            shared.spec_notes = new_note
+            filename          = shared.filename 
 
         if not filename:
             return
 
-        json_path = shared.USER_DATA_DIR / filename
+        json_path = USER_DATA_DIR / filename
 
         if not json_path.exists():
             return
@@ -783,11 +1042,19 @@ class Tab2(QWidget):
 
 
     def on_dld_csv_btn(self):
-        try:
-            filename_stem = Path(shared.filename).stem if shared.filename else "spectrum"
-            csv_path = os.path.join(shared.DLD_DIR, f"{filename_stem}.csv")
-            histogram = shared.histogram
 
+        with shared.write_lock:
+            filename   = shared.filename
+            histogram  = shared.histogram
+            cal_switch = shared.cal_switch
+            coeff_1    = shared.coeff_1
+            coeff_2    = shared.coeff_2 
+            coeff_3    = shared.coeff_3
+
+        try:
+            filename_stem = Path(filename).stem if filename else "spectrum"
+            csv_path = os.path.join(DLD_DIR, f"{filename_stem}.csv")
+            
             if not histogram:
                 QMessageBox.warning(self, "Download Failed", "No histogram data to save.")
                 return
@@ -804,9 +1071,9 @@ class Tab2(QWidget):
             with open(csv_path, mode='w', newline='') as file:
                 writer = csv.writer(file)
 
-                if shared.cal_switch:
+                if cal_switch:
                     # Write calibrated energy axis
-                    poly = np.poly1d([shared.coeff_1, shared.coeff_2, shared.coeff_3])
+                    poly = np.poly1d([coeff_1, coeff_2, coeff_3])
                     energies = poly(np.arange(len(histogram)))
                     writer.writerow(["Energy", "Counts"])
                     writer.writerows(zip(np.round(energies, 3), histogram))
@@ -822,31 +1089,100 @@ class Tab2(QWidget):
 
 
     def apply_calibration(self, x_vals):
-        coeffs = [shared.coeff_1, shared.coeff_2, shared.coeff_3]
-        if shared.cal_switch and any(coeffs):
+
+        with shared.write_lock:
+            cal_switch = shared.cal_switch
+            coeff_1    = shared.coeff_1
+            coeff_2    = shared.coeff_2 
+            coeff_3    = shared.coeff_3
+
+        coeffs = [coeff_1, coeff_2, coeff_3]
+        if cal_switch and any(coeffs):
             return np.polyval(np.poly1d(coeffs), x_vals)
         return x_vals
 
 
     def apply_epb(self, x_vals, y_vals):
-        if shared.epb_switch:
+
+        with shared.write_lock:
+            epb_switch = shared.epb_switch
+
+        if epb_switch:
             return [y * x for x, y in zip(x_vals, y_vals)]
         return y_vals
 
     def apply_log_scale(self, y_vals):
-        if shared.log_switch:
+
+        with shared.write_lock:
+            log_switch = shared.log_switch
+
+        if log_switch:
             self.plot_widget.setLogMode(x=False, y=True)
             return [max(1, y) for y in y_vals]
         else:
             self.plot_widget.setLogMode(x=False, y=False)
             return y_vals
 
+    
+    def update_compression_setting(self):
+        if device_type == "MAX":
+            value = self.channel_selector.currentData()
+            with shared.write_lock:
+                shared.compression = value
+                shared.bins = int(shared.bins_abs/value)
+                logger.info(f"Compression set to {value} (i.e., {shared.bins_abs // value} bins)")
+        return    
+
+    
+    def send_selected_command(self):
+        cmd = self.cmd_selector.currentData()
+
+        if cmd:  # Ignore if default item
+            logger.info(f"Sending command: {cmd}")
+            fn.process_03(cmd)
+            time.sleep(0.2)
+            self.update_device_info_table()
+
+        # Reset to default (index 0)
+        self.cmd_selector.setCurrentIndex(0)
+
+    def update_plot(self):
+        self.update_histogram()
+        self.update_peak_markers()
+
+  
     def update_histogram(self):
+        
+        logger.info("update_histogram called")
+
+        with shared.write_lock:
+            histogram   = shared.histogram
+            histogram_2 = shared.histogram_2
+            diff_switch = shared.diff_switch
+            log_switch  = shared.log_switch
+            epb_switch  = shared.epb_switch
+            cal_switch  = shared.cal_switch
+            log_switch  = shared.log_switch
+            comp_switch = shared.comp_switch
+            coeff_1     = shared.coeff_1
+            coeff_2     = shared.coeff_2 
+            coeff_3     = shared.coeff_3
+            comp_coeff_1 = shared.comp_coeff_1
+            comp_coeff_2 = shared.comp_coeff_2
+            comp_coeff_3 = shared.comp_coeff_3 
+            sigma       = shared.sigma    
+            slb_switch  = shared.slb_switch   
+
+
+        logger.info(f"Types in shared.histogram: {set(type(x) for x in shared.histogram)}")
+        logger.info(f"Types in shared.histogram_2: {set(type(x) for x in shared.histogram_2)}")
+        
+
         try:
             self.plot_widget.clear()
             self.plot_widget.addItem(self.vline, ignoreBounds=True)
             self.plot_widget.addItem(self.hline, ignoreBounds=True)
-            self.plot_widget.setLogMode(x=False, y=shared.log_switch)
+            self.plot_widget.setLogMode(x=False, y=log_switch)
 
             self.hist_curve = None
             self.comp_curve = None
@@ -854,82 +1190,93 @@ class Tab2(QWidget):
             self.gauss_curve = None
 
             # === Prepare calibration coefficients ===
-            coeff_abc = [shared.coeff_1, shared.coeff_2, shared.coeff_3]
+            coeff_abc      = [coeff_1, coeff_2, coeff_3]
+            comp_coeff_abc = [shared.comp_coeff_1, shared.comp_coeff_2, shared.comp_coeff_3] 
 
             # Base histogram (blue)
-            if shared.histogram and not shared.diff_switch:
-                x_vals = list(range(len(shared.histogram)))
-                y_vals = shared.histogram
+            if histogram and diff_switch == False:
+                x_vals = list(range(len(histogram)))
+                y_vals = histogram
 
-                # Apply EPB (use raw bin numbers)
-                if shared.epb_switch:
+                if epb_switch:
                     y_vals = [y * x for x, y in zip(x_vals, y_vals)]
 
-                # Now apply calibration to x_vals (not earlier!)
-                if shared.cal_switch and any(coeff_abc):
+                if cal_switch and any(coeff_abc):
                     x_vals = np.polyval(np.poly1d(coeff_abc), x_vals)
 
-                # Apply log scale if needed
-                if shared.log_switch:
+                if log_switch:
                     y_vals = [max(1, y) for y in y_vals]
+
+                if slb_switch:
+                    y_vals = y_vals[:-1] + [0]
 
                 self.hist_curve = self.plot_widget.plot(x_vals, y_vals, pen=pg.mkPen("b", width=1.5))
 
-
             # Comparison histogram (red)
-            if shared.comp_switch and shared.histogram_2 and not shared.diff_switch:
-                x_vals2 = list(range(len(shared.histogram_2)))
+            if comp_switch and histogram_2 and diff_switch == False:
+                x_vals2 = list(range(len(histogram_2)))
+                y_vals2 = histogram_2
 
-                if shared.cal_switch and any(coeff_abc):
-                    x_vals2 = np.polyval(np.poly1d(coeff_abc), x_vals2)
+                # Time normalization
+                if shared.elapsed_2 > 0 and shared.elapsed > 0:
+                    time_factor = shared.elapsed / shared.elapsed_2
+                    y_vals2 = [y * time_factor for y in y_vals2]
 
-                y_vals2 = (
-                    [y * x for x, y in enumerate(shared.histogram_2)]
-                    if shared.epb_switch else shared.histogram_2
-                )
+                if epb_switch:
+                    y_vals2 = [y * x for x, y in zip(x_vals2, y_vals2)]
 
-                if shared.log_switch:
-                    y_vals2 = [max(1, y2) for y2 in y_vals2]
+                if cal_switch and any(comp_coeff_abc):
+                    x_vals2 = np.polyval(np.poly1d(comp_coeff_abc), x_vals2)
+
+                if log_switch:
+                    y_vals2 = [max(1, y) for y in y_vals2]
 
                 self.comp_curve = self.plot_widget.plot(x_vals2, y_vals2, pen=pg.mkPen("r", width=1.5))
 
-            # Difference plot (black)
-            if shared.diff_switch and shared.histogram and shared.histogram_2:
-                len1 = len(shared.histogram)
-                len2 = len(shared.histogram_2)
+
+         
+            if histogram and histogram_2 and diff_switch == True:
+                len1 = len(histogram)
+                len2 = len(histogram_2)
                 max_len = max(len1, len2)
-                hist1 = shared.histogram + [0] * (max_len - len1)
-                hist2 = shared.histogram_2 + [0] * (max_len - len2)
+                hist1 = histogram + [0] * (max_len - len1)
+                hist2 = histogram_2 + [0] * (max_len - len2)
+
+                # Apply time normalization
+                if shared.elapsed_2 > 0 and shared.elapsed > 0:
+                    time_factor = shared.elapsed / shared.elapsed_2
+                    time_factor = min(time_factor, 100)  # Clamp to avoid explosion
+                    hist2 = [b * time_factor for b in hist2]
 
                 diff = [a - b for a, b in zip(hist1, hist2)]
                 x_vals = list(range(max_len))
-                y_vals = (
-                    [y * x for x, y in enumerate(diff)]
-                    if shared.epb_switch else diff
-                )
+                y_vals = [y * x for x, y in enumerate(diff)] if epb_switch else diff
+
+                # Remove previous
+                if self.diff_curve:
+                    self.plot_widget.removeItem(self.diff_curve)
+                    self.diff_curve = None
 
                 self.diff_curve = self.plot_widget.plot(x_vals, y_vals, pen=pg.mkPen("k", width=1.5))
 
-            # Gaussian correlation (red)
-            if shared.sigma > 0 and shared.histogram and not shared.diff_switch:
-                corr = gaussian_correl(shared.histogram, shared.sigma)
+
+            # Gaussian correlation (pink)
+            if sigma > 0 and histogram and not diff_switch:
+                corr = gaussian_correl(histogram, sigma)
                 x_vals = list(range(len(corr)))
 
-                if shared.cal_switch and any(coeff_abc):
+                if cal_switch and any(coeff_abc):
                     x_vals = np.polyval(np.poly1d(coeff_abc), x_vals)
 
-                # Match histogram amplitude — same as Dash version
-                max_hist = max(shared.histogram)
+                max_hist = max(histogram)
                 max_corr = max(corr) if corr else 1
                 if max_corr > 0:
                     corr = [y * (max_hist / max_corr) for y in corr]
 
-                # Now apply EPB transformation if needed
-                if shared.epb_switch:
+                if epb_switch:
                     corr = [y * x for x, y in enumerate(corr)]
 
-                # Apply floor for log mode — avoids zeroes collapsing plot
-                if shared.log_switch:
+                if log_switch:
                     corr = [max(1, y) for y in corr]
 
                 self.gauss_curve = self.plot_widget.plot(
@@ -937,12 +1284,16 @@ class Tab2(QWidget):
                     corr,
                     pen=pg.mkPen("r", width=1.5),
                     fillLevel=0,
-                    brush=QBrush(QColor(255, 0, 0, 80))  # semi-transparent red
+                    brush=QBrush(QColor(0, 0, 255, 80))  # pink fill
                 )
 
+
             # Optional: peak markers
-            if shared.sigma > 0:
-                self.update_peak_markers()
+            self.update_peak_markers()
+
+            logger.info("update_histogram completed")
+
+
 
         except Exception as e:
             logger.error(f"[ERROR] Plot update failed: {e}")  

@@ -4,6 +4,8 @@ import logging
 import platform
 import sys
 import json
+import datetime
+
 from os import getenv
 from pathlib import Path
 from threading import Lock, Event
@@ -17,10 +19,12 @@ __version__ = "3.0.0"
 
 SETTINGS = {}  
 
+session_start = datetime.datetime.now()
+session_end = None
+
 # -------------
 # FONTS
 # --------------
-
 # Paragraphs
 P1 = "font-family: Verdana, sans-serif; font-size: 10pt; color: #666;"   # Small, light text
 P2 = "font-family: Verdana, sans-serif; font-size: 12pt; color: #444;"  # Medium paragraph
@@ -38,7 +42,7 @@ STOP = "background-color: red; color: white; font-weight: bold;"
 
 BTN  = "background-color: orange; color: white; font-weight: bold;"
 
-FOOTER = f"IMPULSE V {__version__} - Gammaspectacular.com  - Atoms for good"
+FOOTER = f"IMPULSE V {__version__} - Gammaspectacular.com  - excited about atoms"
 
 # -------------------------------
 # Paths & Directories
@@ -85,7 +89,7 @@ logging.getLogger('matplotlib.font_manager').propagate = False
 
 # Create app logger
 logger = logging.getLogger("ImpulseLogger")
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.WARNING)
 logger.propagate = False  # Optional: disable bubbling to root
 
 if not logger.handlers:
@@ -152,21 +156,21 @@ mean_shape_right      = []
 distortion_list_left  = []
 distortion_list_right = []
 
+isotope_tbl           = ""
 isotope_flags         = []
 
 # --- Histogram Settings ---
+bins_abs = 8192
 bins 		= 0
 bins_2 		= 0
-bins_3d     = 0
 
 bin_size 	= 0
 bin_size_2 	= 0
-bin_size_3d = 0
 
-histogram = []
-histogram_2 = []
+histogram    = []
+histogram_2  = []
 histogram_3d = []
-max_bins = 8192
+
 
 # --- Calibration ---
 calib_bin_1 = 0
@@ -181,17 +185,15 @@ calib_e_3 = 0
 calib_e_4 = 0
 calib_e_5 = 0
 
+# main spectrum
 coeff_1 = 0
 coeff_2 = 0
 coeff_3 = 0
 
-comp_coeff_1 = 0
+# comparison spectrum
+comp_coeff_1 = 0 
 comp_coeff_2 = 0
 comp_coeff_3 = 0
-
-# coefficients_1 = []
-# coefficients_2 = []
-# coefficients_3d = []
 
 # --- Counts & Timing ---
 counts = 0
@@ -209,7 +211,6 @@ max_seconds = 0
 
 # --- 3D Specific ---
 compression = 1
-compression3d = 16
 endTime3d = ""
 startTime3d = ""
 
@@ -219,7 +220,6 @@ tolerance = 0
 peakfinder = 0
 polynomial_fn = ""
 sigma = 0
-suppress_last_bin = False
 
 # --- Switches ---
 cal_switch = False
@@ -227,7 +227,7 @@ coi_switch = False
 epb_switch = False
 log_switch = False
 iso_switch = False
-
+slb_switch = False
 comp_switch = False
 diff_switch = False
 
@@ -263,6 +263,8 @@ run_flag_lock = Lock()
 
 max_pulse_length = 0
 max_pulse_height = 0
+max_pulse_shape = []
+max_serial_output = ""
 
 # Window size and position
 window_pos_x = 0
@@ -277,12 +279,11 @@ window_height = 0
 # -------------------------------
 
 SETTINGS_SCHEMA = {
-    "bin_size": {"type": "float", "default": 0.0},
-    "bin_size_2": {"type": "float", "default": 0.0},
-    "bin_size_3d": {"type": "float", "default": 0.0},
-    "bins": {"type": "int", "default": 0},
-    "bins_2": {"type": "int", "default": 0},
-    "bins_3d": {"type": "int", "default": 0},
+    "bin_size": {"type": "float", "default": 10},
+    "bin_size_2": {"type": "float", "default": 10},
+    "bins_abs": {"type": "int", "default": 8192},
+    "bins": {"type": "int", "default": 3000},
+    "bins_2": {"type": "int", "default": 3000},
     "cached_device_info": {"type": "str", "default": ""},
     "cached_device_info_ts": {"type": "int", "default": 0},
     "cal_switch": {"type": "bool", "default": False},
@@ -296,17 +297,16 @@ SETTINGS_SCHEMA = {
     "calib_e_3": {"type": "float", "default": 0.0},
     "calib_e_4": {"type": "float", "default": 0.0},
     "calib_e_5": {"type": "float", "default": 0.0},
-    "chunk_size": {"type": "int", "default": 0},
-    "coeff_1": {"type": "float", "default": []},
-    "coeff_2": {"type": "float", "default": []},
-    "coeff_3": {"type": "float", "default": []},
+    "chunk_size": {"type": "int", "default": 4096},
+    "coeff_1": {"type": "float", "default": 1},
+    "coeff_2": {"type": "float", "default": 1},
+    "coeff_3": {"type": "float", "default": 1},
     "comp_coeff_1": {"type": "float", "default": []},
     "comp_coeff_2": {"type": "float", "default": []},
     "comp_coeff_3": {"type": "float", "default": []},
     "coi_switch": {"type": "bool", "default": False},
     "coi_window": {"type": "int", "default": 0},
-    "compression": {"type": "float", "default": 1.0},
-    "compression3d": {"type": "float", "default": 1.0},
+    "compression": {"type": "int", "default": 1.0},
     "count_history": {"type": "list", "default": []},
     "counts": {"type": "int", "default": 0},
     "counts_2": {"type": "int", "default": 0},
@@ -319,9 +319,9 @@ SETTINGS_SCHEMA = {
     "elapsed_3d": {"type": "int", "default": 0},
     "endTime3d": {"type": "str", "default": ""},
     "epb_switch": {"type": "bool", "default": False},
-    "filename": {"type": "str", "default": ""},
-    "filename_2": {"type": "str", "default": ""},
-    "filename_3d": {"type": "str", "default": ""},
+    "filename": {"type": "str", "default": "my_spectrum"},
+    "filename_2": {"type": "str", "default": "background"},
+    "filename_3d": {"type": "str", "default": "my_3d_spectrum"},
     "flags_selected": {"type": "list", "default": []},
     "flip": {"type": "int", "default": 11},
     "histogram": {"type": "list", "default": []},
@@ -330,31 +330,30 @@ SETTINGS_SCHEMA = {
     "log_switch": {"type": "bool", "default": False},
     "comp_switch": {"type": "bool", "default": False},
     "diff_switch": {"type": "bool", "default": False},
-    "max_bins": {"type": "int", "default": 4096},
-    "max_counts": {"type": "int", "default": 10000},
+    "max_counts": {"type": "int", "default": 9999999},
     "max_pulse_height": {"type": "int", "default": 32767},
     "max_pulse_length": {"type": "int", "default": 100},
-    "max_seconds": {"type": "int", "default": 600},
-    "peakfinder": {"type": "str", "default": "simple"},
+    "max_seconds": {"type": "int", "default": 9999999},
+    "peakfinder": {"type": "int", "default": 0},
     "peakshift": {"type": "int", "default": 0},
     "polynomial_fn": {"type": "list", "default": []},
     "mean_shape_left": {"type": "list", "default": []},
     "mean_shape_right": {"type": "list", "default": []},
     "distortion_list_left": {"type": "list", "default": []},
     "distortion_list_right": {"type": "list", "default": []},
-    "isotope_flags": {"type": "dict", "default": {}},
+    "isotope_tbl": {"type": "str", "default": ""},
     "rolling_interval": {"type": "int", "default": 60},
-    "sample_length": {"type": "int", "default": 40},
-    "sample_rate": {"type": "int", "default": 44100},
+    "sample_length": {"type": "int", "default": 21},
+    "sample_rate": {"type": "int", "default": 48000},
     "serial_number": {"type": "str", "default": ""},
-    "shape_lld": {"type": "int", "default": 0},
-    "shape_uld": {"type": "int", "default": 4096},
+    "shape_lld": {"type": "int", "default": 1000},
+    "shape_uld": {"type": "int", "default": 25000},
     "shapecatches": {"type": "int", "default": 0},
     "sigma": {"type": "float", "default": 1.0},
     "spec_notes": {"type": "str", "default": ""},
     "startTime3d": {"type": "str", "default": ""},
     "stereo": {"type": "bool", "default": False},
-    "suppress_last_bin": {"type": "bool", "default": False},
+    "slb_switch": {"type": "bool", "default": False},
     "t_interval": {"type": "int", "default": 1},
     "tempcal_base_value": {"type": "float", "default": 0.0},
     "tempcal_cancelled": {"type": "bool", "default": False},
@@ -368,8 +367,8 @@ SETTINGS_SCHEMA = {
     "tempcal_stability_window_sec": {"type": "int", "default": 60},
     "tempcal_table": {"type": "list", "default": []},
     "theme": {"type": "str", "default": "light"},
-    "threshold": {"type": "int", "default": 1000},
-    "tolerance": {"type": "float", "default": 1.0},
+    "threshold": {"type": "int", "default": 200},
+    "tolerance": {"type": "int", "default": 50000},
     "iso_switch": {"type": "bool", "default": False},
     "window_pos_x": {"type": "int", "default": 100},
     "window_pos_y": {"type": "int", "default": 100},
@@ -423,11 +422,24 @@ def load_settings():
     try:
         with open(SETTINGS_FILE, "r") as f:
             loaded = json.load(f)
-            from_settings(loaded)
-            logger.info("Settings loaded successfully.")
     except Exception as e:
         logger.warning(f"[load_settings] Using defaults due to error: {e}")
-        from_settings({})  # fallback to defaults
+        loaded = {}
+
+    from_settings(loaded)
+
+    try:
+        tbl_name = shared.isotope_tbl  # should be restored by from_settings()
+        if tbl_name:
+            full_path = TBL_DIR / tbl_name
+            if full_path.exists():
+                shared.isotope_flags = read_flag_data(full_path)
+                logger.info(f"[INFO] Preloaded {len(shared.isotope_flags)} isotope flags from {tbl_name}")
+            else:
+                logger.warning(f"[WARN] Isotope table '{tbl_name}' not found in {TBL_DIR}")
+    except Exception as e:
+        logger.error(f"[ERROR] Failed to preload isotope flags: {e}")
+
 
 def save_default_settings():
     try:

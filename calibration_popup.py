@@ -53,13 +53,19 @@ class CalibrationPopup(QDialog):
             try:
                 b = int(self.bin_inputs[i].text())
                 e = float(self.energy_inputs[i].text())
+
+                # Always save inputs to shared (even if zero)
+                setattr(shared, f"calib_bin_{i+1}", b)
+                setattr(shared, f"calib_e_{i+1}", e)
+
+                # Only use valid (>0) points for polynomial fitting
                 if b > 0 and e > 0:
-                    setattr(shared, f"calib_bin_{i+1}", b)
-                    setattr(shared, f"calib_e_{i+1}", e)
                     bins.append(b)
                     energies.append(e)
+
             except ValueError:
                 continue
+
 
         # Default coeffs: [a, b, c]
         coeffs = [0.0, 0.0, 0.0]

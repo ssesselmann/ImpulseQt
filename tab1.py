@@ -17,7 +17,9 @@ from shared import logger, P1, P2, H1, H2, MONO, FOOTER
 class Tab1(QWidget):
     def __init__(self):
         super().__init__()
-        device_type = shared.device_type
+
+        with shared.write_lock:
+            device_type = shared.device_type
 
         # === Top controls ===
         
@@ -27,7 +29,7 @@ class Tab1(QWidget):
 
         self.selector = QComboBox()
         self.selector.addItems(["PRO", "MAX"])
-        self.selector.setCurrentText(shared.device_type)
+        self.selector.setCurrentText(device_type)
         self.selector.setMaximumWidth(200)
         self.selector.setSizeAdjustPolicy(QComboBox.AdjustToContents)
         self.selector.currentTextChanged.connect(self.switch_device_type)
@@ -65,22 +67,24 @@ class Tab1(QWidget):
 
 
     def switch_device_type(self, value):
-            if value == shared.device_type:
-                return  # No change needed
-            reply = QMessageBox.question(
-                self,
-                "Confirm Device Change",
-                f"Changing to {value} will quit the application. Continue?",
-                QMessageBox.Yes | QMessageBox.No
-            )
-            if reply == QMessageBox.Yes:
-                logger.info(f"Tab1: Device type changed to {value}")
+        if value == shared.device_type:
+            return  # No change needed
+        reply = QMessageBox.question(
+            self,
+            "Confirm Device Change",
+            f"Changing to {value} will quit the application. Continue?",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if reply == QMessageBox.Yes:
+            logger.info(f"Tab1: Device type changed to {value}")
+            with shared.write_lock:
                 shared.device_type = value
                 shared.save_settings()
-                logger.info("Quitting application to apply new device type")
-                QApplication.quit()
-            else:
-                self.selector.setCurrentText(shared.device_type)  # Revert selection
+            logger.info("Quitting application to apply new device type")
+            QApplication.quit()
+        else:
+            self.selector.setCurrentText(shared.device_type)  # Revert selection
+
 
     def set_main_content(self, device_type):
         # Clear current content

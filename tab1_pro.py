@@ -31,6 +31,12 @@ class Tab1ProWidget(QWidget):
     def __init__(self):
         super().__init__()
 
+        with shared.write_lock:
+            sample_rate     = shared.sample_rate
+            sample_length   = shared.sample_length
+            shapecatches    = shared.shapecatches
+            chunk_size      = shared.chunk_size
+            stereo          = shared.stereo
 
 
         # --- Selection Controls
@@ -45,7 +51,9 @@ class Tab1ProWidget(QWidget):
         self.device_selector.setMaximumWidth(180)
 
         # Set current index by matching saved PyAudio index
-        saved_index = shared.device
+        with shared.write_lock:
+            saved_index = shared.device
+            
         combo_index = next((i for i in range(self.device_selector.count())
                             if self.device_selector.itemData(i) == saved_index), 0)
         self.device_selector.setCurrentIndex(combo_index)
@@ -56,26 +64,26 @@ class Tab1ProWidget(QWidget):
         self.sample_rate = QComboBox()
         self.sample_rate.addItems(["44100", "48000", "96000", "192000", "384000"])
         self.sample_rate.setMaximumWidth(120)
-        self.sample_rate.setCurrentText(str(shared.sample_rate))
+        self.sample_rate.setCurrentText(str(sample_rate))
         self.sample_rate.currentTextChanged.connect(lambda val: setattr(shared, "sample_rate", int(val)))
 
 
         self.sample_size = QComboBox()
         self.sample_size.addItems(["11", "16", "21", "31", "41", "51", "61"])
         self.sample_size.setMaximumWidth(100)
-        self.sample_size.setCurrentText(str(shared.sample_length))
+        self.sample_size.setCurrentText(str(sample_length))
         self.sample_size.currentTextChanged.connect(lambda val: setattr(shared, "sample_length", int(val)))
 
         self.pulse_catcher = QComboBox()
         self.pulse_catcher.addItems(["10", "50", "100", "500", "1000"])
         self.pulse_catcher.setMaximumWidth(100)
-        self.pulse_catcher.setCurrentText(str(shared.shapecatches))
+        self.pulse_catcher.setCurrentText(str(shapecatches))
         self.pulse_catcher.currentTextChanged.connect(lambda val: setattr(shared, "shapecatches", int(val)))
 
         self.buffer_size = QComboBox()
         self.buffer_size.addItems(["516", "1024", "2048", "4096", "8192", "16184"])
         self.buffer_size.setMaximumWidth(100)
-        self.buffer_size.setCurrentText(str(shared.chunk_size))
+        self.buffer_size.setCurrentText(str(chunk_size))
         self.buffer_size.currentTextChanged.connect(lambda val: setattr(shared, "chunk_size", int(val)))
 
         top_controls = QHBoxLayout()
@@ -160,7 +168,7 @@ class Tab1ProWidget(QWidget):
         left_layout = QVBoxLayout()
         left_layout.setContentsMargins(0, 0, 0, 0)
         self.stereo_checkbox = QCheckBox("Stereo Mode")
-        self.stereo_checkbox.setChecked(shared.stereo)
+        self.stereo_checkbox.setChecked(stereo)
         self.stereo_checkbox.stateChanged.connect(lambda state: setattr(shared, "stereo", bool(state)))
         left_layout.addWidget(self.stereo_checkbox)
         left_column.setLayout(left_layout)
@@ -184,7 +192,8 @@ class Tab1ProWidget(QWidget):
         self.peak_slider = QSlider(Qt.Horizontal)
         self.peak_slider.setMinimum(-20)
         self.peak_slider.setMaximum(20)
-        self.peak_slider.setValue(0)
+        with shared.write_lock:
+            self.peak_slider.setValue(shared.peakshift)
         self.peak_slider.setTickInterval(5)
         self.peak_slider.setTickPosition(QSlider.TicksBelow)
         self.peak_slider.valueChanged.connect(lambda val: setattr(shared, "peakshift", val))
@@ -204,14 +213,18 @@ class Tab1ProWidget(QWidget):
 
         slider_layout.addLayout(label_row)
 
+        slider_container = QHBoxLayout()
         slider_widget = QWidget()
         slider_widget.setLayout(slider_layout)
-        slider_widget.setFixedWidth(300)
+        slider_container.addStretch()
+        slider_widget.setFixedWidth(400)
+        slider_container.addStretch()
 
-        controls_row_2 = QHBoxLayout()
-        controls_row_2.addStretch()
-        controls_row_2.addWidget(slider_widget)
-        controls_row_2.addStretch()
+        slider_container = QHBoxLayout()
+        slider_container.addStretch()
+        slider_container.addWidget(slider_widget)
+        slider_container.addStretch()
+        middle_layout.addLayout(slider_container)
 
         # Right column ---------------------------------------------------------------
         
@@ -256,7 +269,8 @@ class Tab1ProWidget(QWidget):
 
     def update_device(self, index):
         selected_index = self.device_selector.itemData(index)
-        shared.device = selected_index  # OK
+        with shared.write_lock:
+            shared.device = selected_index  # OK
 
     def run_shapecatcher(self):
 
@@ -264,18 +278,20 @@ class Tab1ProWidget(QWidget):
             pulses_left, pulses_right = shapecatcher()
 
             # Save to shared if needed elsewhere
-            shared.pulse_shape_left  = pulses_left
-            shared.pulse_shape_right = pulses_right
+            with shared.write_lock:
+                shared.mean_shape_left  = pulses_left
+                shared.mean_shape_right = pulses_right
+                sample_length            = shared.sample_length
 
             # Determine X range from shared.sample_length
-            x_vals = list(range(shared.sample_length))
+            x_vals = list(range(sample_length))
 
             # Trim or pad pulse lists to match sample_length
             def fit_length(data):
-                if len(data) > shared.sample_length:
-                    return data[:shared.sample_length]
+                if len(data) > sample_length:
+                    return data[:sample_length]
                 else:
-                    return data + [0] * (shared.sample_length - len(data))
+                    return data + [0] * (sample_length - len(data))
 
             y_left  = fit_length(pulses_left)
             y_right = fit_length(pulses_right)
@@ -286,11 +302,12 @@ class Tab1ProWidget(QWidget):
             y_min, y_max = -y_margin, y_peak + y_margin
 
             # Set fixed axes
-            self.pulse_plot.setXRange(0, shared.sample_length, padding=0)
+            self.pulse_plot.setXRange(0, sample_length, padding=0)
             self.pulse_plot.setYRange(y_min, y_max, padding=0)
 
             self.pulse_plot.clear()
             self.pulse_plot.setBackground('w')
+            self.draw_shape_lld()
 
             # Plot LEFT trace (blue line, blue dots)
             self.pulse_plot.plot(
@@ -315,7 +332,7 @@ class Tab1ProWidget(QWidget):
             )
 
             # Set axis ranges
-            self.pulse_plot.setXRange(0, shared.sample_length)
+            self.pulse_plot.setXRange(0, sample_length)
             y_peak = max(abs(max(y_left)), abs(min(y_left)), abs(max(y_right)), abs(min(y_right)))
             self.pulse_plot.setYRange(-50, y_peak + 50)
 
@@ -324,7 +341,8 @@ class Tab1ProWidget(QWidget):
             logger.error(f"❌ Error during shapecatcher: {e}")
 
     def run_distortion_finder(self):
-        from shared import stereo
+        with shared.write_lock:
+            stereo = shared.stereo
         left_distortion, right_distortion = distortion_finder(stereo)
 
         # Optional: plot distortion histogram
@@ -355,11 +373,23 @@ class Tab1ProWidget(QWidget):
         self.curve_plot.setLabel("left", "Distortion")
         self.curve_plot.setLabel("bottom", "Sample Index")
 
+    def draw_shape_lld(self):
+        with shared.write_lock:
+            shape_lld = shared.shape_lld
+
+        self.pulse_plot.addLine(
+            y=shape_lld,
+            pen=pg.mkPen('darkgreen', width=2, style=Qt.DashLine)
+        )
+
+
     def plot_saved_shapes(self):
         try:
             # Use shared.mean_shape_left and right
-            y_left = shared.mean_shape_left
-            y_right = shared.mean_shape_right
+            with shared.write_lock:
+                y_left          = shared.mean_shape_left
+                y_right         = shared.mean_shape_right
+                sample_length   = shared.sample_length
 
             # Sanity check
             if not y_left and not y_right:
@@ -367,15 +397,16 @@ class Tab1ProWidget(QWidget):
 
             # Fit lengths to sample_length
             def fit_length(data):
-                if len(data) > shared.sample_length:
-                    return data[:shared.sample_length]
+                with shared.write_lock:
+                    sample_length = shared.sample_length
+                if len(data) > sample_length:
+                    return data[:sample_length]
                 else:
-                    return data + [0] * (shared.sample_length - len(data))
+                    return data + [0] * (sample_length - len(data))
 
             y_left = fit_length(y_left)
             y_right = fit_length(y_right)
-
-            x_vals = list(range(shared.sample_length))
+            x_vals = list(range(sample_length))
 
             # Axis scaling
             y_peak = max(abs(max(y_left)), abs(min(y_left)), abs(max(y_right)), abs(min(y_right)))
@@ -385,9 +416,9 @@ class Tab1ProWidget(QWidget):
             # Plot
             self.pulse_plot.clear()
             self.pulse_plot.setBackground('w')
-            self.pulse_plot.setXRange(0, shared.sample_length)
+            self.pulse_plot.setXRange(0, sample_length)
             self.pulse_plot.setYRange(y_min, y_max)
-
+            
             self.pulse_plot.plot(
                 x_vals, y_left,
                 pen=pg.mkPen('b', width=2),
@@ -401,7 +432,8 @@ class Tab1ProWidget(QWidget):
                 name="Right"
             )
 
+            self.draw_shape_lld()
+
+
         except Exception as e:
             logger.error(f"❌ Error in plot_saved_shapes: {e}")
-    
-

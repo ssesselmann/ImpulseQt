@@ -3,6 +3,7 @@ import wave
 import logging
 import functions as fn
 import shared
+import time
 
 from shared import logger
 
@@ -13,21 +14,20 @@ def distortion_finder(stereo):
         device          = shared.device
         sample_rate     = shared.sample_rate
         chunk_size      = shared.chunk_size
-        threshold       = shared.threshold
+        threshold       = shared.shape_lld
         flip            = shared.flip
         sample_length   = shared.sample_length
         peakshift       = shared.peakshift
         shapecatches    = shared.shapecatches
-        stereo          = shared.stereo
         left_shape      = shared.mean_shape_left
         right_shape     = shared.mean_shape_right
     
+
     peak            = int((sample_length - 1) / 2) + peakshift
     audio_format    = pyaudio.paInt16
-    channels        = 2 if stereo else 1
     p                       = pyaudio.PyAudio()
-    distortion_list_left    = []
-    distortion_list_right   = []
+    distortion_left    = []
+    distortion_right   = []
     count_left              = 0
     count_right             = 0
     flip_left   = 1
@@ -56,60 +56,68 @@ def distortion_finder(stereo):
                     frames_per_buffer=chunk_size * channels,
                     input_device_index=device,
                     )
+    timeout = 15  # seconds
+    start_time = time.time()
 
     try:
-        while count_left < shapecatches or (stereo and count_right < shapecatches):
-            # Read the audio data from the stream
-            data    = stream.read(chunk_size, exception_on_overflow=False)
-            # Convert hex values into a list of decimal values
-            values  = list(wave.struct.unpack("%dh" % (chunk_size * channels), data))
-            # Extract every other element (left channel)
-            left_channel    = values[::2]
-            right_channel   = values[1::2]
+        while (not stereo and count_left < shapecatches) or (stereo and (count_left < shapecatches or count_right < shapecatches)):
+
+            if time.time() - start_time > timeout:
+                logger.warning("Distortion finder timed out.")
+                break
+
+            try:
+                data = stream.read(chunk_size, exception_on_overflow=False)
+                values = list(wave.struct.unpack("%dh" % (chunk_size * channels), data))
+            except Exception as e:
+                logger.error(f"Audio read/unpack error: {e}")
+                continue  # skip this chunk and try again
+
+            left_channel = values[::2]
+            right_channel = values[1::2]
 
             for i in range(len(left_channel) - sample_length):
                 if count_left < shapecatches:
-                    left_samples = left_channel[i:i + sample_length]
-                    left_samples = [flip_left * x for x in left_samples]
-                    if left_samples[peak] == max(left_samples) and (max(left_samples) - min(left_samples)) > threshold:  
-                        left_normalised     = fn.normalise_pulse(left_samples)                       
-                        left_distortion     = fn.distortion(left_normalised, left_shape)                       
-                        distortion_list_left.append(left_distortion)
+                    left_samples = [flip_left * x for x in left_channel[i:i + sample_length]]
+                    if abs(left_samples[peak]) > threshold:
+                        norm = fn.normalise_pulse(left_samples)
+                        dist = fn.distortion(norm, left_shape)
+                        distortion_left.append(dist)
                         count_left += 1
 
                 if stereo and count_right < shapecatches:
-                    right_samples = right_channel[i:i + sample_length]
-                    right_samples = [flip_right * x for x in right_samples]
-                    if right_samples[peak] == max(right_samples) and (max(right_samples) - min(right_samples)) > threshold:
-                        right_normalised = fn.normalise_pulse(right_samples)
-                        right_normalised_int = [int(round(x)) for x in right_normalised]
-                        right_distortion = fn.distortion(right_normalised_int, right_shape)
-                        distortion_list_right.append(right_distortion)
+                    right_samples = [flip_right * x for x in right_channel[i:i + sample_length]]
+                    if abs(right_samples[peak]) > threshold:
+                        norm = fn.normalise_pulse(right_samples)
+                        dist = fn.distortion(norm, right_shape)
+                        distortion_right.append(dist)
                         count_right += 1
 
-            # Check if both counts have reached shapecatches
-            if not stereo and count_left >= shapecatches:
-                break
+    except Exception as outer:
+        logger.error(f"Unexpected error in distortion_finder loop: {outer}")
 
-            # Break the outer loop if both counts are satisfied
-            if stereo and (count_left >= shapecatches) and (count_right >= shapecatches):
-                break
+
 
     finally:
         stream.stop_stream()
         stream.close()
         p.terminate()
 
-    distortion_list_left.sort()
-    max_left = max(distortion_list_left)
-    logger.info(f'Max distortion left {max_left}\n')
-
-    # Handle inactive right channel
+    # If no right channel data
     if not stereo:
-        return distortion_list_left, [0] * len(distortion_list_left)
+        distortion_right = []
 
-    else:
-        distortion_list_right.sort()
-        max_right = max(distortion_list_right)
-        logger.info(f'Max distortion right {max_right}\n')
-        return distortion_list_left, distortion_list_right
+    distortion_left.sort()
+    max_left = max(distortion_left, default=0)
+    logger.info(f'Max distortion left {max_left}\n')
+    
+    distortion_right.sort()
+    max_right = max(distortion_right, default=0)
+    logger.info(f'Max distortion right {max_right}\n')
+    
+
+    with shared.write_lock:
+        shared.distortion_left  = distortion_left
+        shared.distortion_right = distortion_right
+
+    return distortion_left, distortion_right

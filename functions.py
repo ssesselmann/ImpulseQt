@@ -32,7 +32,7 @@ from datetime import datetime
 from urllib.request import urlopen
 from shproto.dispatcher import process_03, start
 from pathlib import Path
-from shared import logger
+from shared import logger, USER_DATA_DIR
 
 logger          = logging.getLogger(__name__)
 cps_list        = []
@@ -394,60 +394,137 @@ def gaussian_correl(data, sigma):
     return [int(value * scaling_factor) for value in correl_values]
 
 
-def start_recording(mode):
+def start_recording(mode, device_type):
 
-    with shared.write_lock:
-        filename    = shared.filename
-        device      = shared.device
-        shared.run_flag.clear()
+    if device_type == "MAX":
+        return start_max_recording(mode)
 
-    clear_shared(mode)
-
-    if mode == 3:
-        write_blank_json_schema_3d(filename, device)
-
-    write_cps_json(filename, [[0]], 0, 0, 0)
-
-    with shared.run_flag_lock:
-        shared.run_flag.set()  # Set the run flag
-        logger.info(f"Recording started in mode {mode}.\n")
-
-    if mode == 2 or mode == 4:
-        # Start 2D spectrum recording logic
-        logger.info("Starting 2D spectrum recording...\n")
-        try:
-            if callable(pulsecatcher):
-                thread = threading.Thread(target=pulsecatcher, args=(mode, shared.run_flag, shared.run_flag_lock))
-                thread.start()
-                logger.info("2D spectrum recording thread started.\n")
-            else:
-                logger.error("pulsecatcher is not callable.\n")
-        except Exception as e:
-            logger.error(f"Error starting 2D spectrum recording thread: {e}\n")
-
-    elif mode == 3:
-        # Start 3D spectrum recording logic
-        with shared.write_lock:
-            filename = shared.filename
-        logger.info("Starting 3D spectrum recording...\n")
-        try:
-            if callable(pulsecatcher):
-                thread = threading.Thread(target=pulsecatcher, args=(3, shared.run_flag, shared.run_flag_lock))
-                thread.start()
-                logger.info("3D spectrum recording thread started.\n")
-            else:
-                logger.error("pulsecatcher is not callable.\n")
-        except Exception as e:
-            logger.error(f"Error starting 3D spectrum recording thread: {e}\n")
+    elif device_type == "PRO":
+        return start_pro_recording(mode)
 
     else:
-        logger.error("Invalid recording mode specified.\n")
+        logger.error(f"Unsupported device_type: {device_type}")
+        return None
+
+
+def start_max_recording(mode):
+    # Try to stop any previous process
+    if hasattr(shared, "max_process_thread") and shared.max_process_thread.is_alive():
+        logger.warning("Previous MAX thread still running. Attempting to stop...")
+        shproto.dispatcher.spec_stopflag = 1
+        shared.max_process_thread.join(timeout=2)
+        logger.info("Previous MAX thread stopped.")
+
+    with shared.write_lock:
+        shared.dropped_counts = 0
+        filename    = shared.filename
+        filename_3d = shared.filename_3d
+        compression = shared.compression
+        device      = shared.device
+        t_interval  = shared.t_interval
+
+    logger.info(f"Starting MAX recording ({filename}) in mode {mode}")
+
+    # Reset dispatcher stop flag
+    shproto.dispatcher.spec_stopflag = 0
+
+    # Start dispatcher thread (if needed)
+    dispatcher_thread = threading.Thread(target=shproto.dispatcher.start, daemon=True)
+    dispatcher_thread.start()
+    time.sleep(0.4)
+    shproto.dispatcher.process_03('-mode 0')
+    time.sleep(0.4)
+    shproto.dispatcher.process_03('-rst')
+    time.sleep(0.4)
+    shproto.dispatcher.process_03('-sta')
+    time.sleep(0.4)
+
+    # Create a recording thread to run process_01 or process_02
+    def run_dispatcher():
+        try:
+            if mode == 3:
+                logger.info("Launching MAX 3D process_02")
+                shproto.dispatcher.process_02(filename_3d, compression, device, t_interval)
+            else:
+                logger.info("Launching MAX 2D process_01")
+                shproto.dispatcher.process_01(filename, compression, device, t_interval)
+        except Exception as e:
+            logger.error(f"[ERROR] MAX process thread crashed: {e}")
+
+    process_thread = threading.Thread(target=run_dispatcher, daemon=True)
+    process_thread.start()
+
+    shared.max_process_thread = process_thread
+    return process_thread
+
+
+
+    def run_dispatcher():
+        try:
+            if mode == 3:
+                logger.info("Launching MAX 3D process_02")
+                shproto.dispatcher.process_02(filename_3d, compression3d, device, t_interval)
+            else:
+                logger.info("Launching MAX 2D process_01")
+                shproto.dispatcher.process_01(filename, compression, device, t_interval)
+        except Exception as e:
+            logger.error(f"[ERROR] MAX process thread crashed: {e}")
+
+    process_thread = threading.Thread(target=run_dispatcher, daemon=True)
+    process_thread.start()
+    return process_thread
+
+
+def start_pro_recording(mode):
+    with shared.write_lock:
+        filename       = shared.filename
+        filename_3d    = shared.filename_3d
+        device         = shared.device
+        run_flag       = shared.run_flag
+        run_flag_lock  = shared.run_flag_lock
+        run_flag.set()
+        shared.recording = True
+
+    if mode == 2 or mode == 4:
+        logger.info(f"Starting PRO 2D recording in mode {mode}")
+
+        try:
+            thread = threading.Thread(target=pulsecatcher, args=(mode, run_flag, run_flag_lock))
+            thread.start()
+            return thread
+        except Exception as e:
+            logger.error(f"Error starting 2D spectrum thread: {e}")
+
+    elif mode == 3:
+
+        logger.info("Starting PRO 3D recording...")
+
+        write_blank_json_schema_3d(filename_3d, device)
+
+        try:
+            thread = threading.Thread(target=pulsecatcher, args=(3, run_flag, run_flag_lock))
+            thread.start()
+            return thread
+
+        except Exception as e:
+            logger.error(f"Error starting 3D spectrum thread: {e}")
+
+    else:
+        logger.error(f"Unsupported mode for PRO device: {mode}")
+        return None
+
 
 def stop_recording():
     with shared.write_lock:
-        shared.run_flag.clear()
-    logger.info('functions recording stopped\n')
-    return
+        device_type = shared.device_type
+        shared.run_flag.clear()  # for PRO
+
+    if device_type == "MAX":
+        shproto.dispatcher.spec_stopflag = 1  # for MAX
+        shproto.dispatcher.process_03('-sto')
+
+    logger.info(f"[INFO] Recording stopped for device {device_type}")
+
 
     
 # clear variables
@@ -806,11 +883,20 @@ def is_valid_json(file_path):
         return False
 
 
-def get_options(): # get user files only
-
-    def is_valid(filename: str) -> bool:
-        excluded = ["_cps.json", "-cps.json", "_3d.json", "_settings.json", "_user.json"]
-        return not any(filename.endswith(sfx) for sfx in excluded)
+def get_options(kind="user"):
+    # Returns a list of file options for dropdowns, based on file type.
+    def match(filename: str) -> bool:
+        if kind == "user":
+            excluded = ["_cps.json", "-cps.json", "_3d.json", "_settings.json", "_user.json"]
+            return not any(filename.endswith(sfx) for sfx in excluded)
+        elif kind == "cps":
+            return filename.endswith("_cps.json")
+        elif kind == "3d":
+            return filename.endswith("_3d.json")
+        elif kind == "all":
+            return filename.endswith(".json")
+        else:
+            return False
 
     def make_option(file_path: Path, base_dir: Path):
         rel = file_path.relative_to(base_dir)
@@ -820,14 +906,15 @@ def get_options(): # get user files only
 
     user_dir = Path(shared.USER_DATA_DIR)
 
-    user_files = [
+    files = [
         make_option(f, user_dir)
         for f in user_dir.glob("*.json")
-        if is_valid(str(f))
+        if match(str(f.name))
     ]
-    user_files.sort(key=lambda x: x['label'].lower())  # case-insensitive sort
+    files.sort(key=lambda x: x['label'].lower())  # case-insensitive sort
 
-    return user_files
+    return files
+
 
 def get_filename_2_options():
     def is_valid(filename: str) -> bool:
@@ -871,10 +958,6 @@ def get_filename_2_options():
     combined += iso_files
 
     return combined
-
-
-
-
 
 def get_options_3d():
     with shared.write_lock:
@@ -964,7 +1047,7 @@ def load_histogram(filename):
 def load_histogram_2(filename):
     
     with shared.write_lock:
-        data_directory = shared.USER_DATA_DIR
+        data_directory = USER_DATA_DIR
 
     path = get_path(os.path.join(data_directory, filename))
     try:
@@ -973,21 +1056,20 @@ def load_histogram_2(filename):
 
         if data["schemaVersion"] == "NPESv2":
             data = data["data"][0]
-
+            
         with shared.write_lock:
-            shared.histogram_2     = data["resultData"]["energySpectrum"]["spectrum"]
-            shared.bins_2          = data["resultData"]["energySpectrum"]["numberOfChannels"]
-            shared.elapsed_2       = data["resultData"]["energySpectrum"]["measurementTime"]
-            shared.counts_2        = sum(shared.histogram_2)
-
-            shared.comp_coeff_1 = coefficients[0]
-            shared.Comp_coeff_2 = coefficients[1]
-            shared.comp_coeff_3 = coefficients[2]
+            shared.histogram_2      = data["resultData"]["energySpectrum"]["spectrum"]
+            shared.bins_2           = data["resultData"]["energySpectrum"]["numberOfChannels"]
+            shared.elapsed_2        = data["resultData"]["energySpectrum"]["measurementTime"]
+            shared.counts_2         = sum(shared.histogram_2)
+            shared.comp_coeff_1     = data["resultData"]["coefficients"][0]
+            shared.comp_coeff_2     = data["resultData"]["coefficients"][1]
+            shared.comp_coeff_3     = data["resultData"]["coefficients"][2]
 
             return True
 
     except Exception as e:
-
+        
         logger.info(f"Error loading histogram_2 from {filename}: {e}\n")
         return False
 
@@ -1023,7 +1105,6 @@ def load_histogram_3d(filename):
             shared.coeff_1         = data['resultData']['energySpectrum']['energyCalibration']['coefficients'][0]
             shared.coeff_2         = data['resultData']['energySpectrum']['energyCalibration']['coefficients'][1]
             shared.coeff_3         = data['resultData']['energySpectrum']['energyCalibration']['coefficients'][2]
-            shared.compression3d   = int(8196/data['resultData']['energySpectrum']['numberOfChannels'])
             shared.startTime3d     = data['resultData']['startTime']
             shared.endTime3d       = data['resultData']['startTime']
 
@@ -1033,15 +1114,14 @@ def load_histogram_3d(filename):
 
         logger.error(f"Missing expected data key in {file_path}: {e}\not")
 
-def load_cps_file(filename):
-
-    data_directory  = shared.USER_DATA_DIR
-    cps_file_path   = os.path.join(data_directory, f"{filename}_cps.json")
-
-    if not os.path.exists(cps_file_path):
+def load_cps_file(filepath):
+    
+    if not os.path.exists(filepath):
+        logging.info("File does not exist:", filepath)
         return
+
     try:
-        with open(cps_file_path, 'r') as file:
+        with open(filepath, 'r') as file:
             cps_data = json.load(file)
 
             count_history   = cps_data.get('count_history', [])
@@ -1049,13 +1129,11 @@ def load_cps_file(filename):
             counts          = sum(count_history)
             dropped_counts  = cps_data.get('droppedPulseCount', 0)
 
-            # Flatten the nested list and ensure all values are integers
             if isinstance(count_history, list):
                 valid_count_history = [int(item) for item in count_history if isinstance(item, int) and item >= 0]
             else:
-                raise ValueError("Invalid format for 'cps' in JSON file. Expected a list of integers.")
+                raise ValueError("Invalid format for 'count_history' in JSON file.")
 
-            # Update global variables
             shared.count_history   = valid_count_history
             shared.elapsed         = int(elapsed)
             shared.counts          = int(counts)
@@ -1064,9 +1142,10 @@ def load_cps_file(filename):
             return cps_data
 
     except json.JSONDecodeError as e:
-        raise ValueError(f"Error loading cps JSON from {cps_file_path}: {e}")
+        raise ValueError(f"Error loading cps JSON from {filepath}: {e}")
     except Exception as e:
-        raise RuntimeError(f"An error occurred while loading CPS data from {cps_file_path}: {e}")        
+        raise RuntimeError(f"An error occurred while loading CPS data from {filepath}: {e}")
+      
 
 def format_date(iso_datetime_str):
     # Parse the datetime string to a datetime object
@@ -1079,7 +1158,7 @@ def format_date(iso_datetime_str):
     
     return formatted_datetime
 
-def start_max_pulse_check():
+def start_max_pulse():
     try:
         time.sleep(0.1)
         process_03('-dbg 2000 8000')  # Filter pulses between 2000 and 8000
@@ -1096,6 +1175,22 @@ def start_max_pulse_check():
         stop_thread.clear()  # Ensure the thread is ready to run
         threading.Thread(target=capture_pulse_data, daemon=True).start()
         return False  # Signal that the interval should be enabled
+
+def start_max_oscilloscope():
+    try:
+        time.sleep(0.1)
+        process_03('-mode 1')  # Switch to pulse mode
+        time.sleep(0.3)
+        process_03('-sta')     # Start process
+        time.sleep(0.4)
+    except Exception as e:
+        logger.error(f"Error in process_03 command: {e}")
+        return True  # Signal that the interval should remain disabled
+
+    if not stop_thread.is_set():  # Check if the thread is already running
+        stop_thread.clear()  # Ensure the thread is ready to run
+        threading.Thread(target=capture_pulse_data, daemon=True).start()
+        return False  # Signal that the interval should be enabled        
   
 def stop_max_pulse_check():
     try:
@@ -1152,3 +1247,48 @@ def get_isotope_flags(path):
             return json.load(file)
     except:
         logger.info('functions get_isotopes failed')
+
+def extract_tco_pairs(dev_info):
+    match = re.search(r'Tco\s+\[([-\d\s]+)\]', dev_info)
+    if not match:
+        return []
+    nums = list(map(int, match.group(1).split()))
+    return list(zip(nums[::2], nums[1::2]))
+
+def generate_device_settings_table_data():
+
+    process_03('-cal')
+    time.sleep(0.3)
+
+    serial_number = shproto.dispatcher.serial_number
+
+    time.sleep(0.2)
+    dev_info = get_serial_device_information()
+    time.sleep(0.2)
+
+    info = parse_device_info(dev_info)
+    tco_pairs = extract_tco_pairs(dev_info)
+
+    with shared.write_lock:
+        shared.serial_number = serial_number
+        shared.tco_pairs = tco_pairs  # Save for use elsewhere if needed
+
+    rows = [
+        ("Version",           "-ver",  info.get("VERSION")),
+        ("Serial number",     "-cal",  serial_number),
+        ("Rise samples",      "-ris",  info.get("RISE")),
+        ("Fall samples",      "-fall", info.get("FALL")),
+        ("Noise LLD",         "-nos",  info.get("NOISE")),
+        ("ADC freq (Hz)",     "-frq",  info.get("F")),
+        ("Max integral",      "-max",  info.get("MAX")),
+        ("Hysteresis",        "-hyst", info.get("HYST")),
+        ("Mode [0–2]",        "-mode", info.get("MODE")),
+        ("Discriminator step","-step", info.get("STEP")),
+        ("High voltage",      "-U",    info.get("POT")),
+        ("Baseline trim",     "-V",    info.get("POT2")),
+        ("Temp sensor 1 (°C)","status",info.get("T1")),
+        ("Energy window",     "-win",  info.get("OUT")),
+        ("Temp-comp enabled", "-tc",   info.get("TC")),
+    ]
+
+    return rows, tco_pairs
