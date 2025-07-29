@@ -9,7 +9,7 @@ def send_feedback_email(sentiment):
     duration = (end - start).total_seconds()
 
     body = f"""
-    Hi Impulse developer, 
+    Impulse developer, 
 
     My session today: {sentiment}
 

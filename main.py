@@ -31,7 +31,7 @@ def initialize_user_data():
             shutil.copytree(source_lib, target_lib)
             logger.info(f"Copied default lib directory to: {target_lib}")
         except Exception as e:
-            logger.error(f"Error copying default lib directory: {e}")
+            logger.error(f"[ERROR] copying default lib directory: {e}")
     else:
         logger.info("User lib already exists, skipping initialization.")
 
@@ -50,7 +50,7 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
         self.tabs.addTab(Tab1(), "Device Setup")
         self.tabs.addTab(Tab2(), "2D Histogram")
-        self.tabs.addTab(Tab3(), "3D Histogram")
+        self.tabs.addTab(Tab3(), "Waterfall")
         self.tabs.addTab(Tab4(), "Count Rate")
         self.tabs.addTab(Tab5(), "Manual")
         self.tabs.currentChanged.connect(self.on_tab_changed)

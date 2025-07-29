@@ -39,14 +39,16 @@ class Tab3(QWidget):
         super().__init__()
         
         self.ready_to_plot = True      # Block update_graph until ready
-        self.plot_window_size = 60  # seconds of history to show
-        self.plot_data = deque(maxlen=self.plot_window_size)
+        self.plot_window_size = 60        # Number of rows shown at a time
+        self.plot_data = deque(maxlen=3600)  # Total rows stored (for scrolling)
         self.time_stamps = deque(maxlen=self.plot_window_size)
         self.ax = None  # Initialize axes for plotting
         self.init_ui()
         self.refresh_timer = QTimer()
         self.refresh_timer.timeout.connect(self.update_graph)
-        
+        self.bins = 0
+        self.bin_size = 0
+        self.scroll_offset = 0  # how many rows up to scroll
 
     def init_ui(self):
         # Main layout for the entire widget
@@ -111,14 +113,12 @@ class Tab3(QWidget):
         self.t_interval_input = QLineEdit(str(shared.t_interval))
         self.t_interval_input.textChanged.connect(lambda text: self.on_text_changed(text, "t_interval"))
 
-
-
         # UNIFIED BIN Selector ================================================
         self.bins_container = QWidget()
         self.bins_container.setObjectName("bins_container_unified")
         bins_layout = QVBoxLayout(self.bins_container)
         bins_layout.setContentsMargins(0, 0, 0, 0)
-        self.bins_label = QLabel("Select number of bins")
+        self.bins_label = QLabel("Bin Selection")
         self.bins_label.setStyleSheet(P1)
         self.bins_selector = QComboBox()
         self.bins_selector.setToolTip("Select number of channels (lower = more compression)")
@@ -221,6 +221,19 @@ class Tab3(QWidget):
         self.instructions_label.setWordWrap(True)
         middle_layout.addWidget(self.instructions_label)
 
+        # ── Scroll buttons ───────────────────────────────────────────────────
+        
+        self.scroll_up_btn = QPushButton("Scroll ↑")
+        self.scroll_up_btn.setStyleSheet(BTN)
+        self.scroll_down_btn = QPushButton("Scroll ↓")
+        self.scroll_down_btn.setStyleSheet(BTN)
+        self.scroll_up_btn.clicked.connect(self.scroll_up)
+        self.scroll_down_btn.clicked.connect(self.scroll_down)
+
+        top_layout.addWidget(self.scroll_up_btn, 13, 0)
+        top_layout.addWidget(self.scroll_down_btn, 13, 1)
+
+
         # 3. Bottom Section — Logo
         bottom_section = QWidget()
         bottom_layout = QVBoxLayout(bottom_section)
@@ -262,7 +275,6 @@ class Tab3(QWidget):
 
         tab3_layout.addWidget(self.canvas, stretch=2)
 
-
         #=================
         # FOOTER
         #=================
@@ -273,29 +285,40 @@ class Tab3(QWidget):
         footer.setStyleSheet(H1)
         main_layout.addWidget(footer)  # Add the footer to the bottom
 
-    def on_checkbox_toggled(self, checked):
-        print("Checkbox toggled")  # See if this prints instantly
+    def scroll_up(self):
+        self.scroll_offset = min(self.scroll_offset + 30, len(self.plot_data) - self.plot_window_size)
+        self.update_graph()
 
-
+    def scroll_down(self):
+        self.scroll_offset = max(self.scroll_offset - 30, 0)
+        self.update_graph()
 
     def on_text_changed(self, text, key):
         try:
             if key in {"max_counts", "t_interval", "max_seconds"}:
                 with shared.write_lock:
                     setattr(shared, key, int(text))
+
             elif key == "filename":
                 filename = text.strip()
+
+                # ✅ Remove .json or .JSON extension if present
+                if filename.lower().endswith(".json"):
+                    filename = filename[:-5]
+
                 with shared.write_lock:
                     shared.filename_3d = filename
+
                 shared.save_settings()
+
         except Exception as e:
             logger.warning(f"Invalid input for {key}: {text} ({e})")
-
 
     def on_checkbox_toggle(self, key, state):
         with shared.write_lock:
             setattr(shared, key, bool(state))
             shared.save_settings()
+        self.update_graph()    
 
     def refresh_file_list(self):
         folder = Path(USER_DATA_DIR)
@@ -323,9 +346,9 @@ class Tab3(QWidget):
         # Update text input to reflect selected file
         self.filename_input.setText(selected_name)
 
-
     def load_selected_file(self, filename):
         try:
+            print(filename)
             load_histogram_3d(filename)
             logger.info(f"Loaded: {filename}")
 
@@ -354,8 +377,6 @@ class Tab3(QWidget):
         self.filename_dropdown.setCurrentIndex(0)
         stop_recording()
 
-
-
     def confirm_overwrite(self):
         filename = self.filename_input.text()
         file_path = os.path.join(USER_DATA_DIR, f"{filename}_3d.json")
@@ -369,11 +390,7 @@ class Tab3(QWidget):
                 return
         self.start_recording_3d(filename)
 
-
-
     def start_recording_3d(self, filename):
-
-        print(f"filename={filename}")
 
         try:
             self.plot_data.clear()
@@ -399,7 +416,6 @@ class Tab3(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Start Error", f"Error starting: {str(e)}")
 
-
     def update_bins_selector(self):
         compression_values = [64, 32, 16, 8, 4, 2, 1]
         try:
@@ -410,7 +426,7 @@ class Tab3(QWidget):
             index = 6  # Default to 8192 bins
 
         self.bins_selector.setCurrentIndex(index)
-
+        self.update_graph()
 
     def on_select_bins_changed(self, index):
         self.plot_data.clear()
@@ -420,7 +436,6 @@ class Tab3(QWidget):
                 shared.compression = compression
                 shared.bins = shared.bins_abs // compression
                 logger.info(f"Compression set to {compression}, bins = {shared.bins}")
-
 
     def download_array_csv(self):
         # ── Any data to save? ───────────────────────────────────────────────
@@ -475,8 +490,6 @@ class Tab3(QWidget):
             logger.error(f"Error saving CSV: {e}")
             QMessageBox.critical(self, "Error", f"Failed to save CSV:\n{e}")
 
-
-
     # ------------------------------------------------------------------
 
     def update_graph(self):
@@ -484,114 +497,105 @@ class Tab3(QWidget):
             return
 
         try:
-
             # ── Snapshot shared state ───────────────────────────────────────
-            run_flag = hist3d = t_interval = log_switch = epb_switch = cal_switch = counts = elapsed = bins = coeffs = None
             with shared.write_lock:
                 run_flag   = shared.run_flag
                 hist3d     = list(shared.histogram_3d)
                 t_interval = shared.t_interval
                 log_switch = shared.log_switch
-                epb_switch = shared.epb_switch
+                epb_switch = shared.epb_switch  # not used in 2D
                 cal_switch = shared.cal_switch
                 counts     = shared.counts
                 elapsed    = shared.elapsed
                 bins       = shared.bins
                 coeffs     = [shared.coeff_3, shared.coeff_2, shared.coeff_1]
 
-            # ── Ensure data is present and valid ────────────────────────────
+            # ── Ensure data is valid ────────────────────────────────────────
             if not hist3d or not isinstance(hist3d[-1], list):
                 logger.warning("No valid histogram row to display.")
                 return
 
             if len(hist3d[-1]) != bins:
+                logger.warning(f"Invalid bin length: {len(hist3d[-1])} vs expected {bins}")
                 return
 
-            # ── Append to plot data ─────────────────────────────────────────
+            # ── Append and maintain buffer ──────────────────────────────────
             self.plot_data.append(hist3d[-1])
-            if len(self.plot_data) > 60:
-                self.plot_data.pop(0)
-
-            self.time_stamps.append(elapsed)
-            if len(self.time_stamps) > 60:
-                self.time_stamps.pop(0)
-
 
             if not self.plot_data:
                 logger.warning("Plot data is empty.")
                 return
 
             # ── Build Z matrix ──────────────────────────────────────────────
-            Z = np.asarray(self.plot_data, dtype=float)
+            # Get visible portion of the data, scrolling backward in time
+            visible_rows = self.plot_window_size
+            total_rows = len(self.plot_data)
+
+            if self.scroll_offset == 0:
+                offset = max(0, total_rows - visible_rows)
+            else:
+                offset = max(0, total_rows - visible_rows - self.scroll_offset)
+
+            Z = np.asarray(list(self.plot_data)[offset:offset + visible_rows], dtype=float)
+
+            # Y-axis in seconds
+            y_axis = np.arange(offset, offset + Z.shape[0]) * t_interval
+
+
+            y_axis = np.arange(offset, offset + Z.shape[0]) * t_interval
+
 
             if Z.ndim != 2 or Z.shape[1] != bins:
                 logger.error(f"Z shape mismatch: {Z.shape}, expected (n_rows, {bins})")
                 return
 
-            # ── Y Axis: Time vector ─────────────────────────────────────────
-            num_rows = Z.shape[0]
-            if self.time_stamps and len(self.time_stamps) == num_rows:
-                y_axis = np.array(self.time_stamps, float)
-            else:
-                y_axis = np.linspace(elapsed - num_rows * t_interval, elapsed, num_rows)
+            if log_switch:
+                Z[Z <= 0] = 0.1
+                Z = np.log10(Z)    
 
-            # ── X Axis: Bin or Energy ───────────────────────────────────────
+            # ── Axes: Energy/Bins (X), Time (Y) ─────────────────────────────
             bin_indices = np.arange(bins)
             if cal_switch:
                 x_axis = coeffs[2] * bin_indices**2 + coeffs[1] * bin_indices + coeffs[0]
             else:
                 x_axis = bin_indices
 
-            # ── Meshgrid for 3D plot ────────────────────────────────────────
-            X, Y = np.meshgrid(x_axis, y_axis, indexing='ij')
-
-            # ── Apply log and energy-per-bin scaling ────────────────────────
-            if log_switch:
-                Z[Z <= 0] = 0.1
-                Z = np.log10(Z)
-
             if epb_switch:
-                Z *= X.T  # Transpose X to broadcast across rows
+                # Normalize x_axis to a multiplier (e.g. 1.0 to 10.0 range)
+                weights = x_axis / np.mean(x_axis)  # Simple scaling, avoid overflow
+                Z *= weights[np.newaxis, :]  # Broadcast across rows    
 
+            num_rows = Z.shape[0]
+            y_axis = np.arange(offset, offset + Z.shape[0]) * t_interval
 
-            # ── Plot Surface ────────────────────────────────────────────────
-            if self.ax is None:
-                self.figure.clf()
-                self.ax = self.figure.add_subplot(111, projection='3d')
-            else:
-                self.ax.clear()
+            y_min = y_axis.min()
+            y_max = y_axis.max()
 
-            # various plot styles
-            #self.ax.plot_surface(X, Y, Z.T,cmap='turbo', shade=True,linewidth=1, antialiased=False)
-            #self.ax.plot_trisurf(X.flatten(), Y.flatten(), Z.T.flatten(),cmap='viridis',shade=False,linewidth=0,antialiased=True)
-            #self.ax.plot_wireframe(X, Y, Z.T, rstride=2, cstride=2, color='blue', linewidth=0.5, antialiased=True)
-            #self.ax.contour3D(X, Y, Z.T,levels=20, cmap='viridis',linewidths=0.5,antialiased=True)
-            self.ax.plot_surface(X, Y, Z.T, cmap='turbo',shade=False, linewidth=0.5, color='gray', antialiased=True, rstride=1, cstride=1)
+            if y_min == y_max:
+                y_min -= 0.5
+                y_max += 0.5
 
+            self.ax.imshow(Z, aspect='auto', origin='lower', cmap='turbo',
+                           extent=[x_axis.min(), x_axis.max(), y_min, y_max])
 
+            # ── Create fresh 2D plot ────────────────────────────────────────
+            self.figure.clf()
+            self.ax = self.figure.add_subplot(111)
 
-            self.ax.view_init(elev=30, azim=45)
+            img = self.ax.imshow(Z, aspect='auto', origin='lower', cmap='turbo',
+               extent=[x_axis.min(), x_axis.max(), y_min, y_max])
+
             self.ax.set_xlabel("Energy (keV)" if cal_switch else "Bin #")
             self.ax.set_ylabel("Time (s)")
-            self.ax.set_zlabel("log₁₀(Counts)" if log_switch else "Counts")
-            self.ax.set_xlim(x_axis.min(), x_axis.max())
+            self.ax.set_title("Live Waterfall Plot")
+            self.figure.colorbar(img, ax=self.ax, label="log₁₀(Counts)" if log_switch else "Counts")
 
-            y_min, y_max = y_axis.min(), y_axis.max()
-            if y_min == y_max:
-                y_min -= 1
-                y_max += 1
-            self.ax.set_ylim(y_min, y_max)
+            # Optional: scrolls upward like a spectrogram
+            self.ax.invert_yaxis()
 
-            if Z.size > 0:
-                zmax = float(Z.max())
-                zmin = float(Z.min())
-            else:
-                zmax = 1.0
-                zmin = 0.1
-
-            self.ax.set_zlim(zmin, max(zmax * 1.1, zmin * 10))
             self.canvas.draw()
 
+            # ── Update UI readouts ───────────────────────────────────────────
             if run_flag:
                 self.counts_display.setText(str(counts))
                 self.elapsed_display.setText(str(elapsed))

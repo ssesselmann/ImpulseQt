@@ -493,7 +493,8 @@ def start_pro_recording(mode):
             thread.start()
             return thread
         except Exception as e:
-            logger.error(f"Error starting 2D spectrum thread: {e}")
+
+            logger.error(f"[ERROR] starting 2D spectrum thread: {e}")
 
     elif mode == 3:
 
@@ -507,10 +508,11 @@ def start_pro_recording(mode):
             return thread
 
         except Exception as e:
-            logger.error(f"Error starting 3D spectrum thread: {e}")
+
+            logger.error(f"[ERROR] starting 3D spectrum thread: {e}")
 
     else:
-        logger.error(f"Unsupported mode for PRO device: {mode}")
+        logger.error(f"[ERROR] Unsupported mode for PRO device: {mode}")
         return None
 
 
@@ -529,8 +531,7 @@ def stop_recording():
     
 # clear variables
 def clear_shared(mode):
-    logger.info('1..running clear_shared\n')
-    logger.info(f'2..shared.bins = {shared.bins}\n')
+
     if mode == 2:
         with shared.write_lock:
             shared.count_history   = []
@@ -543,17 +544,20 @@ def clear_shared(mode):
 
 
     if mode == 3:
-        logger.info('2..clear_shared mode is (3)\n')
+
         file_path = os.path.join(shared.USER_DATA_DIR, f'{shared.filename}_3d.json')
 
         try:
             if os.path.exists(file_path):
                 os.remove(file_path)
                 logger.info(f"3..deleting file: {file_path}\n")
+
             else:
                 logger.warning(f"4..file does not exist: {file_path}\n")
+
         except Exception as e:
-            logger.error(f"ERROR deleting file {file_path}: {e}\n")
+
+            logger.error(f"[ERROR] deleting file {file_path}: {e}\n")
 
         shared.count_history   = []
         shared.counts          = 0
@@ -593,7 +597,7 @@ def export_csv(filename, data_directory, calib_switch):
         with open(os.path.join(data_directory, f'{filename}.json')) as f:
             data = json.load(f)
     except FileNotFoundError:
-        logger.error(f"Error: {filename}.json not found in {data_directory}")
+        logger.error(f"[ERROR] {filename}.json not found in {data_directory}")
         return
 
     if data.get("schemaVersion") == "NPESv2":
@@ -603,7 +607,7 @@ def export_csv(filename, data_directory, calib_switch):
         spectrum = data["resultData"]["energySpectrum"]["spectrum"]
         coefficients = data["resultData"]["energySpectrum"]["energyCalibration"]["coefficients"]
     except KeyError:
-        logger.error(f"Error: Missing expected keys in {filename}.json")
+        logger.error(f"[ERROR] Missing expected keys in {filename}.json")
         return
 
     # Ensure the download folder exists
@@ -619,53 +623,6 @@ def export_csv(filename, data_directory, calib_switch):
             else:
                 energy = i
             writer.writerow([energy, value])
-
-
-
-# def update_coeff(filename):
-#     with shared.write_lock:
-#         data_directory = shared.DATA_DIR
-#         coefficients_1 = shared.coefficients_1
-
-#     file_path = os.path.join(data_directory, filename + ".json")
-
-#     # Read the existing JSON file with error handling
-#     try:
-#         with open(file_path, 'r') as f:
-#             data = json.load(f)
-#     except FileNotFoundError:
-#         logger.error(f"File not found: {file_path}")
-#         return
-#     except json.JSONDecodeError:
-#         logger.error(f"Error decoding JSON from file: {file_path}")
-#         return
-
-#     # Update the coefficients based on schema version
-#     try:
-#         if data["schemaVersion"] == "NPESv1":
-#             data["resultData"]["energySpectrum"]["energyCalibration"]["coefficients"] = coefficients_1
-        
-#         elif data["schemaVersion"] == "NPESv2":
-#             data["data"][0]["resultData"]["energySpectrum"]["energyCalibration"]["coefficients"] = coefficients_1
-
-#         else:
-#             raise ValueError(f"Unknown schemaVersion: {data['schemaVersion']}")
-    
-#     except KeyError as e:
-#         logger.error(f"Missing expected key in JSON data: {e}")
-#         return
-
-#     # Write the updated JSON back to the file with error handling
-#     try:
-#         with shared.write_lock:
-#             with open(file_path, 'w') as f:
-#                 json.dump(data, f, separators=(',', ':'))
-#     except IOError as e:
-#         logger.error(f"Error writing to file: {file_path} - {e}")
-#         return
-
-#     logger.info(f"Coefficients updated in {file_path}")
-
 
 
 # removes the path from serial device list Mac only
@@ -692,8 +649,10 @@ def get_api_key():
             user_data = json.load(file)
         api_key = user_data.get('api_key', None)
         return api_key
+
     except Exception as e:
-        logger.error(f"code/functions/get_api_key() failed: {e}\n")
+        logger.error(f"[ERROR] code/functions/get_api_key() failed: {e}\n")
+
         return None
 
 def publish_spectrum(filename):
@@ -726,36 +685,6 @@ def publish_spectrum(filename):
     except Exception as e:
         logger.error(f'Error from /code/functions/publish_spectrum: {e}\n')
         return f'Error from /code/functions/publish_spectrum: {e}'
-
-# def update_json_notes(filename, spec_notes):
-#     with shared.write_lock:
-#         data_directory = shared.USER_DATA_DIR
-#         coefficients_1 = shared.coefficients_1
-
-#     try:
-#         file_path = f'{data_directory}/{filename}.json'
-        
-#         # Read the existing JSON file
-#         with open(file_path, 'r') as f:
-#             data = json.load(f)
-        
-#         # Update the notes
-#         if "data" in data and isinstance(data["data"], list) and "sampleInfo" in data["data"][0]:
-#             data["data"][0]["sampleInfo"]["note"] = spec_notes
-#             data["data"][0]["resultData"]["energySpectrum"]["energyCalibration"]["coefficients"] = coefficients_1[::-1]
-#         else:
-#             logger.error(f"Unexpected JSON structure in {filename}.json\n")
-#             return
-        
-#         # Write the updated JSON back to the file
-#         with open(file_path, 'w') as f:
-#             json.dump(data, f, separators=(',', ':'))
-        
-#         logger.info(f'Notes updated: {spec_notes}\n')
-        
-#     except Exception as e:
-#         logger.error(f'Error in update_json_notes: {e}\n')
-
 
 
 def get_spec_notes(filename):
@@ -792,10 +721,8 @@ def get_serial_device_information():
         return dev_info if dev_info else "No response from device"
 
     except Exception as e:
-        logger.error(f"Error retrieving device information: {e}")
-        return "Error retrieving device information"
-
-
+        logger.error(f"[ERROR] retrieving device information: {e}")
+        return "[ERROR] retrieving device information"
 
 
 def parse_device_info(info_string):
@@ -1041,7 +968,7 @@ def load_histogram(filename):
         return True
 
     except Exception as e:
-        logger.info(f"Error in load_histogram('{filename}'): {e}")
+        logger.info(f"[ERROR] in load_histogram('{filename}'): {e}")
         return False
 
 def load_histogram_2(filename):
@@ -1070,49 +997,49 @@ def load_histogram_2(filename):
 
     except Exception as e:
         
-        logger.info(f"Error loading histogram_2 from {filename}: {e}\n")
+        logger.info(f"[ERROR] loading histogram_2 from {filename}: {e}\n")
         return False
 
-def load_histogram_3d(filename):
+def load_histogram_3d(stem):
+    logger.info("1.. load_histogram_3d")
 
-    logging.info('1.. load_histogram_3d\n')
+    # Ensure only one .json is added
+    file_path = Path(shared.USER_DATA_DIR) / f"{stem}_3d.json"
 
-    file_path = os.path.join(shared.USER_DATA_DIR, f'{filename}_3d.json')
-    
-    if not os.path.exists(file_path):
-
-        logger.error(f"Load_histogram_3d, file not found: {file_path}\n")
-
+    if not file_path.exists():
+        logger.error(f"[ERROR] Load_histogram_3d, file not found: {file_path}")
         with shared.write_lock:
-            shared.histogram_3d = [[0] * 512] * 10  
-            
+            shared.histogram_3d = [[0] * 512] * 10
         return
 
     try:
-        with open(file_path, 'r') as file:
-            logger.info('2.. loading 3d file\n')
+        with open(file_path, "r", encoding="utf-8") as file:
+            logger.info("2.. loading 3d file")
             data = json.load(file)
-            logger.info('3.. loading 3d file\n')
+            logger.info("3.. parsed 3d file")
 
-        if data["schemaVersion"] == "NPESv2":
+        if data.get("schemaVersion") == "NPESv2":
             data = data["data"][0]
 
         with shared.write_lock:
-            shared.histogram_3d    = data['resultData']['energySpectrum']['spectrum']
-            shared.counts          = data['resultData']['energySpectrum']['validPulseCount']
-            shared.bins_3d         = data['resultData']['energySpectrum']['numberOfChannels']
-            shared.elapsed         = data['resultData']['energySpectrum']['measurementTime']
-            shared.coeff_1         = data['resultData']['energySpectrum']['energyCalibration']['coefficients'][0]
-            shared.coeff_2         = data['resultData']['energySpectrum']['energyCalibration']['coefficients'][1]
-            shared.coeff_3         = data['resultData']['energySpectrum']['energyCalibration']['coefficients'][2]
-            shared.startTime3d     = data['resultData']['startTime']
-            shared.endTime3d       = data['resultData']['startTime']
+            result = data["resultData"]["energySpectrum"]
+            shared.histogram_3d = result["spectrum"]
+            shared.counts = result["validPulseCount"]
+            shared.bins_3d = result["numberOfChannels"]
+            shared.elapsed = result["measurementTime"]
+            coeffs = result["energyCalibration"]["coefficients"]
+            shared.coeff_1, shared.coeff_2, shared.coeff_3 = coeffs
+            shared.startTime3d = data["resultData"]["startTime"]
+            shared.endTime3d = data["resultData"]["startTime"]
 
-        logger.info(f"4.. shared updated from {file_path}\n")
+        logger.info(f"4.. shared updated from {file_path}")
 
     except KeyError as e:
+        logger.error(f"Missing expected data key in {file_path}: {e}")
 
-        logger.error(f"Missing expected data key in {file_path}: {e}\not")
+    except Exception as e:
+        logger.error(f"[ERROR] Exception loading 3D histogram: {e}")
+
 
 def load_cps_file(filepath):
     
@@ -1142,9 +1069,9 @@ def load_cps_file(filepath):
             return cps_data
 
     except json.JSONDecodeError as e:
-        raise ValueError(f"Error loading cps JSON from {filepath}: {e}")
+        raise ValueError(f"[ERROR] loading cps JSON from {filepath}: {e}")
     except Exception as e:
-        raise RuntimeError(f"An error occurred while loading CPS data from {filepath}: {e}")
+        raise RuntimeError(f"[ERROR] while loading CPS data from {filepath}: {e}")
       
 
 def format_date(iso_datetime_str):
@@ -1184,7 +1111,7 @@ def start_max_oscilloscope():
         process_03('-sta')     # Start process
         time.sleep(0.4)
     except Exception as e:
-        logger.error(f"Error in process_03 command: {e}")
+        logger.error(f"[ERROR] in process_03 command: {e}")
         return True  # Signal that the interval should remain disabled
 
     if not stop_thread.is_set():  # Check if the thread is already running
@@ -1198,7 +1125,7 @@ def stop_max_pulse_check():
         time.sleep(0.3)
         process_03('-mode 0')  # Reset mode to default
     except Exception as e:
-        logger.error(f"Error in process_03 command: {e}")
+        logger.error(f"[ERROR] in process_03 command: {e}")
     
     stop_thread.set()  # Signal the thread to stop
     return True  # Signal that the interval should be disabled
@@ -1211,7 +1138,7 @@ def capture_pulse_data():
                 break
             pulse_data_queue.put(pulse_data)  # Add the list to the queue
     except Exception as e:
-        logger.error(f"Error while capturing pulse data: {e}")
+        logger.error(f"[ERROR] while capturing pulse data: {e}")
 
 
 def get_flag_options():
@@ -1237,7 +1164,7 @@ def read_flag_data(path):
             data = json.load(f)
         return data
     except Exception as e:
-        logger.error(f"Error reading isotopes data: {e}")
+        logger.error(f"[ERROR] reading isotopes data: {e}")
         return []    
 
 # Opens and reads the isotopes.json file
@@ -1246,7 +1173,7 @@ def get_isotope_flags(path):
         with open(path, 'r') as file:
             return json.load(file)
     except:
-        logger.info('functions get_isotopes failed')
+        logger.error('[ERROR] functions get_isotopes failed')
 
 def extract_tco_pairs(dev_info):
     match = re.search(r'Tco\s+\[([-\d\s]+)\]', dev_info)

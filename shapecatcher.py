@@ -134,6 +134,8 @@ def capture_pulse_polarity(device, stereo, sample_rate, chunk_size, sample_lengt
 
 
 
+import traceback
+
 def shapecatcher():
     # Extract settings from shared
     with shared.write_lock:
@@ -154,34 +156,33 @@ def shapecatcher():
         shape_uld       = shared.shape_uld
         pc              = 0
 
-    print(f'shape_lld = {shape_lld}')
-
-    print(f'shape_uld = {shape_uld}')
-
     peak = int(((sample_length - 1) / 2) + peakshift)
 
-    logger.info(f"Shapecatcher shape_lld fixed at {shape_lld}")
-    logger.info(f"Shapecatcher says Stereo is {stereo}")
+    logger.info(f"[Shapecatcher] Starting shape acquisition for file '{name}'")
+    logger.info(f"[Shapecatcher] Sample rate: {sample_rate} Hz, Chunk size: {chunk_size}, Stereo: {stereo}")
+    logger.info(f"[Shapecatcher] Shape LLD: {shape_lld}, ULD: {shape_uld}, Peak at index {peak}")
     sc_info.append(f"Preparing for {sample_rate} kHz {'stereo' if stereo else 'mono'}")
 
     time.sleep(0.1)
 
     # Determine pulse polarity
-    pulse_sign_left, pulse_sign_right = capture_pulse_polarity(device, stereo, sample_rate, chunk_size, sample_length, shape_lld, peak)
+    pulse_sign_left, pulse_sign_right = capture_pulse_polarity(
+        device, stereo, sample_rate, chunk_size, sample_length, shape_lld, peak
+    )
 
     if stereo and pulse_sign_right is None:
+        logger.warning("[Shapecatcher] No pulse detected on right channel. Aborting.")
         sc_info.append('No pulse on right channel... Exiting.')
         return [], []
 
-    logger.info(f"Determined Pulse Signs Left: {pulse_sign_left} Right: {pulse_sign_right}")
+    logger.info(f"[Shapecatcher] Pulse sign: Left={pulse_sign_left}, Right={pulse_sign_right}")
     sc_info.append(f"Positive pulse Left: {pulse_sign_left} Right: {pulse_sign_right}")
 
     encoded_pulse_sign = encode_pulse_sign(pulse_sign_left, pulse_sign_right)
-    logging.info(f"Encoded Pulse Sign: {encoded_pulse_sign}")
+    logger.info(f"[Shapecatcher] Encoded Pulse Sign: {encoded_pulse_sign}")
 
     with shared.write_lock:
         shared.flip = encoded_pulse_sign
-
 
     # Start PyAudio
     p = pyaudio.PyAudio()
@@ -189,8 +190,11 @@ def shapecatcher():
 
     channels = 2 if stereo else 1
     if channels > info['maxInputChannels']:
-        raise RuntimeError(f"❌ Device only supports {info['maxInputChannels']} channels, but {channels} were requested.")
+        msg = f"[Shapecatcher] ERROR: {info['maxInputChannels']} channels available, but {channels} requested."
+        logger.error(msg)
+        raise RuntimeError(msg)
 
+    logger.info("[Shapecatcher] Opening audio stream...")
     stream = p.open(format=pyaudio.paInt16,
                     channels=channels,
                     rate=sample_rate,
@@ -203,6 +207,7 @@ def shapecatcher():
     pulse_list_right = []
 
     try:
+        logger.info(f"[Shapecatcher] Listening for pulses... Target: {shapecatches} per channel")
         while len(pulse_list_left) < shapecatches or (stereo and len(pulse_list_right) < shapecatches):
             data = stream.read(chunk_size, exception_on_overflow=False)
             values = list(wave.struct.unpack(f"{chunk_size * channels}h", data))
@@ -232,6 +237,7 @@ def shapecatcher():
                 if len(pulse_list_left) >= shapecatches and (not stereo or len(pulse_list_right) >= shapecatches):
                     break
 
+        logger.info("[Shapecatcher] Finished capturing pulse shapes")
         sc_info.append('Calculating mean shape')
         time.sleep(0.1)
 
@@ -243,7 +249,6 @@ def shapecatcher():
         max_length = max(len(mean_shape_left), len(mean_shape_right))
         mean_shape_left += [0] * (max_length - len(mean_shape_left))
 
-
         if stereo:
             mean_shape_right += [0] * (max_length - len(mean_shape_right))
         else:
@@ -253,11 +258,21 @@ def shapecatcher():
             shared.mean_shape_left = mean_shape_left
             shared.mean_shape_right = mean_shape_right
 
+        logger.info("[Shapecatcher] Mean shapes computed and saved to shared")
+
+    except Exception as e:
+        logger.error("[Shapecatcher] Exception occurred during pulse capture:")
+        logger.error(traceback.format_exc())
+        sc_info.append("Error during pulse shape acquisition.")
+        mean_shape_left, mean_shape_right = [], []
+
     finally:
         stream.stop_stream()
         stream.close()
         p.terminate()
+        logger.info("[Shapecatcher] Audio stream closed.")
         sc_info.append(' ')
 
     return mean_shape_left, mean_shape_right
+
 

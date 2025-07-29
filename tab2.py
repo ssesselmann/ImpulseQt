@@ -360,7 +360,7 @@ class Tab2(QWidget):
         self.dld_csv_btn = QPushButton("Download csv")
         self.dld_csv_btn.setStyleSheet(BTN)
         self.dld_csv_btn.clicked.connect(self.on_dld_csv_btn)
-        grid.addWidget(self.labeled_input("Download csv File", self.dld_csv_btn), 0, 3)
+        grid.addWidget(self.labeled_input("Download csv File", self.dld_csv_btn), 0, 4)
 
 
         # Col 4 Row 4
@@ -545,7 +545,7 @@ class Tab2(QWidget):
         self.notes_input.textChanged.connect(self.on_notes_changed)
 
         # Add to layout (row 0, col 7, rowspan 3, colspan 1)
-        grid.addWidget(self.labeled_input("Spectrum Notes", self.notes_input), 0, 8, 2, 1)
+        grid.addWidget(self.labeled_input(f"Notes written to {filename}.json\n", self.notes_input), 0, 8, 2, 1)
 
         # --- Logo widget ---
         logo_label = QLabel()
@@ -770,7 +770,7 @@ class Tab2(QWidget):
 
             logger.info(f"[TOGGLE] {name} set to {value}")
 
-            update_hist = name in ("epb_switch", "log_switch", "diff_switch")
+            update_hist = name in ("epb_switch", "log_switch", "diff_switch", "cal_switch")
             comp_switch_on = name == "comp_switch" and value
 
             # Grab filename while still in lock
@@ -815,19 +815,19 @@ class Tab2(QWidget):
 
         filepath = self.select_file.itemData(index)
 
-        # Ignore placeholder
         if not filepath:
             return
 
-        # Remove `.json` extension
+        # Use just the filename without extension
         filename_no_ext = Path(filepath).stem
 
-        # Update input field and shared state
         self.filename_input.setText(filename_no_ext)
 
-        shared.filename = filepath
+        shared.filename = filename_no_ext
 
-        load_histogram(filepath)
+        # Load histogram using just the stem
+        load_histogram(filename_no_ext)
+
 
         # Get value while locked
         with shared.write_lock:
@@ -884,7 +884,7 @@ class Tab2(QWidget):
         with shared.write_lock:
             shared.sigma = sigma
         self.sigma_label.setText(f"Sigma: {sigma:.1f}")
-
+        self.update_histogram()
 
     def on_peakfinder_changed(self, position):
         value = self.peakfinder_values[position]
@@ -894,6 +894,7 @@ class Tab2(QWidget):
             self.peakfinder_label.setText(f"Peaks Off")
         elif value > 0:
             self.peakfinder_label.setText(f"More peaks >>")
+        self.update_histogram()
     
     def update_peak_markers(self): #WL Compliant
 
@@ -1007,38 +1008,42 @@ class Tab2(QWidget):
 
         self.calibration_popup.show()
 
-    def on_notes_changed(self): # WL Compliant
+    def on_notes_changed(self):  # WL Compliant
+        new_note = self.notes_input.toPlainText().strip()
 
-        new_note          = self.notes_input.toPlainText().strip()
         with shared.write_lock:
             shared.spec_notes = new_note
-            filename          = shared.filename 
+            filename = shared.filename
 
         if not filename:
+            logger.warning("[Notes] No filename available.")
             return
 
-        json_path = USER_DATA_DIR / filename
+        json_path = USER_DATA_DIR / f"{filename}.json" if not filename.endswith(".json") else filename
 
         if not json_path.exists():
+            logger.warning(f"[Notes] JSON file not found: {json_path}")
             return
 
         try:
             with open(json_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
-            # Update the note safely
+            # Safely update note
             try:
                 data["data"][0]["sampleInfo"]["note"] = new_note
-
             except (IndexError, KeyError) as e:
-                logger.error(f"[ERROR] Could not find sampleInfo to update note: {e}")
+                logger.error(f"[Notes] Failed to update note field: {e}")
                 return
 
             with open(json_path, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2)
+                json.dump(data, f)  # no indent ➜ compact
+
+            logger.info(f"[Notes] Updated note in {filename}")
 
         except Exception as e:
-            logger.error(f"[ERROR] Failed to update notes in JSON: {e}")
+            logger.error(f"[Notes] Exception during JSON update: {e}")
+
 
 
     def on_dld_csv_btn(self):

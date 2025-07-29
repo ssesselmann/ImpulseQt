@@ -2,6 +2,6 @@
 __pycache__/audio_spectrum.cpython-310.pyc
 *.pyc
 shproto/.DS_Store
-production/entitlements.plist
 production/*
+
 

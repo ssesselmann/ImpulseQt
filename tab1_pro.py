@@ -338,7 +338,7 @@ class Tab1ProWidget(QWidget):
 
         except Exception as e:
             
-            logger.error(f"❌ Error during shapecatcher: {e}")
+            logger.error(f"[ERROR] during shapecatcher: {e}")
 
     def run_distortion_finder(self):
         with shared.write_lock:
@@ -436,4 +436,4 @@ class Tab1ProWidget(QWidget):
 
 
         except Exception as e:
-            logger.error(f"❌ Error in plot_saved_shapes: {e}")
+            logger.error(f"[ERROR] in plot_saved_shapes: {e}")

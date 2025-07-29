@@ -80,7 +80,10 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 log_file = LOG_DIR / "impulseqt_log.txt"
 
 # Set root logger to DEBUG
+#logging.basicConfig(level=logging.INFO)
 logging.basicConfig(level=logging.DEBUG)
+# logging.basicConfig(level=logging.WARNING)
+# logging.basicConfig(level=logging.ERROR)
 
 # Suppress noisy loggers
 logging.getLogger('matplotlib').setLevel(logging.WARNING)
@@ -279,11 +282,11 @@ window_height = 0
 # -------------------------------
 
 SETTINGS_SCHEMA = {
-    "bin_size": {"type": "float", "default": 10},
-    "bin_size_2": {"type": "float", "default": 10},
+    "bin_size": {"type": "float", "default": 15},
+    "bin_size_2": {"type": "float", "default": 15},
     "bins_abs": {"type": "int", "default": 8192},
-    "bins": {"type": "int", "default": 3000},
-    "bins_2": {"type": "int", "default": 3000},
+    "bins": {"type": "int", "default": 2048},
+    "bins_2": {"type": "int", "default": 2048},
     "cached_device_info": {"type": "str", "default": ""},
     "cached_device_info_ts": {"type": "int", "default": 0},
     "cal_switch": {"type": "bool", "default": False},
@@ -301,9 +304,9 @@ SETTINGS_SCHEMA = {
     "coeff_1": {"type": "float", "default": 1},
     "coeff_2": {"type": "float", "default": 1},
     "coeff_3": {"type": "float", "default": 1},
-    "comp_coeff_1": {"type": "float", "default": []},
-    "comp_coeff_2": {"type": "float", "default": []},
-    "comp_coeff_3": {"type": "float", "default": []},
+    "comp_coeff_1": {"type": "float", "default": 0.0},
+    "comp_coeff_2": {"type": "float", "default": 0.0},
+    "comp_coeff_3": {"type": "float", "default": 0.0},
     "coi_switch": {"type": "bool", "default": False},
     "coi_window": {"type": "int", "default": 0},
     "compression": {"type": "int", "default": 1.0},
@@ -337,14 +340,14 @@ SETTINGS_SCHEMA = {
     "peakfinder": {"type": "int", "default": 0},
     "peakshift": {"type": "int", "default": 0},
     "polynomial_fn": {"type": "list", "default": []},
-    "mean_shape_left": {"type": "list", "default": []},
-    "mean_shape_right": {"type": "list", "default": []},
+    "mean_shape_left": {"type": "list", "default": [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]},
+    "mean_shape_right": {"type": "list", "default": [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]},
     "distortion_list_left": {"type": "list", "default": []},
     "distortion_list_right": {"type": "list", "default": []},
-    "isotope_tbl": {"type": "str", "default": ""},
+    "isotope_tbl": {"type": "str", "default": "Gamma common"},
     "rolling_interval": {"type": "int", "default": 60},
-    "sample_length": {"type": "int", "default": 21},
-    "sample_rate": {"type": "int", "default": 48000},
+    "sample_length": {"type": "int", "default": 51},
+    "sample_rate": {"type": "int", "default": 192000},
     "serial_number": {"type": "str", "default": ""},
     "shape_lld": {"type": "int", "default": 1000},
     "shape_uld": {"type": "int", "default": 25000},
@@ -367,16 +370,24 @@ SETTINGS_SCHEMA = {
     "tempcal_stability_window_sec": {"type": "int", "default": 60},
     "tempcal_table": {"type": "list", "default": []},
     "theme": {"type": "str", "default": "light"},
-    "threshold": {"type": "int", "default": 200},
+    "threshold": {"type": "int", "default": 20},
     "tolerance": {"type": "int", "default": 50000},
     "iso_switch": {"type": "bool", "default": False},
-    "window_pos_x": {"type": "int", "default": 100},
-    "window_pos_y": {"type": "int", "default": 100},
-    "window_width": {"type": "int", "default": 800},
-    "window_height": {"type": "int", "default": 600}
+    "window_pos_x": {"type": "int", "default": 50},
+    "window_pos_y": {"type": "int", "default": 50},
+    "window_width": {"type": "int", "default": 1400},
+    "window_height": {"type": "int", "default": 850}
 }
 
-
+def read_flag_data(path):
+    try:
+        with open(path, 'r') as f:
+            data = json.load(f)
+        return data
+    except Exception as e:
+        logger.error(f"[ERROR] reading isotopes data: {e}")
+        return []  
+        
 def to_settings():
     return {key: globals().get(key, meta["default"]) for key, meta in SETTINGS_SCHEMA.items()}
 
@@ -429,14 +440,13 @@ def load_settings():
     from_settings(loaded)
 
     try:
-        tbl_name = shared.isotope_tbl  # should be restored by from_settings()
-        if tbl_name:
-            full_path = TBL_DIR / tbl_name
+        if isotope_tbl:
+            full_path = TBL_DIR / isotope_tbl
             if full_path.exists():
-                shared.isotope_flags = read_flag_data(full_path)
-                logger.info(f"[INFO] Preloaded {len(shared.isotope_flags)} isotope flags from {tbl_name}")
+                isotope_flags = read_flag_data(full_path)
+                logger.info(f"[INFO] Preloaded {len(isotope_flags)} isotope flags from {isotope_tbl}")
             else:
-                logger.warning(f"[WARN] Isotope table '{tbl_name}' not found in {TBL_DIR}")
+                logger.warning(f"[WARN] Isotope table '{isotope_tbl}' not found in {TBL_DIR}")
     except Exception as e:
         logger.error(f"[ERROR] Failed to preload isotope flags: {e}")
 

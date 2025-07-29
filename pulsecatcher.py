@@ -42,7 +42,6 @@ def save_data(save_queue):
         if 'filename_3d' in data and 'last_minute' in data:
             filename_3d = data['filename_3d']
             last_minute = data['last_minute']
-            logger.debug(f"Saving mode 3 data: last_minute length={len(last_minute)}")
             fn.update_json_3d_file(t0, t1, bins, local_counts, local_elapsed, filename_3d, last_minute, coeff_1, coeff_2, coeff_3, device)
 
 # Function to handle mode 2 and 4 shared variable updates
@@ -51,27 +50,22 @@ def save_mode_2_data(mode, shared, full_histogram, counts_per_sec):
         with shared.write_lock:
             shared.histogram = full_histogram.copy()  # Copy to avoid reference issues
             shared.count_history.append(counts_per_sec)
-            logger.debug(f"Mode {mode}: Updated shared.histogram (sum={sum(full_histogram)}), count_history (last={counts_per_sec})")
 
 # Function to handle mode 3 histogram updates
 def save_mode_3_data(mode, shared, full_histogram, last_histogram, last_minute_histogram_3d, interval_counter, t_interval, bins, time_this_save, last_interval_save):
     if mode != 3:
-        logger.debug(f"Mode {mode}: Skipping save_mode_3_data")
         return interval_counter, last_histogram, last_interval_save
 
     with shared.write_lock:
-        logger.debug(f"Mode 3: Processing at interval_counter={interval_counter}, t_interval={t_interval}, time_this_save={time_this_save}")
         # Calculate this second's histogram delta
         interval_histogram = [full_histogram[i] - last_histogram[i] for i in range(bins)]
         non_zero_count = sum(1 for x in interval_histogram if x != 0)
         total_counts = sum(interval_histogram)
-        logger.debug(f"Mode 3: interval_histogram non-zero bins={non_zero_count}, total counts={total_counts}")
         last_histogram[:] = full_histogram.copy()  # Update last_histogram in place
         if non_zero_count > 0:  # Only append if there’s new data
             last_minute_histogram_3d.append(interval_histogram)
-            logger.debug(f"Mode 3: Appended to last_minute_histogram_3d, length={len(last_minute_histogram_3d)}")
         else:
-            logger.debug("Mode 3: Skipped appending to last_minute_histogram_3d, no new counts")
+            logger.info("Mode 3: Skipped appending to last_minute_histogram_3d, no new counts")
 
         interval_counter += 1
         # Append summed histogram only every t_interval seconds
@@ -79,17 +73,16 @@ def save_mode_3_data(mode, shared, full_histogram, last_histogram, last_minute_h
             if last_minute_histogram_3d:
                 summed_interval = [sum(col) for col in zip(*last_minute_histogram_3d)]
                 shared.histogram_3d.append(summed_interval)
-                logger.debug(f"Mode 3: Appended summed_interval to shared.histogram_3d at time={time_this_save}, length={len(shared.histogram_3d)}, summed_counts={sum(summed_interval)}")
                 last_minute_histogram_3d.clear()
                 interval_counter = 0
                 last_interval_save = time_this_save
             else:
-                logger.debug("Mode 3: Skipped appending to shared.histogram_3d, last_minute_histogram_3d is empty")
+                logger.info("Mode 3: Skipped appending to shared.histogram_3d, last_minute_histogram_3d is empty")
+                
         return interval_counter, last_histogram, last_interval_save
 
 # Function reads audio stream and finds pulses then outputs time, pulse height, and distortion
 def pulsecatcher(mode, run_flag, run_flag_lock):
-    logger.debug(f"Starting pulsecatcher with mode={mode}, t_interval={shared.t_interval}")
     # Start timer
     t0                  = datetime.datetime.now()
     time_start          = time.time()
@@ -202,7 +195,6 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
                 height = fn.pulse_height(samples)
                 if samples[peak] == max(samples) and abs(height) > right_threshold and samples[peak] < 32768:
                     right_pulses.append((i + peak, height))
-                    logger.debug(f"Right channel pulse detected at index {i}: height={height}")
 
         # Sliding window approach to avoid re-slicing the array each time
         samples = left_channel[:sample_length]
@@ -215,8 +207,6 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
                     coincident_pulse = next((rp for rp in right_pulses if i + peak - coi_window <= rp[0] <= i + peak + coi_window), None)
                     if not coincident_pulse:
                         continue  # Skip if no coincident pulse found
-                    else:
-                        logger.debug(f"Coincidence index {i}, height={height}, Right pulse at index={coincident_pulse[0]}, height={coincident_pulse[1]}")
 
                 # Process the pulse as normal
                 normalised = fn.normalise_pulse(samples)
@@ -229,7 +219,6 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
                     if bin_index < bins:
                         full_histogram[bin_index] += 1
                         local_counts += 1
-                        logger.debug(f"Pulse detected: bin_index={bin_index}, local_counts={local_counts}, full_histogram_sum={sum(full_histogram)}")
 
             # Update sliding window instead of re-slicing
             samples.pop(0)
@@ -243,7 +232,6 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
         # Update shared variables every 1 second
         if time_this_save - time_last_save >= 1:
             counts_per_sec = local_counts - last_count
-            logger.debug(f"1-second update: counts_per_sec={counts_per_sec}, local_counts={local_counts}, local_elapsed={local_elapsed}, mode={mode}")
 
             with shared.write_lock:
                 shared.cps = counts_per_sec
@@ -266,7 +254,6 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
 
         # Save spectrum file every 30 seconds
         if time_this_save - time_last_save_time >= 30 or not shared.run_flag.is_set():
-            logger.debug(f"30-second save: mode={mode}, local_counts={local_counts}, last_minute_histogram_3d_length={len(last_minute_histogram_3d)}, shared.histogram_3d_length={len(shared.histogram_3d)}")
             save_data_dict = {
                 't0': t0, 
                 't1': t1, 
@@ -289,7 +276,6 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
                 save_data_dict['filename_3d'] = filename_3d
                 save_data_dict['last_minute'] = last_minute_histogram_3d.copy()  # Copy to preserve data
                 last_minute_histogram_3d.clear()  # Clear after queuing
-                logger.debug("Mode 3: Cleared last_minute_histogram_3d after queuing for save")
 
             save_queue.put(save_data_dict)
             time_last_save_time = time.time()
@@ -301,5 +287,4 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
     
     p.terminate()  # Closes stream when done
     shared.run_flag.clear()  # Ensure the CPS thread also stops
-    logger.debug(f"Final shared.histogram_3d length: {len(shared.histogram_3d)}, content: {shared.histogram_3d}")
     return
