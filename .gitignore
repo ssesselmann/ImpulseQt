@@ -1,3 +1,7 @@
 .DS_Store
 __pycache__/audio_spectrum.cpython-310.pyc
 *.pyc
+shproto/.DS_Store
+production/entitlements.plist
+production/credentials.py
+production/appsigner.py
