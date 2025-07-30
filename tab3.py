@@ -18,7 +18,7 @@ from matplotlib.figure import Figure
 from matplotlib import cm
 from datetime import datetime, timedelta
 from collections import deque 
-from shared import logger, P1, P2, H1, H2, MONO, START, STOP, BTN, FOOTER, DLD_DIR, USER_DATA_DIR
+from shared import logger, P1, P2, H1, H2, MONO, START, STOP, BTN, BUD, FOOTER, DLD_DIR, USER_DATA_DIR
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit,
     QComboBox, QCheckBox, QGridLayout, QDialog, QDialogButtonBox, QMessageBox, QSizePolicy
@@ -52,6 +52,7 @@ class Tab3(QWidget):
         self.init_ui()
         self.refresh_timer    = QTimer()
         self.refresh_timer.timeout.connect(self.update_graph)
+        self.filename = "•• Heatmap ••"
 
     def init_ui(self):
         # Main layout for the entire widget
@@ -236,9 +237,9 @@ class Tab3(QWidget):
         # ── Scroll buttons ───────────────────────────────────────────────────
         
         self.scroll_up_btn = QPushButton("Scroll ↑")
-        self.scroll_up_btn.setStyleSheet(BTN)
+        self.scroll_up_btn.setStyleSheet(BUD)
         self.scroll_down_btn = QPushButton("Scroll ↓")
-        self.scroll_down_btn.setStyleSheet(BTN)
+        self.scroll_down_btn.setStyleSheet(BUD)
         self.scroll_up_btn.clicked.connect(self.scroll_up)
         self.scroll_down_btn.clicked.connect(self.scroll_down)
 
@@ -378,7 +379,6 @@ class Tab3(QWidget):
             # Strip "_hmp" and update input
             input_name = Path(filename).stem.replace("_hmp", "")
             self.filename_input.setText(input_name)
-
             self.ready_to_plot = True
             self.refresh_timer.stop()
 
@@ -610,7 +610,7 @@ class Tab3(QWidget):
 
             self.ax.set_xlabel("Energy (keV)" if cal_switch else "Bin #")
             self.ax.set_ylabel("Time (s)")
-            self.ax.set_title("Live Waterfall Plot")
+            self.ax.set_title(self.filename)
             self.figure.colorbar(img, ax=self.ax, label="log₁₀(Counts)" if log_switch else "Counts")
 
             # Optional: scrolls upward like a spectrogram

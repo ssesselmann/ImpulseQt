@@ -10,7 +10,9 @@ class ManualMax(QWidget):
 
 
 def get_max_manual_html():
-    heading = f"<center><h2>Impulse {__version__} Manual (Atom and Max Devices)</h2></center>"
+    heading = f"""
+        <center><h2 style='color:#027BFF;' >Impulse {__version__} Manual (Atom and Max Devices)</h2></center>
+        """
 
     html = heading + f"""
         <!DOCTYPE html>
@@ -27,13 +29,13 @@ def get_max_manual_html():
                     line-height: 1.5;
                 }}
                 h1, h2 {{
-                    color: black;
+                    color: #027BFF;
                     margin-top: 24px;
                     margin-bottom: 12px;
                 }}
                 h3 {{
                     color: #777;
-                    margin-top: 24px;
+                    margin-top: 12px;
                     margin-bottom: 12px;
                 }}
                 p {{
@@ -52,6 +54,8 @@ def get_max_manual_html():
                     color: #0645AD;
                 }}
             </style>
+
+
         </head>
         <body>
             <p>Thank you for downloading and installing ImpulseQt. This open-source software is written in Python with the intention that users may modify and adapt it to their own experiments. This manual will explain how the software works and describe the purpose of each setting.</p>
@@ -123,7 +127,14 @@ def get_max_manual_html():
         <p>Steven Sesselmann</p>
         <a href="https://www.gammaspectacular.com" target='new'>Gammaspectacular.com</a>
         <hr>
-
+        <center>
+        <img src="assets/max-desk.png">
+        <h3>ATOM Spectra and GS-MAX detectors for every experiment</h3>
+        <p>Expect robust performance and reliability from every ATOM and MAX device, advanced features outperform spectrometers costing many times the price. <br> Atom and Max spectrometers provide guaranteed results for your publications.<br>Order online from gammaspectacular.com .
+        </center>
+        <hr>
+        </body>
+        </html>
 
         """
 

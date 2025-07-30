@@ -15,7 +15,7 @@ class Tab5(QWidget):
         self.setWindowTitle("User Manual")
 
         self.textbox = QTextBrowser()
-        self.textbox.setFixedWidth(700)
+        self.textbox.setFixedWidth(750)
         self.textbox.setOpenExternalLinks(False)
 
         self.textbox.setStyleSheet("""

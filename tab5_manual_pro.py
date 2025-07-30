@@ -124,7 +124,14 @@ def get_pro_manual_html():
 
         <h3>COUNT RATE tab</h3>
         <p>Live chart of counts per second. Adjustable smoothing, shows last hour by default.</p>
-
+        
+        <hr>
+        <center>
+        <img src="assets/gs_pro_v5.png">
+        <h3>Universal GS-PRO Spectrometer</h3>
+        <p>The GS-PRO spectrometer is a low cost spectrometer with high performance, it's resolution and features outperform spectrometers costing many times it's price. <br>The PRO will work with all your exising and future scintillation detectors which is why we call it universal.<br>Order online from gammaspectacular.com .
+        </center>
+        <hr>
         </body>
         </html>
         """

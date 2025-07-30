@@ -30,19 +30,22 @@ P1 = "font-family: Verdana, sans-serif; font-size: 10pt; color: #666;"   # Small
 P2 = "font-family: Verdana, sans-serif; font-size: 12pt; color: #444;"  # Medium paragraph
 
 # Headings
-H1 = "font-family: Helvetica, sans-serif; font-size: 18pt; font-weight: bold; color: #0055FF;"
+H1 = "font-family: Helvetica, sans-serif; font-size: 18pt; font-weight: bold; color: #027BFF;"
 H2 = "font-family: Helvetica, sans-serif; font-size: 12pt; font-weight: bold; color: #333;"
 
 # Monospace 
 MONO = "font-family: Menlo, Courier New; font-size: 10pt; color: #555;"
 
-START = "background-color: green; color: white; font-weight: bold;"
+START = "background-color: #79AB4C; color: white; font-weight: bold;"
 
-STOP = "background-color: red; color: white; font-weight: bold;"
+STOP = "background-color: #C12B2B; color: white; font-weight: bold;"
 
-BTN  = "background-color: orange; color: white; font-weight: bold;"
+BTN  = "background-color: #E0751C; color: white; font-weight: bold;"
 
-FOOTER = f"IMPULSE V {__version__} - Gammaspectacular.com  - excited about atoms"
+BUD  = "background-color: #7C7C7C; color: white; font-weight: bold;"
+
+
+FOOTER = f"IMPULSE {__version__}"
 
 # -------------------------------
 # Paths & Directories

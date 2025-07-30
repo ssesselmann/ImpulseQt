@@ -528,7 +528,7 @@ class Tab2(QWidget):
         # Col 7 Row 4
         self.open_calib_btn = QPushButton("Calibrate")
         self.open_calib_btn.clicked.connect(self.open_calibration_popup)
-        self.open_calib_btn.setStyleSheet("background-color: orange; color: white; font-weight: bold;")
+        self.open_calib_btn.setStyleSheet(BTN)
         self.poly_label.setStyleSheet("color: #333; font-style: italic;")
         grid.addWidget(self.open_calib_btn, 3, 6)
 
