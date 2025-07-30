@@ -1,13 +1,4 @@
-.DS_Store
-__pycache__/audio_spectrum.cpython-310.pyc
+*.DS_Store
 *.pyc
-shproto/.DS_Store
 production/*
 
-
-shproto/__pycache__/dispatcher.cpython-310.pyc
-shproto/.DS_Store
-shproto/.DS_Store
-shproto/__pycache__/dispatcher.cpython-310.pyc
-assets/.DS_Store
-shproto/.DS_Store
