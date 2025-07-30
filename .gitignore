@@ -1,4 +1,7 @@
 *.DS_Store
 *.pyc
+*.cer
+*.plist
 production/*
-
+credentials.py
+appsigner.py
