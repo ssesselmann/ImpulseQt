@@ -7,5 +7,7 @@ production/*
 
 shproto/__pycache__/dispatcher.cpython-310.pyc
 shproto/.DS_Store
+shproto/.DS_Store
+shproto/__pycache__/dispatcher.cpython-310.pyc
 assets/.DS_Store
 shproto/.DS_Store
