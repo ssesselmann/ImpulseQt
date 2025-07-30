@@ -5,3 +5,5 @@ shproto/.DS_Store
 production/*
 
 
+shproto/__pycache__/dispatcher.cpython-310.pyc
+shproto/.DS_Store
