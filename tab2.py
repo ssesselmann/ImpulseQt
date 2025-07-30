@@ -90,6 +90,7 @@ class Tab2(QWidget):
         # === Plot ===
         self.plot_timer = QTimer()
         self.process_thread = None
+        self.has_loaded = False
         self.plot_timer.timeout.connect(self.update_histogram)
         self.plot_widget = pg.PlotWidget(title="2D Count Rate Histogram")
         with shared.write_lock:
@@ -595,6 +596,18 @@ class Tab2(QWidget):
         self.plot_timer.start(t_interval)
 
     
+    
+
+    def load_on_show(self):
+        if not self.has_loaded:
+
+            with shared.write_lock:
+                filename = shared.filename
+
+            load_histogram(filename)
+            
+            self.has_loaded = True
+
     def make_checkbox_container(self, label, checked, tooltip, shared_key):
         container = QWidget()
         layout = QVBoxLayout(container)
@@ -620,13 +633,7 @@ class Tab2(QWidget):
         for widget in getattr(self, "max_only_widgets", []):
             widget.setVisible(device_type == "MAX")
 
-    def on_device_type_changed(self, new_device_type):
-        with shared.write_lock:
-            shared.device_type = new_device_type
 
-        shared.save_settings()
-        logger.info(f"Device type changed to: {new_device_type}")
-        self.update_widget_visibility()
 
     def update_labels(self):
         with shared.write_lock:

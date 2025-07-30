@@ -129,9 +129,9 @@ def write_histogram_npesv2(t0, t1, bins, counts, dropped_counts, elapsed, filena
         json.dump(data, f, separators=(',', ':'))
 
 
-# Function to create a blank JSON NPESv2 schema filename_3d.json
-def write_blank_json_schema_3d(filename, device):
-    jsonfile = get_path(f'{shared.USER_DATA_DIR}/{filename}_3d.json')
+# Function to create a blank JSON NPESv2 schema filename_hmp.json
+def write_blank_json_schema_hmp(filename, device):
+    jsonfile = get_path(f'{shared.USER_DATA_DIR}/{filename}_hmp.json')
     data = {
         "schemaVersion": "NPESv2",
         "data": [
@@ -172,12 +172,12 @@ def write_blank_json_schema_3d(filename, device):
         logger.error(f"Error writing blank JSON file: {e}\n")
 
 
-def update_json_3d_file(t0, t1, bins, counts, elapsed, filename_3d, last_histogram, coeff_1, coeff_2, coeff_3, device):
+def update_json_hmp_file(t0, t1, bins, counts, elapsed, filename_hmp, last_histogram, coeff_1, coeff_2, coeff_3, device):
     
     with shared.write_lock:
         data_directory = shared.USER_DATA_DIR
 
-    jsonfile = get_path(os.path.join(data_directory, f'{filename_3d}_3d.json'))
+    jsonfile = get_path(os.path.join(data_directory, f'{filename_hmp}_hmp.json'))
     
     # Check if the file exists
     if os.path.isfile(jsonfile):
@@ -212,7 +212,7 @@ def update_json_3d_file(t0, t1, bins, counts, elapsed, filename_3d, last_histogr
                         "deviceName": device
                     },
                     "sampleInfo": {
-                        "name": filename_3d,
+                        "name": filename_hmp,
                         "location": "",
                         "note": ""
                     },
@@ -418,7 +418,7 @@ def start_max_recording(mode):
     with shared.write_lock:
         shared.dropped_counts = 0
         filename    = shared.filename
-        filename_3d = shared.filename_3d
+        filename_hmp = shared.filename_hmp
         compression = shared.compression
         device      = shared.device
         t_interval  = shared.t_interval
@@ -444,7 +444,7 @@ def start_max_recording(mode):
         try:
             if mode == 3:
                 logger.info("Launching MAX 3D process_02")
-                shproto.dispatcher.process_02(filename_3d, compression, device, t_interval)
+                shproto.dispatcher.process_02(filename_hmp, compression, device, t_interval)
             else:
                 logger.info("Launching MAX 2D process_01")
                 shproto.dispatcher.process_01(filename, compression, device, t_interval)
@@ -463,7 +463,7 @@ def start_max_recording(mode):
         try:
             if mode == 3:
                 logger.info("Launching MAX 3D process_02")
-                shproto.dispatcher.process_02(filename_3d, compression3d, device, t_interval)
+                shproto.dispatcher.process_02(filename_hmp, compression3d, device, t_interval)
             else:
                 logger.info("Launching MAX 2D process_01")
                 shproto.dispatcher.process_01(filename, compression, device, t_interval)
@@ -477,11 +477,11 @@ def start_max_recording(mode):
 
 def start_pro_recording(mode):
     with shared.write_lock:
-        filename       = shared.filename
-        filename_3d    = shared.filename_3d
-        device         = shared.device
-        run_flag       = shared.run_flag
-        run_flag_lock  = shared.run_flag_lock
+        filename        = shared.filename
+        filename_hmp    = shared.filename_hmp
+        device          = shared.device
+        run_flag        = shared.run_flag
+        run_flag_lock   = shared.run_flag_lock
         run_flag.set()
         shared.recording = True
 
@@ -500,7 +500,8 @@ def start_pro_recording(mode):
 
         logger.info("Starting PRO 3D recording...")
 
-        write_blank_json_schema_3d(filename_3d, device)
+        write_blank_json_schema_hmp(filename_hmp, device)
+
 
         try:
             thread = threading.Thread(target=pulsecatcher, args=(3, run_flag, run_flag_lock))
@@ -545,7 +546,7 @@ def clear_shared(mode):
 
     if mode == 3:
 
-        file_path = os.path.join(shared.USER_DATA_DIR, f'{shared.filename}_3d.json')
+        file_path = os.path.join(shared.USER_DATA_DIR, f'{shared.filename}_hmp.json')
 
         try:
             if os.path.exists(file_path):
@@ -564,7 +565,7 @@ def clear_shared(mode):
         shared.cps             = 0
         shared.elapsed         = 0
         shared.dropped_counts  = 0
-        shared.histogram_3d    = []
+        shared.histogram_hmp    = []
 
     return
 
@@ -814,12 +815,12 @@ def get_options(kind="user"):
     # Returns a list of file options for dropdowns, based on file type.
     def match(filename: str) -> bool:
         if kind == "user":
-            excluded = ["_cps.json", "-cps.json", "_3d.json", "_settings.json", "_user.json"]
+            excluded = ["_cps.json", "-cps.json", "_hmp.json", "_settings.json", "_user.json"]
             return not any(filename.endswith(sfx) for sfx in excluded)
         elif kind == "cps":
             return filename.endswith("_cps.json")
         elif kind == "3d":
-            return filename.endswith("_3d.json")
+            return filename.endswith("_hmp.json")
         elif kind == "all":
             return filename.endswith(".json")
         else:
@@ -845,7 +846,7 @@ def get_options(kind="user"):
 
 def get_filename_2_options():
     def is_valid(filename: str) -> bool:
-        excluded = ["_cps.json", "-cps.json", "_3d.json", "_settings.json", "_user.json"]
+        excluded = ["_cps.json", "-cps.json", "_hmp.json", "_settings.json", "_user.json"]
         return not any(filename.endswith(sfx) for sfx in excluded)
 
     def make_option(file_path: Path, base_dir: Path, prefix: str = "", dot_prefix: bool = False):
@@ -886,20 +887,20 @@ def get_filename_2_options():
 
     return combined
 
-def get_options_3d():
+def get_options_hmp():
     with shared.write_lock:
         data_directory = shared.USER_DATA_DIR
 
     files = [os.path.relpath(file, data_directory).replace("\\", "/")
-             for file in glob.glob(os.path.join(data_directory, "**", "*_3d.json"), recursive=True)]
+             for file in glob.glob(os.path.join(data_directory, "**", "*_hmp.json"), recursive=True)]
     
     options = [{'label': "~ " + os.path.basename(file), 'value': file} if "i/" in file and file.endswith(".json")
         else {'label': os.path.basename(file), 'value': file} for file in files]
 
     options_sorted = sorted(options, key=lambda x: x['label'])
     for file in options_sorted:
-        file['label'] = file['label'].replace('_3d.json', '')
-        file['value'] = file['value'].replace('_3d.json', '')
+        file['label'] = file['label'].replace('_hmp.json', '')
+        file['value'] = file['value'].replace('_hmp.json', '')
     return options_sorted
 
 # Calibrates the x-axis of the Gaussian correlation
@@ -940,6 +941,10 @@ def load_histogram(filename):
     with shared.write_lock:
         data_directory = shared.USER_DATA_DIR
 
+    # Ensure .json extension exactly once
+    filename = Path(filename).stem + ".json"
+
+    # Build full path using get_path logic
     path = get_path(os.path.join(data_directory, filename))
 
     try:
@@ -976,7 +981,12 @@ def load_histogram_2(filename):
     with shared.write_lock:
         data_directory = USER_DATA_DIR
 
+    # Ensure .json extension exactly once
+    filename = Path(filename).stem + ".json"
+
+    # Build full path using get_path logic
     path = get_path(os.path.join(data_directory, filename))
+
     try:
         with open(path, 'r') as file:
             data = json.load(file)
@@ -1000,16 +1010,18 @@ def load_histogram_2(filename):
         logger.info(f"[ERROR] loading histogram_2 from {filename}: {e}\n")
         return False
 
-def load_histogram_3d(stem):
-    logger.info("1.. load_histogram_3d")
+def load_histogram_hmp(stem):
+    logger.info("1.. load_histogram_hmp")
 
-    # Ensure only one .json is added
-    file_path = Path(shared.USER_DATA_DIR) / f"{stem}_3d.json"
+    # Strip any extension and suffix to avoid duplication
+    clean_stem = Path(stem).stem.removesuffix("_hmp")
+
+    file_path = Path(shared.USER_DATA_DIR) / f"{clean_stem}_hmp.json"
 
     if not file_path.exists():
-        logger.error(f"[ERROR] Load_histogram_3d, file not found: {file_path}")
+        logger.error(f"[ERROR] Load_histogram_hmp, file not found: {file_path}")
         with shared.write_lock:
-            shared.histogram_3d = [[0] * 512] * 10
+            shared.histogram_hmp = [[0] * 512] * 10
         return
 
     try:
@@ -1023,9 +1035,9 @@ def load_histogram_3d(stem):
 
         with shared.write_lock:
             result = data["resultData"]["energySpectrum"]
-            shared.histogram_3d = result["spectrum"]
+            shared.histogram_hmp = result["spectrum"]
             shared.counts = result["validPulseCount"]
-            shared.bins_3d = result["numberOfChannels"]
+            shared.bins_hmp = result["numberOfChannels"]
             shared.elapsed = result["measurementTime"]
             coeffs = result["energyCalibration"]["coefficients"]
             shared.coeff_1, shared.coeff_2, shared.coeff_3 = coeffs
@@ -1039,6 +1051,7 @@ def load_histogram_3d(stem):
 
     except Exception as e:
         logger.error(f"[ERROR] Exception loading 3D histogram: {e}")
+
 
 
 def load_cps_file(filepath):

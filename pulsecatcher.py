@@ -13,6 +13,12 @@ import functions as fn
 
 from shared import logger
 
+def queue_save_data(save_queue, meta, full_histogram, filename):
+    data = meta.copy()
+    data["filename"] = filename
+    data["full_histogram"] = full_histogram.copy()
+    save_queue.put(data)
+
 # Function to save data in a separate thread
 def save_data(save_queue):
     while True:
@@ -35,51 +41,77 @@ def save_data(save_queue):
 
         if 'filename' in data and 'full_histogram' in data:
             filename        = data['filename']
-            full_histogram = data['full_histogram']
+            full_histogram  = data['full_histogram']
             fn.write_histogram_npesv2(t0, t1, bins, local_counts, dropped_counts, local_elapsed, filename, full_histogram, coeff_1, coeff_2, coeff_3, device, location, spec_notes)
             fn.write_cps_json(filename, local_count_history, local_elapsed, local_counts, dropped_counts)
 
-        if 'filename_3d' in data and 'last_minute' in data:
-            filename_3d = data['filename_3d']
-            last_minute = data['last_minute']
-            fn.update_json_3d_file(t0, t1, bins, local_counts, local_elapsed, filename_3d, last_minute, coeff_1, coeff_2, coeff_3, device)
+        if 'filename_hmp' in data and 'last_minute' in data:
+            filename_hmp = data['filename_hmp']
+            last_minute  = [data['last_minute']]
+            fn.update_json_hmp_file(t0, t1, bins, local_counts, local_elapsed, filename_hmp, last_minute, coeff_1, coeff_2, coeff_3, device)
+
 
 # Function to handle mode 2 and 4 shared variable updates
-def save_mode_2_data(mode, shared, full_histogram, counts_per_sec):
+def update_mode_2_data(mode, shared, full_histogram, counts_per_sec):
     if mode == 2 or mode == 4:
         with shared.write_lock:
-            shared.histogram = full_histogram.copy()  # Copy to avoid reference issues
+            shared.histogram = full_histogram.copy()  
             shared.count_history.append(counts_per_sec)
 
-# Function to handle mode 3 histogram updates
-def save_mode_3_data(mode, shared, full_histogram, last_histogram, last_minute_histogram_3d, interval_counter, t_interval, bins, time_this_save, last_interval_save):
+
+# Appends 1-second slices to shared.histogram_hmp
+def update_mode_3_data(mode, shared, full_histogram, last_histogram, hmp_buffer,
+                     interval_counter, t_interval, bins, now,
+                     save_queue, meta, filename_hmp):
+
     if mode != 3:
-        return interval_counter, last_histogram, last_interval_save
+
+        return interval_counter, last_histogram
 
     with shared.write_lock:
-        # Calculate this second's histogram delta
-        interval_histogram = [full_histogram[i] - last_histogram[i] for i in range(bins)]
-        non_zero_count = sum(1 for x in interval_histogram if x != 0)
-        total_counts = sum(interval_histogram)
-        last_histogram[:] = full_histogram.copy()  # Update last_histogram in place
-        if non_zero_count > 0:  # Only append if there’s new data
-            last_minute_histogram_3d.append(interval_histogram)
+        # Compute delta histogram for the last second
+        interval_hist = [full_histogram[i] - last_histogram[i] for i in range(bins)]
+        last_histogram[:] = full_histogram
+
+        if any(interval_hist):
+            hmp_buffer.append(interval_hist)
+
         else:
-            logger.info("Mode 3: Skipped appending to last_minute_histogram_3d, no new counts")
+            logger.debug("No new data this interval.")
 
         interval_counter += 1
-        # Append summed histogram only every t_interval seconds
-        if interval_counter >= t_interval and (last_interval_save is None or time_this_save - last_interval_save >= t_interval):
-            if last_minute_histogram_3d:
-                summed_interval = [sum(col) for col in zip(*last_minute_histogram_3d)]
-                shared.histogram_3d.append(summed_interval)
-                last_minute_histogram_3d.clear()
+
+        if interval_counter >= t_interval:
+
+            if hmp_buffer:
+                # Sum across seconds (columns) to get one t_interval slice
+                aggregated = [sum(col) for col in zip(*hmp_buffer)]
+
+                # Append to live memory
+
+                shared.histogram_hmp.append(aggregated)
+
+                # Append to JSON via save thread
+                data = meta.copy()
+
+                data["filename_hmp"] = filename_hmp
+
+                data["last_minute"] = aggregated
+
+                save_queue.put(data)
+
+                logger.debug(f"Appended histogram slice: {aggregated[:10]}")
+
+                hmp_buffer.clear()
+
                 interval_counter = 0
-                last_interval_save = time_this_save
+
             else:
-                logger.info("Mode 3: Skipped appending to shared.histogram_3d, last_minute_histogram_3d is empty")
-                
-        return interval_counter, last_histogram, last_interval_save
+                logger.debug("Skipped appending: hmp_buffer was empty")
+
+    return interval_counter, last_histogram
+
+#====================================================================================================
 
 # Function reads audio stream and finds pulses then outputs time, pulse height, and distortion
 def pulsecatcher(mode, run_flag, run_flag_lock):
@@ -88,7 +120,7 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
     time_start          = time.time()
     time_last_save      = int(time_start)
     time_last_save_time = int(time_start) 
-    array_3d            = []
+    array_hmp            = []
     spec_notes          = ""
     dropped_counts      = 0
     flip_left           = 1
@@ -100,7 +132,7 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
         bins            = shared.bins
         last_histogram  = [0] * bins
         filename        = shared.filename
-        filename_3d     = shared.filename_3d
+        filename_hmp    = shared.filename_hmp
         device          = shared.device
         sample_rate     = shared.sample_rate
         chunk_size      = shared.chunk_size
@@ -128,7 +160,7 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
         shared.dropped_counts  = 0
         shared.histogram       = [0] * bins
         shared.count_history   = []
-        shared.histogram_3d    = []  # Initialize to ensure it’s empty
+        shared.histogram_hmp    = []  # Initialize to ensure it’s empty
 
     # Fixed variables
     right_threshold = threshold  
@@ -145,7 +177,7 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
     full_histogram  = [0] * bins
     local_count_history = []
     right_pulses    = []
-    last_minute_histogram_3d = []
+    hmp_buffer = []
     interval_counter = 0  # Initialize interval counter
 
     # Open the selected audio input device
@@ -172,19 +204,11 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
         values = list(wave.struct.unpack("%dh" % (chunk_size * channels), data))
         # Extract every other element (left channel)
         left_channel = values[::2]
-        right_channel = values[1::2]
+        right_channel = values[1::2]     
 
-        if flip == 11:
-            pass
-        elif flip == 12:
-            flip_left = 1
-            flip_right = -1  
-        elif flip == 21:
-            flip_left = -1
-            flip_right = 1 
-        elif flip == 22:
-            flip_left = -1
-            osek_right = -1       
+        # Flip logic simplified
+        flip_settings = {11: (1, 1), 12: (1, -1), 21: (-1, 1), 22: (-1, -1)}
+        flip_left, flip_right = flip_settings.get(flip, (1, 1))
 
         # Include right channel if mode == 4:
         if mode == 4:
@@ -241,45 +265,64 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
                 shared.dropped_counts = dropped_counts
 
             # Mode-specific updates
-            save_mode_2_data(mode, shared, full_histogram, counts_per_sec)
-            interval_counter, last_histogram, last_interval_save = save_mode_3_data(
-                mode, shared, full_histogram, last_histogram, 
-                last_minute_histogram_3d, interval_counter, t_interval, bins,
-                time_this_save, last_interval_save
+            update_mode_2_data(mode, shared, full_histogram, counts_per_sec)
+
+
+
+            interval_counter, last_histogram = update_mode_3_data(
+                mode, shared, full_histogram, last_histogram,
+                hmp_buffer, interval_counter, t_interval, bins,
+                time_this_save, save_queue,
+                {
+                    't0': t0,
+                    't1': t1,
+                    'bins': bins,
+                    'local_counts': local_counts,
+                    'dropped_counts': dropped_counts,
+                    'local_elapsed': local_elapsed,
+                    'coeff_1': coeff_1,
+                    'coeff_2': coeff_2,
+                    'coeff_3': coeff_3,
+                    'device': device,
+                    'location': '',
+                    'spec_notes': spec_notes,
+                    'local_count_history': local_count_history
+                },
+                filename_hmp
             )
+
 
             last_count = local_counts
             time_last_save = time_this_save
             local_count_history.append(counts_per_sec)
 
-        # Save spectrum file every 30 seconds
+        # Save spectrum file every 30 seconds or on STOP
         if time_this_save - time_last_save_time >= 30 or not shared.run_flag.is_set():
-            save_data_dict = {
-                't0': t0, 
-                't1': t1, 
-                'bins': bins, 
-                'local_counts': local_counts,
-                'dropped_counts': dropped_counts, 
-                'local_elapsed': local_elapsed,
-                'coeff_1': coeff_1, 
-                'coeff_2': coeff_2,
-                'coeff_3': coeff_3, 
-                'device': device, 
-                'location': '', 
-                'spec_notes': spec_notes,
-                'local_count_history': local_count_history
-            }
-            if mode == 2 or mode == 4:
-                save_data_dict['filename'] = filename
-                save_data_dict['full_histogram'] = full_histogram.copy()  # Copy to avoid reference issues
-            if mode == 3:
-                save_data_dict['filename_3d'] = filename_3d
-                save_data_dict['last_minute'] = last_minute_histogram_3d.copy()  # Copy to preserve data
-                last_minute_histogram_3d.clear()  # Clear after queuing
+            queue_save_data(
+                save_queue,
+                {
+                    't0': t0,
+                    't1': t1,
+                    'bins': bins,
+                    'local_counts': local_counts,
+                    'dropped_counts': dropped_counts,
+                    'local_elapsed': local_elapsed,
+                    'coeff_1': coeff_1,
+                    'coeff_2': coeff_2,
+                    'coeff_3': coeff_3,
+                    'device': device,
+                    'location': '',
+                    'spec_notes': spec_notes,
+                    'local_count_history': local_count_history
+                },
+                full_histogram,
+                filename
+            )
 
-            save_queue.put(save_data_dict)
-            time_last_save_time = time.time()
+            time_last_save_time = time_this_save
             time.sleep(0)
+
+
 
     # Signal the save thread to exit
     save_queue.put(None)
@@ -288,3 +331,6 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
     p.terminate()  # Closes stream when done
     shared.run_flag.clear()  # Ensure the CPS thread also stops
     return
+
+    #======================================================================================
+

@@ -220,8 +220,9 @@ class Tab4(QWidget):
 
     def update_plot(self):
         try:
-            # Use real count history
-            counts = shared.count_history.copy()
+            with shared.write_lock:
+                filename = shared.filename
+                counts   = shared.count_history.copy()
 
             # --- Show only the last 300 seconds unless "Show All" is checked ---
             if not self.checkbox_show_all.isChecked() and len(counts) > 300:
@@ -243,7 +244,7 @@ class Tab4(QWidget):
                     range(n-1, len(counts)), rolling_avg, label=f"Avg {n}s", color="green"
                 )
 
-            self.ax.set_title("Count Rate")
+            self.ax.set_title(f"Count Rate - ({filename})")
             self.ax.set_xlabel("Seconds")
             self.ax.set_ylabel("Counts per second")
             self.ax.set_xlim(left=0, right=max(300, len(counts)))

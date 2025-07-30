@@ -47,6 +47,12 @@ class MainWindow(QMainWindow):
         self.resize(shared.window_width or 960, shared.window_height or 600)
         self.move(shared.window_pos_x or 200, shared.window_pos_y or 100)
 
+        self.tab1 = Tab1()
+        self.tab2 = Tab2()
+        self.tab3 = Tab3()
+        self.tab4 = Tab4()
+        self.tab5 = Tab5()
+
         self.tabs = QTabWidget()
         self.tabs.addTab(Tab1(), "Device Setup")
         self.tabs.addTab(Tab2(), "2D Histogram")
@@ -84,6 +90,13 @@ class MainWindow(QMainWindow):
 
     def on_tab_changed(self, index):
         current_widget = self.tabs.widget(index)
+
+        if index == 1:
+            print("Tab 2 activated — loading histogram...")
+            self.tab2.load_on_show() 
+        elif index == 2:
+            print("Tab 3 activated — loading histogram...")
+            self.tab3.load_on_show() 
 
         # Check if current tab has update_bins_selector method
         if hasattr(current_widget, "update_bins_selector"):

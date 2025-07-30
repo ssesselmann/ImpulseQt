@@ -24,8 +24,8 @@ from PySide6.QtWidgets import (
     QComboBox, QCheckBox, QGridLayout, QDialog, QDialogButtonBox, QMessageBox, QSizePolicy
 )
 from functions import (
-    load_histogram_3d, 
-    get_options_3d, 
+    load_histogram_hmp, 
+    get_options_hmp, 
     start_recording, 
     stop_recording, 
     format_date, 
@@ -38,17 +38,20 @@ class Tab3(QWidget):
     def __init__(self):
         super().__init__()
         
-        self.ready_to_plot = True      # Block update_graph until ready
-        self.plot_window_size = 60        # Number of rows shown at a time
-        self.plot_data = deque(maxlen=3600)  # Total rows stored (for scrolling)
-        self.time_stamps = deque(maxlen=self.plot_window_size)
-        self.ax = None  # Initialize axes for plotting
+        self.ready_to_plot    = True 
+        self.has_loaded       = False
+        self.plot_window_size = 60  
+        self.plot_data        = deque(maxlen=3600) 
+        self.time_stamps      = deque(maxlen=self.plot_window_size)
+        self.ax               = None 
+        self.bins             = 0
+        self.bin_size         = 0
+        self.scroll_offset    = 0 
+        self.counts_display   = 0
+        self.elapsed_display  = 0
         self.init_ui()
-        self.refresh_timer = QTimer()
+        self.refresh_timer    = QTimer()
         self.refresh_timer.timeout.connect(self.update_graph)
-        self.bins = 0
-        self.bin_size = 0
-        self.scroll_offset = 0  # how many rows up to scroll
 
     def init_ui(self):
         # Main layout for the entire widget
@@ -98,12 +101,12 @@ class Tab3(QWidget):
 
         self.filename_dropdown = QComboBox()
         self.filename_dropdown.addItem("Select or enter >")
-        self.file_options = [opt['label'] for opt in get_options_3d()]
+        self.file_options = [opt['label'] for opt in get_options_hmp()]
         self.filename_dropdown.addItems(self.file_options)
         self.filename_dropdown.currentIndexChanged.connect(self.handle_file_selection)
 
-        self.filename_input = QLineEdit(shared.filename_3d)
-        self.filename_input.setText(shared.filename_3d)
+        self.filename_input = QLineEdit(shared.filename_hmp)
+        self.filename_input.setText(shared.filename_hmp)
         self.filename_input.textChanged.connect(lambda text: self.on_text_changed(text, "filename"))
 
         # Add both widgets to the row
@@ -171,8 +174,13 @@ class Tab3(QWidget):
         top_layout.addWidget(self.max_counts_input, 2, 0)
         self.max_counts_input.textChanged.connect(lambda text: self.on_text_changed(text, "max_counts"))
 
-        top_layout.addWidget(self.counts_display, 3, 0)
-        top_layout.addWidget(self.start_text, 4, 0)
+        
+
+        self.live_counts_label = QLabel("Live counts")
+        self.live_counts_label.setStyleSheet(P1)
+        top_layout.addWidget(self.live_counts_label, 3, 0)
+        top_layout.addWidget(self.counts_display, 4, 0)
+        top_layout.addWidget(self.start_text, 5, 0)
         top_layout.addWidget(self.stop_button, 0, 1)
 
         self.max_seconds_label = QLabel("Max Seconds")
@@ -181,8 +189,12 @@ class Tab3(QWidget):
         top_layout.addWidget(self.max_seconds_input, 2, 1)
         self.max_seconds_input.textChanged.connect(lambda text: self.on_text_changed(text, "max_seconds"))
 
-        top_layout.addWidget(self.elapsed_display, 3, 1)
-        top_layout.addWidget(self.stop_text, 4, 1)
+        
+        self.elapsed_label = QLabel("Elapsed secs.")
+        self.elapsed_label.setStyleSheet(P1)
+        top_layout.addWidget(self.elapsed_label, 3, 1)
+        top_layout.addWidget(self.elapsed_display, 4, 1)
+        top_layout.addWidget(self.stop_text, 5, 1)
 
         self.select_filename_label = QLabel("Select or enter file name:")
         self.select_filename_label.setStyleSheet(P1)
@@ -257,23 +269,20 @@ class Tab3(QWidget):
         self.figure = Figure()
         self.canvas = FigureCanvas(self.figure)
 
-        # Create 3D subplot
-        self.ax = self.figure.add_subplot(111, projection='3d')
+        # Use 2D subplot
+        self.ax = self.figure.add_subplot(111)
 
-        # Set axis limits
-        self.ax.set_xlim(0, self.bins)
-        self.ax.set_ylim(0, self.plot_window_size)
-        self.ax.set_zlim(0, 1)  # or a small Z range just to show the axis
+        # Optional: Clean up visual style
+        self.ax.spines['top'].set_visible(False)
+        self.ax.spines['right'].set_visible(False)
+        self.ax.grid(False)
 
-        # Set axis labels
-        self.ax.set_xlabel('X axis (Bins)')
-        self.ax.set_ylabel('Y axis (Time)')
-        self.ax.set_zlabel('Z axis (Counts)')
+        self.ax.set_xlabel('Channel #')
+        self.ax.set_ylabel('Time (s)')
 
-        # Force an initial draw
         self.canvas.draw()
-
         tab3_layout.addWidget(self.canvas, stretch=2)
+
 
         #=================
         # FOOTER
@@ -284,6 +293,20 @@ class Tab3(QWidget):
         footer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         footer.setStyleSheet(H1)
         main_layout.addWidget(footer)  # Add the footer to the bottom
+
+
+    # ======================================================================
+    #    FUNCTIONS
+    # ======================================================================
+    def load_on_show(self):
+        if not self.has_loaded:
+
+            with shared.write_lock:
+                filename = shared.filename
+
+            load_histogram_hmp(filename)
+            
+            self.has_loaded = True    
 
     def scroll_up(self):
         self.scroll_offset = min(self.scroll_offset + 30, len(self.plot_data) - self.plot_window_size)
@@ -307,7 +330,7 @@ class Tab3(QWidget):
                     filename = filename[:-5]
 
                 with shared.write_lock:
-                    shared.filename_3d = filename
+                    shared.filename_hmp = filename
 
                 shared.save_settings()
 
@@ -322,11 +345,11 @@ class Tab3(QWidget):
 
     def refresh_file_list(self):
         folder = Path(USER_DATA_DIR)
-        pattern = "*_3d.json"
+        pattern = "*_hmp.json"
         files = sorted(folder.glob(pattern), reverse=True)
 
         # Save original filenames and display names without extension
-        self.file_options = [f.stem.replace("_3d", "") for f in files]  # just the base names
+        self.file_options = [f.stem.replace("_hmp", "") for f in files]  # just the base names
 
         self.filename_dropdown.blockSignals(True)  # prevent accidental signal firing
         self.filename_dropdown.clear()
@@ -340,7 +363,7 @@ class Tab3(QWidget):
             return  # Ignore placeholder
 
         selected_name = self.file_options[index - 1]
-        full_filename = f"{selected_name}_3d.json"
+        full_filename = f"{selected_name}_hmp.json"
         self.load_selected_file(full_filename)
 
         # Update text input to reflect selected file
@@ -349,11 +372,11 @@ class Tab3(QWidget):
     def load_selected_file(self, filename):
         try:
             print(filename)
-            load_histogram_3d(filename)
+            load_histogram_hmp(filename)
             logger.info(f"Loaded: {filename}")
 
-            # Strip "_3d" and update input
-            input_name = Path(filename).stem.replace("_3d", "")
+            # Strip "_hmp" and update input
+            input_name = Path(filename).stem.replace("_hmp", "")
             self.filename_input.setText(input_name)
 
             self.ready_to_plot = True
@@ -379,18 +402,18 @@ class Tab3(QWidget):
 
     def confirm_overwrite(self):
         filename = self.filename_input.text()
-        file_path = os.path.join(USER_DATA_DIR, f"{filename}_3d.json")
+        file_path = os.path.join(USER_DATA_DIR, f"{filename}_hmp.json")
         if os.path.exists(file_path):
             result = QMessageBox.question(
                 self, "Overwrite Confirmation",
-                f"File {filename}_3d.json exists. Overwrite?",
+                f"File {filename}_hmp.json exists. Overwrite?",
                 QMessageBox.Yes | QMessageBox.No
             )
             if result == QMessageBox.No:
                 return
-        self.start_recording_3d(filename)
+        self.start_recording_hmp(filename)
 
-    def start_recording_3d(self, filename):
+    def start_recording_hmp(self, filename):
 
         try:
             self.plot_data.clear()
@@ -445,8 +468,8 @@ class Tab3(QWidget):
 
         # ── File name & key shared values ──────────────────────────────────
         with shared.write_lock:
-            filename = Path(shared.filename_3d).stem or "spectrum3d"
-            csv_path = shared.DLD_DIR / f"{filename}_3d.csv"
+            filename = Path(shared.filename_hmp).stem or "spectrum3d"
+            csv_path = shared.DLD_DIR / f"{filename}_hmp.csv"
             bins     = shared.bins
             coeff_1  = shared.coeff_1
             coeff_2  = shared.coeff_2
@@ -500,7 +523,7 @@ class Tab3(QWidget):
             # ── Snapshot shared state ───────────────────────────────────────
             with shared.write_lock:
                 run_flag   = shared.run_flag
-                hist3d     = list(shared.histogram_3d)
+                hist3d     = list(shared.histogram_hmp)
                 t_interval = shared.t_interval
                 log_switch = shared.log_switch
                 epb_switch = shared.epb_switch  # not used in 2D

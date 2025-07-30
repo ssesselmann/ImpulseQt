@@ -14,7 +14,7 @@ from default_settings import DEFAULT_SETTINGS
 
 # --------------------
 # Versioning
-__version__ = "3.0.0"
+__version__ = "v3.0.0"
 # --------------------
 
 SETTINGS = {}  
@@ -135,12 +135,12 @@ TBL_DIR = LIB_DIR / "tbl"  # Flagging tables
 # --- Application Settings ---
 filename = "my_spectrum"
 filename_2 = "background"
-filename_3d = "my_3d_spectrum"
+filename_hmp = "my_hmp_spectrum"
 
 
 # --- Audio Settings ---
 device = 0
-device_type = "PRO"
+device_type = ""
 sample_rate = 44100
 chunk_size = 1024
 stereo = False
@@ -172,7 +172,7 @@ bin_size_2 	= 0
 
 histogram    = []
 histogram_2  = []
-histogram_3d = []
+histogram_hmp = []
 
 
 # --- Calibration ---
@@ -204,7 +204,7 @@ counts_2 = 0
 cps = 0
 elapsed = 0
 elapsed_2 = 0
-elapsed_3d = 0
+elapsed_hmp = 0
 dropped_counts = 0
 count_history = []
 rolling_interval = 60
@@ -319,17 +319,17 @@ SETTINGS_SCHEMA = {
     "dropped_counts": {"type": "int", "default": 0},
     "elapsed": {"type": "int", "default": 0},
     "elapsed_2": {"type": "int", "default": 0},
-    "elapsed_3d": {"type": "int", "default": 0},
+    "elapsed_hmp": {"type": "int", "default": 0},
     "endTime3d": {"type": "str", "default": ""},
     "epb_switch": {"type": "bool", "default": False},
     "filename": {"type": "str", "default": "my_spectrum"},
     "filename_2": {"type": "str", "default": "background"},
-    "filename_3d": {"type": "str", "default": "my_3d_spectrum"},
+    "filename_hmp": {"type": "str", "default": "my_hmp_spectrum"},
     "flags_selected": {"type": "list", "default": []},
     "flip": {"type": "int", "default": 11},
-    "histogram": {"type": "list", "default": []},
-    "histogram_2": {"type": "list", "default": []},
-    "histogram_3d": {"type": "list", "default": []},
+    # "histogram": {"type": "list", "default": []},
+    # "histogram_2": {"type": "list", "default": []},
+    # "histogram_hmp": {"type": "list", "default": []},
     "log_switch": {"type": "bool", "default": False},
     "comp_switch": {"type": "bool", "default": False},
     "diff_switch": {"type": "bool", "default": False},
@@ -433,6 +433,7 @@ def load_settings():
     try:
         with open(SETTINGS_FILE, "r") as f:
             loaded = json.load(f)
+
     except Exception as e:
         logger.warning(f"[load_settings] Using defaults due to error: {e}")
         loaded = {}

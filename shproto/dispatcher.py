@@ -376,10 +376,10 @@ def process_01(filename, compression, device, t_interval):
     return
 
 # This process records the 3D histogram 9spectrum)
-def process_02(filename_3d, compression3d, device, t_interval):  # Compression reduces the number of channels by 8, 4, or 2
-    logger.info(f'dispatcher.process_02 ({filename_3d})\n')
+def process_02(filename_hmp, compression3d, device, t_interval):  # Compression reduces the number of channels by 8, 4, or 2
+    logger.info(f'dispatcher.process_02 ({filename_hmp})\n')
 
-    global counts, last_counts, histogram_3d
+    global counts, last_counts, histogram_hmp
 
     t0                  = time.time()
     counts              = 0
@@ -455,13 +455,13 @@ def process_02(filename_3d, compression3d, device, t_interval):  # Compression r
         if t1 - last_update_time >= 1 * t_interval:
 
             # Retain only last 60 updates for plotting
-            histogram_3d_window = hst3d[-60:]
+            histogram_hmp_window = hst3d[-60:]
 
             with shared.write_lock:
                 shared.counts        = counts
                 shared.elapsed       = elapsed
                 shared.count_history = count_history
-                shared.histogram_3d  = histogram_3d_window
+                shared.histogram_hmp  = histogram_hmp_window
 
             with cps_lock:
                 shared.cps             = cps    
@@ -471,7 +471,7 @@ def process_02(filename_3d, compression3d, device, t_interval):  # Compression r
         # Save JSON files once every 60 seconds or when shared.run_flag.clear()
         if t1 - last_save_time >= 60 or shproto.dispatcher.spec_stopflag or shproto.dispatcher.stopflag:
 
-            logger.info(f'shproto process_02 saving {filename_3d}_3d.json\n')
+            logger.info(f'shproto process_02 saving {filename_hmp}_hmp.json\n')
 
             data = {
                 "schemaVersion": "NPESv2",
@@ -482,7 +482,7 @@ def process_02(filename_3d, compression3d, device, t_interval):  # Compression r
                             "deviceName": "{}{}".format(device, shproto.dispatcher.serial_number)
                         },
                         "sampleInfo": {
-                            "name": filename_3d,
+                            "name": filename_hmp,
                             "location": "",
                             "note": ""
                         },
@@ -507,7 +507,7 @@ def process_02(filename_3d, compression3d, device, t_interval):  # Compression r
             json_data = json.dumps(data, separators=(",", ":"))
 
             # Construct the full path to the file
-            file_path = os.path.join(USER_DATA_DIR, f'{filename_3d}_3d.json')
+            file_path = os.path.join(USER_DATA_DIR, f'{filename_hmp}_hmp.json')
 
             logger.info(f'file path = {file_path}\n')
 
@@ -517,12 +517,12 @@ def process_02(filename_3d, compression3d, device, t_interval):  # Compression r
 
             # # Save CPS data to a separate JSON file
             # cps_data = {
-            #     "filename": filename_3d,
+            #     "filename": filename_hmp,
             #     "count_history": count_history,
             #     "elapsed": elapsed
             # }
 
-            # cps_file_path = os.path.join(USER_DATA_DIR, f'{filename_3d}_cps.json')
+            # cps_file_path = os.path.join(USER_DATA_DIR, f'{filename_hmp}_cps.json')
 
             # logger.info(f'CPS file path = {cps_file_path}\n')
 
