@@ -4,5 +4,6 @@
 *.plist
 production/*
 dist/*
+build/*
 credentials.py
 appsigner.py
