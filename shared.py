@@ -53,7 +53,7 @@ APP_NAME = "ImpulseQt"
 DATA_DIR = Path(QStandardPaths.writableLocation(QStandardPaths.AppDataLocation)) / APP_NAME
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 SETTINGS_FILE = DATA_DIR / "settings.json"
-USER_DATA_DIR = Path.home() / "ImpulseData"
+USER_DATA_DIR = Path.home() / "ImpulseQtData"
 USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
 LIB_DIR = USER_DATA_DIR / "lib"
 ISO_DIR = LIB_DIR / "iso"

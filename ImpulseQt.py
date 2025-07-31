@@ -1,5 +1,5 @@
 # main.py
-
+import os
 import sys
 import shutil
 import shared
@@ -15,9 +15,21 @@ from tab5 import Tab5
 from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QMainWindow, QTabWidget, QWidget, QVBoxLayout, QApplication, QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout
-from shared import logger
+from shared import logger, USER_DATA_DIR
 from feedback_popup import FeedbackPopup
 from send_feedback import send_feedback_email
+from functions import resource_path
+
+
+def copy_lib_if_needed():
+    dest = Path(USER_DATA_DIR) / "lib"
+    if not dest.exists():
+        src = Path(resource_path("assets/lib"))
+        try:
+            shutil.copytree(src, dest)
+            print(f"[INFO] Copied lib to {dest}")
+        except Exception as e:
+            print(f"[ERROR] Could not copy lib: {e}")
 
 # --------------------------------------
 # One-time setup for user data folders

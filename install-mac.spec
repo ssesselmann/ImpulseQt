@@ -15,7 +15,7 @@ a = Analysis(
     ['ImpulseQt.py'],
     pathex=[str(project_root)],
     binaries=[],
-    datas = [(f, "assets") for f in glob("assets/*")],
+    datas = [(f, f) for f in glob("assets/**/*", recursive=True) if os.path.isfile(f)],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
