@@ -29,7 +29,8 @@ from functions import (
     start_recording, 
     stop_recording, 
     format_date, 
-    get_device_number
+    get_device_number,
+    resource_path
 )
 
 logger = logging.getLogger(__name__)
@@ -250,7 +251,7 @@ class Tab3(QWidget):
         # 3. Bottom Section — Logo
         bottom_section = QWidget()
         bottom_layout = QVBoxLayout(bottom_section)
-        logo_path = os.path.join("assets", "impulse.gif")
+        logo_path = resource_path("assets/impulse.gif")
         if os.path.exists(logo_path):
             logo_label = QLabel()
             pixmap = QPixmap(logo_path)

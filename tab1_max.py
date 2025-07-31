@@ -149,7 +149,9 @@ class Tab1MaxWidget(QWidget):
 
         logo_label.setStyleSheet("padding: 10px;")
 
-        pixmap = QPixmap("assets/impulse.gif")
+        logo_path = fn.resource_path("assets/impulse.gif")
+
+        pixmap = QPixmap(logo_path)
 
         scaled_pixmap = pixmap.scaledToHeight(80, Qt.SmoothTransformation)
 

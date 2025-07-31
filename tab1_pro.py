@@ -239,7 +239,8 @@ class Tab1ProWidget(QWidget):
         logo_label = QLabel()
         logo_label.setAlignment(Qt.AlignCenter)
         logo_label.setStyleSheet("padding: 10px;")
-        pixmap = QPixmap("assets/impulse.gif")
+        logo_path = fn.resource_path("assets/impulse.gif")
+        pixmap = QPixmap(logo_path)
         scaled_pixmap = pixmap.scaledToHeight(100, Qt.SmoothTransformation)
         logo_label.setPixmap(scaled_pixmap)
 

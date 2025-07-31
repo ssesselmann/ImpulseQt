@@ -37,7 +37,8 @@ from functions import (
     gaussian_correl,
     peak_finder,
     get_flag_options,
-    read_flag_data
+    read_flag_data,
+    resource_path
     )
 from audio_spectrum import play_wav_file
 from shared import logger, device_type, P1, P2, H1, H2, MONO, START, STOP, BTN, FOOTER, DLD_DIR, USER_DATA_DIR
@@ -553,7 +554,10 @@ class Tab2(QWidget):
         logo_label.setAlignment(Qt.AlignCenter)
         logo_label.setStyleSheet("padding: 10px;")
         # Load and scale logo (optional height: adjust as needed)
-        pixmap = QPixmap("assets/impulse.gif")
+        
+        logo_path = resource_path("assets/impulse.gif")
+
+        pixmap = QPixmap(logo_path)
         scaled_pixmap = pixmap.scaledToHeight(80, Qt.SmoothTransformation)
         logo_label.setPixmap(scaled_pixmap)
 

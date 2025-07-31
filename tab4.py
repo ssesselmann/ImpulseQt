@@ -7,7 +7,7 @@ from PySide6.QtGui import QPixmap
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from shared import logger, START, STOP, BTN, FOOTER, H1, P1, P2, DLD_DIR
-from functions import start_recording, stop_recording, get_options, load_cps_file
+from functions import start_recording, stop_recording, get_options, load_cps_file, resource_path
 from pathlib import Path
 import numpy as np
 import shared 
@@ -115,7 +115,9 @@ class Tab4(QWidget):
         # === Logo box (separate, above footer) ===
         logo_layout = QHBoxLayout()
         self.logo_label = QLabel()
-        logo_path = "assets/impulse.gif"  # Change this path if needed
+        
+        logo_path = resource_path("assets/impulse.gif")
+
         pixmap = QPixmap(logo_path)
 
         if not pixmap.isNull():

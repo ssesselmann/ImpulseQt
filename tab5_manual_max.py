@@ -1,5 +1,9 @@
 from shared import __version__ , DATA_DIR, USER_DATA_DIR, SETTINGS_FILE, LIB_DIR, LOG_DIR, DLD_DIR
 from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout
+from functions import resource_path
+
+image_path = resource_path("assets/max-desk.png")
+
 
 class ManualMax(QWidget):
     def __init__(self):
@@ -128,7 +132,7 @@ def get_max_manual_html():
         <a href="https://www.gammaspectacular.com" target='new'>Gammaspectacular.com</a>
         <hr>
         <center>
-        <img src="assets/max-desk.png">
+        <img src="file://{image_path}">
         <h3>ATOM Spectra and GS-MAX detectors for every experiment</h3>
         <p>Expect robust performance and reliability from every ATOM and MAX device, advanced features outperform spectrometers costing many times the price. <br> Atom and Max spectrometers provide guaranteed results for your publications.<br>Order online from gammaspectacular.com .
         </center>

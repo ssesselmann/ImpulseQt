@@ -1,6 +1,8 @@
 from shared import __version__ , DATA_DIR, USER_DATA_DIR, SETTINGS_FILE, LIB_DIR, LOG_DIR, DLD_DIR
 from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout
+from functions import resource_path
 
+image_path = resource_path("assets/gs_pro_v5.png")
 
 def get_pro_manual_html():
     heading = f"<h2>Impulse {__version__} Manual (Audio Devices)</h2>"
@@ -127,7 +129,7 @@ def get_pro_manual_html():
         
         <hr>
         <center>
-        <img src="assets/gs_pro_v5.png">
+        <img src="file://{image_path}">
         <h3>Universal GS-PRO Spectrometer</h3>
         <p>The GS-PRO spectrometer is a low cost spectrometer with high performance, it's resolution and features outperform spectrometers costing many times it's price. <br>The PRO will work with all your exising and future scintillation detectors which is why we call it universal.<br>Order online from gammaspectacular.com .
         </center>

@@ -11,6 +11,7 @@ import json
 import time
 import os
 import re
+import sys
 import platform
 import threading
 import queue
@@ -44,6 +45,15 @@ with shared.write_lock:
 stop_thread         = threading.Event()
 # Define the queue at the global level
 pulse_data_queue    = queue.Queue()
+
+
+def resource_path(relative_path):
+    """Get absolute path to resource, works for dev and for PyInstaller"""
+    if getattr(sys, 'frozen', False):
+        base_path = sys._MEIPASS
+    else:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
 
 # Finds pulses in string of data over a given threshold
 def find_pulses(left_channel):
@@ -306,16 +316,22 @@ def get_device_list():
         p.terminate()
         return [('no device', 99)]
 
+
 def get_serial_device_list():
-    all_ports = serial.tools.list_ports.comports()
     manufacturer_criteria = "FTDI"
     serial_device_list = []
     serial_index = 100
-    for port in all_ports:
-        if port.manufacturer == manufacturer_criteria:
+
+    for port in serial.tools.list_ports.comports():
+        manufacturer = (port.manufacturer or "").lower()
+        description  = (port.description or "").lower()
+
+        if manufacturer_criteria.lower() in manufacturer or manufacturer_criteria.lower() in description:
             serial_device_list.append((port.device, serial_index))
             serial_index += 1
+
     return serial_device_list
+
 
 # Returns maxInputChannels in an unordered list
 def get_max_input_channels(device):
