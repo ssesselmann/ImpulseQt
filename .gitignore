@@ -3,5 +3,6 @@
 *.cer
 *.plist
 production/*
+dist/*
 credentials.py
 appsigner.py
