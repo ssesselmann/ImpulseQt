@@ -43,3 +43,43 @@ Each time you exit the program, you’ll see a quick 👍 or 👎 feedback popup
 You **don’t need Python installed**. ImpulseQt comes bundled as a standalone executable that includes everything it needs to run.
 
 On first launch, it creates a folder:
+
+
+---
+
+### **Downloading**
+
+Download the latest release here:  
+👉 https://github.com/ssesselmann/ImpulseQt/releases
+
+---
+
+### **Thank You**
+
+Thank you for downloading **ImpulseQt**. I hope it helps with your experiments — and maybe even contributes to real science. If you end up publishing your work, I’d be grateful if you gave ImpulseQt a mention.
+
+**Steven Sesselmann**  
+Sydney, NSW, Australia  
+https://www.GammaSpectacular.com
+
+
+
+
+---
+
+### **Downloading**
+
+Download the latest release here:  
+👉 https://github.com/ssesselmann/ImpulseQt/releases
+
+---
+
+### **Thank You**
+
+Thank you for downloading **ImpulseQt**. I hope it helps with your experiments — and maybe even contributes to real science. If you end up publishing your work, I’d be grateful if you gave ImpulseQt a mention.
+
+**Steven Sesselmann**  
+Sydney, NSW, Australia  
+https://www.GammaSpectacular.com
+
+
