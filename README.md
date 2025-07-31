@@ -76,21 +76,3 @@ https://www.GammaSpectacular.com
 
 
 
----
-
-### **Downloading**
-
-Download the latest release here:  
-👉 https://github.com/ssesselmann/ImpulseQt/releases
-
----
-
-### **Thank You**
-
-Thank you for downloading **ImpulseQt**. I hope it helps with your experiments — and maybe even contributes to real science. If you end up publishing your work, I’d be grateful if you gave ImpulseQt a mention.
-
-**Steven Sesselmann**  
-Sydney, NSW, Australia  
-https://www.GammaSpectacular.com
-
-
