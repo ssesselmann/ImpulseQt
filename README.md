@@ -44,6 +44,17 @@ You **don’t need Python installed**. ImpulseQt comes bundled as a standalone e
 
 On first launch, it creates a folder:
 
+C:\Users\Username\ImpulseQtData
+
+This is where it stores:
+- isotope libraries
+- your recorded files
+- custom settings
+
+On Windows, it also writes logs and settings to:
+
+C:\Users\Username\AppData\Local\ImpulseQt\logs\impulse.log
+C:\Users\Username\AppData\Roaming\ImpulseQt\settings
 
 ---
 
