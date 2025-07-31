@@ -53,7 +53,7 @@ class Tab3(QWidget):
         self.init_ui()
         self.refresh_timer    = QTimer()
         self.refresh_timer.timeout.connect(self.update_graph)
-        self.filename = "•• Heatmap ••"
+        self.filename = "Waterfall Heatmap"
 
     def init_ui(self):
         # Main layout for the entire widget
@@ -397,9 +397,10 @@ class Tab3(QWidget):
 
     def stop(self):
         self.refresh_timer.stop()
+        stop_recording()
         self.refresh_file_list()
         self.filename_dropdown.setCurrentIndex(0)
-        stop_recording()
+
 
     def confirm_overwrite(self):
         filename = self.filename_input.text()
@@ -415,7 +416,6 @@ class Tab3(QWidget):
         self.start_recording_hmp(filename)
 
     def start_recording_hmp(self, filename):
-
         try:
             self.plot_data.clear()
 

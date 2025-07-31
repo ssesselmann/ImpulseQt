@@ -8,14 +8,14 @@ image_path = resource_path("assets/max-desk.png")
 class ManualMax(QWidget):
     def __init__(self):
         super().__init__()
-        layout = QVBoxLayout()
-        layout.addWidget(QLabel("Manual for MAX device"))
-        self.setLayout(layout)
+        max_layout = QVBoxLayout()
+        max_layout.addWidget(QLabel("Manual for MAX device"))
+        self.setLayout(max_layout)
 
 
 def get_max_manual_html():
     heading = f"""
-        <center><h2 style='color:#027BFF;' >Impulse {__version__} Manual (Atom and Max Devices)</h2></center>
+        <center><h2 style='color:#027BFF;' >ImpulseQt {__version__} Manual<br>(Atom and Max Devices)</h2></center>
         """
 
     html = heading + f"""
@@ -27,7 +27,7 @@ def get_max_manual_html():
                 body {{
                     background-color: white;
                     padding: 15px;
-                    font-family: Arial, sans-serif;
+                    font-family: Arial, Helvetica;
                     font-size: 14px;
                     color: #222;
                     line-height: 1.5;
@@ -49,7 +49,7 @@ def get_max_manual_html():
                     margin-left: 20px;
                 }}
                 code {{
-                    font-family: courier;
+                    font-family: Courier New;
                     background: #eee;
                     padding: 2px 4px;
                     border-radius: 4px;
@@ -74,11 +74,14 @@ def get_max_manual_html():
         <p><strong>Log file</strong><br>{LOG_DIR}/impulseqt_log.txt </p>
         <p><strong>Library</strong><br>{LIB_DIR}/ </p>
         </code>
-        <h2>Device setup tab</h2>
+        <h2>Serial Device driver</h2>
+        <p>Most computers should already have the FDTI driver installed, if not it should automatically install, however if your doesn't it might be necessary to install it manually from the link below. </p>
+        <p><code><p><code>https://ftdichip.com/drivers/</code></p>
+        <h2>Device Setup Tab</h2>
         <p>The device setup tab has two functions, a) Select device and Send Command, the rest of the page is for viewing the responses from your spectrometer.</p>
         <p>When ImpulseQt loads it will find all serial devices connected to your PC ports, it may not immediately be evident which one is your spectrometer, if in doubt, disconnect the device, restart the application, and figure out which device is no longer showing.</P>
         <h3>Send Commands</h3>
-        <p>The micro-processor in your Atom or Max spectrometer takes commands in specific formats, some commands are commonly used and others are mainly for factory calibration and should generally not be changed. These commands are all described in your manual, so we shall only cover the basic ones here.  Changing bias voltage is a common action, the command is -U followed by a number from 0 to 255 and should be input as follows. The number following does not represent voltage but rather the voltage range divided by 255.</p>
+        <p>The FDTI micro-processor in your Atom or Max spectrometer takes commands in specific formats, some commands are commonly used and others are mainly for factory calibration and should generally not be changed. These commands are all described in your manual, so we shall only cover the basic ones here.  Changing bias voltage is a common action, the command is -U followed by a number from 0 to 255 and should be input as follows. The number following does not represent voltage but rather the voltage range divided by 255.</p>
         <code>
             [-U 0]   → Sets voltage to minimum (e.g., 500 V)<br>
             [-U 255] → Sets voltage to maximum (e.g., 2500 V)<br>
@@ -92,7 +95,7 @@ def get_max_manual_html():
         <p>The pulse plot is needed for fine tunin the spectrometer to your detector. If you have a monoblock style detector with an inbuilt MCA, it is most likely optimized from the factory and will not require further adjustment, but if you have a stand alone spectrometer and want to use it with different scintillators, adjustments may be required. Simply click the [Pulse View] button and wait a few seconds for the pulses to appear. Now count how many dots (samples) from the baseline up to and including the peak, and how many in the tail of the pulse. Use the command [-ris] and [-fall] to update the settings.</p>
         <h3>Oscilloscope</h3>
         <p>Click the oscilloscope button to get a wider view of the pulses, this function us useful for confirming that a detector is working.</p>
-        <h2>2D Histogram</h2>
+        <h2>2D Histogram Tab</h2>
         <p>This is the main gamma spectrum or histogram page and its main feature is the large histogram plot. The plot updates once per second when running and displays the spectrum as a line plot. The chart has several hidden features that are not immediately obvious, hover over the chart and you will see cross hairs that hep you pinpoint the values or use the mouse right click button to capture an image or zoom in on the scale. A small [A] will apear in the bottom right hand corner which can reset the plot to auto.</p>
         <h3>Functions</h3>
         <li><strong>START</strong> - Click to start spectromer recording </li>
@@ -118,10 +121,10 @@ def get_max_manual_html():
         <li><strong>Calibration</strong><br>
         The calibration settings open up in a pop up window, it can accept anything from one calibration point (and zero) for linear calibration up to five calibration points for a best fit second order polynomial. 
         Verify that your calibration works by clicking apply and checking the calibration box and comparing the x axis ticks. </li>
-        <h2>Waterfall</h2>
+        <h2>Waterfall Tab</h2>
         <p>This tab displays the gamma spectrum as a heatmap over time, also known as a waterfall plot. It provides an intuitive way to visualize radiation and makes it easy to spot ‘hot zones’ at a glance. This plot gets most of it's settings like bins, bin size, calibration etc. from the main histogram tab2. It is highly recommended to set up and calibrate the regular histogram before running the waterfall plot. 
             The screen plot can hold up to one hour of data before it starts purgin history, but all data is being saved to json file in the user directory and can also be downloaded as a csv file. 
-        <h2>Count rate Tab</h2>
+        <h2>Count Rate Tab</h2>
         <p>This window contains a large count rate chart with seconds on the x axis and counts on the y axis, it is associated with the main histogram and plots continuously during data recording. The window has a maximum width of 300 seconds moving, but the check box can be ticked to show all.  There is also a convenient slider which allows for averaging of the plot data. 
         Once again the data can be downloaded for further analysis.</p>
         <hr>

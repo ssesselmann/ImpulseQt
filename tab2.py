@@ -52,9 +52,9 @@ class Tab2(QWidget):
         label = QLabel(label_text)
         label.setStyleSheet("font-size: 10pt; color: #555; margin-bottom: 0px;")
         label.setAlignment(Qt.AlignCenter)
-        layout = QVBoxLayout()
-        layout.setSpacing(0)
-        layout.setContentsMargins(0, 0, 0, 0)
+        input_layout = QVBoxLayout()
+        input_layout.setSpacing(0)
+        input_layout.setContentsMargins(0, 0, 0, 0)
 
         # Center-align widgets like QCheckBox
         if isinstance(widget, QCheckBox):
@@ -62,14 +62,14 @@ class Tab2(QWidget):
             hbox.addStretch()
             hbox.addWidget(widget)
             hbox.addStretch()
-            layout.addWidget(label)
-            layout.addLayout(hbox)
+            input_layout.addWidget(label)
+            input_layout.addLayout(hbox)
         else:
-            layout.addWidget(label)
-            layout.addWidget(widget)
+            input_layout.addWidget(label)
+            input_layout.addWidget(widget)
 
         container = QWidget()
-        container.setLayout(layout)
+        container.setLayout(input_layout)
         return container
 
     def safe_float(val):
@@ -742,10 +742,28 @@ class Tab2(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Start Error", f"Error starting: {str(e)}")
 
+    def refresh_file_dropdowns(self):
+        # Refresh select_file
+        self.select_file.blockSignals(True)
+        self.select_file.clear()
+        self.select_file.addItem("— Select file —", "")
+        options = get_options()
+        for opt in options:
+            self.select_file.addItem(opt['label'], opt['value'])
+        self.select_file.setCurrentIndex(0)
+        self.select_file.blockSignals(False)
+
+        # Refresh select_comparison
+        self.select_comparison.blockSignals(True)
+        self.select_comparison.clear()
+        options = get_filename_2_options()
+        for opt in options:
+            self.select_comparison.addItem(opt['label'], opt['value'])
+        self.select_comparison.setCurrentIndex(0)
+        self.select_comparison.blockSignals(False)
 
     @Slot()
     def on_stop_clicked(self):
-
         stop_recording()
 
         if self.process_thread and self.process_thread.is_alive():
@@ -756,6 +774,8 @@ class Tab2(QWidget):
         self.process_thread = None
         self.plot_timer.stop()
 
+        # Refresh file dropdowns after stop
+        self.refresh_file_dropdowns()
 
     def on_mouse_moved(self, pos):
         vb = self.plot_widget.getViewBox()

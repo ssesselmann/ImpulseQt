@@ -10,8 +10,6 @@ class Tab5(QWidget):
         with shared.write_lock:
             device_type = shared.device_type
 
-        print(f"[DEBUG] Tab5 loading manual for device_type = {device_type}")
-
         self.setWindowTitle("User Manual")
 
         self.textbox = QTextBrowser()
@@ -40,9 +38,9 @@ class Tab5(QWidget):
         self.textbox.setHtml(html)
         self.textbox.anchorClicked.connect(self.open_link)
 
-        layout = QVBoxLayout()
-        layout.addWidget(self.textbox, alignment=Qt.AlignHCenter)
-        self.setLayout(layout)
+        manual_layout = QVBoxLayout()
+        manual_layout.addWidget(self.textbox, alignment=Qt.AlignHCenter)
+        self.setLayout(manual_layout)
 
     def open_link(self, url):
         QDesktopServices.openUrl(url)

@@ -1050,15 +1050,15 @@ def load_histogram_hmp(stem):
             data = data["data"][0]
 
         with shared.write_lock:
-            result = data["resultData"]["energySpectrum"]
-            shared.histogram_hmp = result["spectrum"]
-            shared.counts = result["validPulseCount"]
-            shared.bins_hmp = result["numberOfChannels"]
-            shared.elapsed = result["measurementTime"]
-            coeffs = result["energyCalibration"]["coefficients"]
+            result                  = data["resultData"]["energySpectrum"]
+            shared.histogram_hmp    = result["spectrum"]
+            shared.counts           = result["validPulseCount"]
+            shared.bins             = result["numberOfChannels"]
+            shared.elapsed          = result["measurementTime"]
+            coeffs                  = result["energyCalibration"]["coefficients"]
             shared.coeff_1, shared.coeff_2, shared.coeff_3 = coeffs
-            shared.startTime3d = data["resultData"]["startTime"]
-            shared.endTime3d = data["resultData"]["startTime"]
+            shared.startTime3d      = data["resultData"]["startTime"]
+            shared.endTime3d        = data["resultData"]["startTime"]
 
         logger.info(f"4.. shared updated from {file_path}")
 

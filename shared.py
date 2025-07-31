@@ -26,26 +26,25 @@ session_end = None
 # FONTS
 # --------------
 # Paragraphs
-P1 = "font-family: Verdana, sans-serif; font-size: 10pt; color: #666;"   # Small, light text
-P2 = "font-family: Verdana, sans-serif; font-size: 12pt; color: #444;"  # Medium paragraph
+P1      = "font-family: Verdana, sans-serif; font-size: 10pt; color: #666;"   # Small, light text
 
+P2      = "font-family: Verdana, sans-serif; font-size: 12pt; color: #444;"  # Medium paragraph
 # Headings
-H1 = "font-family: Helvetica, sans-serif; font-size: 18pt; font-weight: bold; color: #027BFF;"
-H2 = "font-family: Helvetica, sans-serif; font-size: 12pt; font-weight: bold; color: #333;"
+H1      = "font-family: Helvetica, sans-serif; font-size: 18pt; font-weight: bold; color: #027BFF;"
 
+H2      = "font-family: Helvetica, sans-serif; font-size: 12pt; font-weight: bold; color: #333;"
 # Monospace 
-MONO = "font-family: Menlo, Courier New; font-size: 10pt; color: #555;"
+MONO    = "font-family: Menlo, Courier New; font-size: 10pt; color: #555;"
+# Buttons
+START   = "background-color: #79AB4C; color: white; font-weight: bold;"
 
-START = "background-color: #79AB4C; color: white; font-weight: bold;"
+STOP    = "background-color: #C12B2B; color: white; font-weight: bold;"
 
-STOP = "background-color: #C12B2B; color: white; font-weight: bold;"
+BTN     = "background-color: #E0751C; color: white; font-weight: bold;"
 
-BTN  = "background-color: #E0751C; color: white; font-weight: bold;"
+BUD     = "background-color: #7C7C7C; color: white; font-weight: bold;"
 
-BUD  = "background-color: #7C7C7C; color: white; font-weight: bold;"
-
-
-FOOTER = f"IMPULSE {__version__}"
+FOOTER  = f"ImpulseQt {__version__}"
 
 # -------------------------------
 # Paths & Directories
@@ -53,12 +52,9 @@ FOOTER = f"IMPULSE {__version__}"
 APP_NAME = "ImpulseQt"
 DATA_DIR = Path(QStandardPaths.writableLocation(QStandardPaths.AppDataLocation)) / APP_NAME
 DATA_DIR.mkdir(parents=True, exist_ok=True)
-
 SETTINGS_FILE = DATA_DIR / "settings.json"
-
 USER_DATA_DIR = Path.home() / "ImpulseData"
 USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
-
 LIB_DIR = USER_DATA_DIR / "lib"
 ISO_DIR = LIB_DIR / "iso"
 TBL_DIR = LIB_DIR / "tbl"
@@ -83,8 +79,8 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 log_file = LOG_DIR / "impulseqt_log.txt"
 
 # Set root logger to DEBUG
-#logging.basicConfig(level=logging.INFO)
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
+#logging.basicConfig(level=logging.DEBUG)
 # logging.basicConfig(level=logging.WARNING)
 # logging.basicConfig(level=logging.ERROR)
 
