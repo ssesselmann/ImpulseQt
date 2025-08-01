@@ -1,0 +1,25 @@
+# Base requirements
+numpy<2
+matplotlib==3.10.3
+pandas==2.2.3
+scipy==1.15.2
+pyqtgraph==0.13.7
+requests==2.32.3
+pyserial==3.5
+dash==3.0.3
+dash-bootstrap-components==2.0.1
+dash_daq==0.6.0
+plotly==6.0.1
+PySide6==6.7.2
+PySide6_Essentials==6.7.2
+PySide6_Addons==6.7.2
+shiboken6==6.7.2
+PyAudio==0.2.14
+
+
+# macOS only
+py2app==0.28.6
+pyobjc-core==10.3.2
+pyobjc-framework-Cocoa==10.3.2
+pyobjc-framework-CoreBluetooth==10.3.2
+pyobjc-framework-libdispatch==10.3.2
