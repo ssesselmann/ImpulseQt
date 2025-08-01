@@ -39,9 +39,11 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    console=False,  # ✅ set True if you want to see output for debugging
-    icon="assets/favicon.ico"  # ✅ Windows requires .ico format
+    console=False,
+    icon=str(project_root / "assets" / "favicon.ico"),
+    onefile=True
 )
+
 
 coll = COLLECT(
     exe,
