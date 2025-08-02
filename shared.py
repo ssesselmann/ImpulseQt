@@ -9,7 +9,8 @@ import datetime
 from os import getenv
 from pathlib import Path
 from threading import Lock, Event
-from PySide6.QtCore import QStandardPaths
+from qt_compat import QStandardPaths
+
 from default_settings import DEFAULT_SETTINGS
 
 

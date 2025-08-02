@@ -53,3 +53,4 @@ QTimer          = QtCore.QTimer
 Slot            = QtCore.Slot
 Signal          = QtCore.Signal
 QUrl            = QtCore.QUrl
+QStandardPaths  = QtCore.QStandardPaths
