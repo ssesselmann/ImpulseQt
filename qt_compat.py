@@ -28,6 +28,7 @@ QMessageBox         = QtWidgets.QMessageBox
 QPushButton         = QtWidgets.QPushButton
 QSizePolicy         = QtWidgets.QSizePolicy
 QSlider             = QtWidgets.QSlider
+QTabWidget          = QtWidgets.QTabWidget
 QTableWidget        = QtWidgets.QTableWidget
 QTableWidgetItem    = QtWidgets.QTableWidgetItem
 QTextEdit           = QtWidgets.QTextEdit
