@@ -1,11 +1,15 @@
+# calibration_popup.py
 import shared
 import numpy as np
 import json
 
-from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QGridLayout, QLabel,
-    QLineEdit, QPushButton
-)
+from qt_compat import QDialog
+from qt_compat import QVBoxLayout
+from qt_compat import QGridLayout
+from qt_compat import QLabel
+from qt_compat import QLineEdit
+from qt_compat import QPushButton
+
 from shared import logger
 
 class CalibrationPopup(QDialog):
