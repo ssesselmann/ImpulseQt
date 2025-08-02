@@ -1,18 +1,32 @@
-from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
-    QCheckBox, QSlider, QSizePolicy, QLineEdit, QLabel, QMessageBox, QComboBox
-)
-from PySide6.QtCore import Qt, Slot, QTimer
-from PySide6.QtGui import QPixmap
+# tab4.py
+
+import numpy as np
+import shared 
+import json
+import os
+
+from qt_compat import QWidget
+from qt_compat import QVBoxLayout
+from qt_compat import QHBoxLayout
+from qt_compat import QPushButton
+from qt_compat import QLabel
+from qt_compat import QCheckBox
+from qt_compat import QSlider
+from qt_compat import QSizePolicy
+from qt_compat import QLineEdit
+from qt_compat import QLabel
+from qt_compat import QMessageBox
+from qt_compat import QComboBox
+from qt_compat import Qt
+from qt_compat import Slot
+from qt_compat import QTimer
+from qt_compat import QPixmap
+
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from shared import logger, START, STOP, BTN, FOOTER, H1, P1, P2, DLD_DIR
 from functions import start_recording, stop_recording, get_options, load_cps_file, resource_path
 from pathlib import Path
-import numpy as np
-import shared 
-import json
-import os
 
 class Tab4(QWidget):
 

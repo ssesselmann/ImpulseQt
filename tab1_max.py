@@ -1,14 +1,27 @@
+# tab1_max.py
 import functions as fn
 import time
 import shared
 
-from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QComboBox, QLineEdit, QTextEdit,
-    QTableWidget, QTableWidgetItem, QGridLayout, QSizePolicy, QGroupBox, QHeaderView
-)
-from PySide6.QtGui import QMovie, QPixmap
-from PySide6.QtCore import Qt, QTimer
+from qt_compat import QComboBox
+from qt_compat import QGridLayout
+from qt_compat import QGroupBox
+from qt_compat import QHBoxLayout
+from qt_compat import QHeaderView
+from qt_compat import QLabel
+from qt_compat import QLineEdit
+from qt_compat import QMovie
+from qt_compat import QPixmap
+from qt_compat import QPushButton
+from qt_compat import QSizePolicy
+from qt_compat import Qt
+from qt_compat import QTableWidget
+from qt_compat import QTableWidgetItem
+from qt_compat import QTextEdit
+from qt_compat import QTimer
+from qt_compat import QVBoxLayout
+from qt_compat import QWidget
+
 from shared import FOOTER, P1, P2, H1, H2, BTN, START, STOP
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure

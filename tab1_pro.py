@@ -5,12 +5,30 @@ import functions as fn
 import shared
 import numpy as np
 
-from PySide6.QtWidgets import (
-    QWidget, QLabel, QVBoxLayout, QHBoxLayout, QComboBox,
-    QTextEdit, QSizePolicy, QPushButton, QSlider,QCheckBox
-)
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont, QBrush, QColor, QIntValidator, QPixmap
+from qt_compat import QComboBox
+from qt_compat import QGridLayout
+from qt_compat import QGroupBox
+from qt_compat import QHBoxLayout
+from qt_compat import QHeaderView
+from qt_compat import QLabel
+from qt_compat import QLineEdit
+from qt_compat import QMovie
+from qt_compat import QPixmap
+from qt_compat import QPushButton
+from qt_compat import QSizePolicy
+from qt_compat import Qt
+from qt_compat import QTableWidgetItem
+from qt_compat import QTextEdit
+from qt_compat import QTimer
+from qt_compat import QVBoxLayout
+from qt_compat import QWidget
+from qt_compat import QFont
+from qt_compat import QBrush
+from qt_compat import QColor
+from qt_compat import QIntValidator
+from qt_compat import QPixmap
+from qt_compat import QCheckBox
+from qt_compat import QSlider
 
 from shapecatcher import shapecatcher
 from distortionchecker import distortion_finder

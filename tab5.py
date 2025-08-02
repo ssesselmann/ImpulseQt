@@ -1,6 +1,12 @@
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QTextBrowser
-from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QDesktopServices
+# tab5.py
+
+from qt_compat import QWidget
+from qt_compat import QVBoxLayout
+from qt_compat import QTextBrowser
+from qt_compat import Qt
+from qt_compat import QUrl
+from qt_compat import QDesktopServices
+
 import shared
 
 class Tab5(QWidget):

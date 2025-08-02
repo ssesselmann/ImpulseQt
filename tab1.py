@@ -1,18 +1,29 @@
 
 #tab1.py
-
 import shared
 
-from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QLabel, QComboBox,
-    QFrame, QHBoxLayout, QSizePolicy, QApplication, QMessageBox
-)
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont, QBrush, QColor, QIntValidator, QPixmap
+from qt_compat import QtCore
+from qt_compat import QtGui
+from qt_compat import QtWidgets
+from qt_compat import Qt
+from qt_compat import QWidget
+from qt_compat import QVBoxLayout
+from qt_compat import QLabel
+from qt_compat import QComboBox
+from qt_compat import QFrame
+from qt_compat import QHBoxLayout
+from qt_compat import QSizePolicy
+from qt_compat import QApplication
+from qt_compat import QMessageBox
+from qt_compat import QFont
+from qt_compat import QBrush
+from qt_compat import QColor
+from qt_compat import QIntValidator
+from qt_compat import QPixmap
+
 from tab1_pro import Tab1ProWidget 
 from tab1_max import Tab1MaxWidget
 from shared import logger, P1, P2, H1, H2, MONO, FOOTER
-
 
 class Tab1(QWidget):
     def __init__(self):

@@ -1,5 +1,9 @@
+# tab5_manual_pro.py
+
+from qt_compat import QWidget
+from qt_compat import QLabel
+from qt_compat import QVBoxLayout
 from shared import __version__ , DATA_DIR, USER_DATA_DIR, SETTINGS_FILE, LIB_DIR, LOG_DIR, DLD_DIR
-from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout
 from functions import resource_path
 
 image_path = resource_path("assets/gs_pro_v5.png")

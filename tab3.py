@@ -9,9 +9,29 @@ import threading
 import time
 import csv
 
+from qt_compat import QBrush
+from qt_compat import QCheckBox
+from qt_compat import QColor
+from qt_compat import QComboBox
+from qt_compat import QDialog
+from qt_compat import QDialogButtonBox
+from qt_compat import QFont
+from qt_compat import QGridLayout
+from qt_compat import QHBoxLayout
+from qt_compat import QIntValidator
+from qt_compat import QLabel
+from qt_compat import QLineEdit
+from qt_compat import QMessageBox
+from qt_compat import QPixmap
+from qt_compat import QPushButton
+from qt_compat import QSizePolicy
+from qt_compat import Qt
+from qt_compat import QTimer
+from qt_compat import QVBoxLayout
+from qt_compat import QWidget
+from qt_compat import Signal
+
 from pathlib import Path
-from PySide6.QtCore import QTimer, Qt, Signal
-from PySide6.QtGui import QFont, QBrush, QColor, QIntValidator, QPixmap
 from mpl_toolkits.mplot3d import Axes3D 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -19,10 +39,6 @@ from matplotlib import cm
 from datetime import datetime, timedelta
 from collections import deque 
 from shared import logger, P1, P2, H1, H2, MONO, START, STOP, BTN, BUD, FOOTER, DLD_DIR, USER_DATA_DIR
-from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit,
-    QComboBox, QCheckBox, QGridLayout, QDialog, QDialogButtonBox, QMessageBox, QSizePolicy
-)
 from functions import (
     load_histogram_hmp, 
     get_options_hmp, 
