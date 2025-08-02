@@ -5,8 +5,18 @@ from qt_compat import QLabel
 from qt_compat import QVBoxLayout
 from shared import __version__ , DATA_DIR, USER_DATA_DIR, SETTINGS_FILE, LIB_DIR, LOG_DIR, DLD_DIR
 from functions import resource_path
+import base64
 
-image_path = resource_path("assets/gs_pro_v5.png").replace("\\", "/") 
+def get_pro_image_data_uri():
+    path = resource_path("assets/gs_pro_v5.png")
+    with open(path, "rb") as f:
+        encoded = base64.b64encode(f.read()).decode("utf-8")
+    return f"data:image/png;base64,{encoded}"
+
+def encode_image_base64(path):
+    with open(path, "rb") as f:
+        encoded_bytes = base64.b64encode(f.read()).decode("utf-8")
+    return f"data:image/png;base64,{encoded_bytes}"
 
 class ManualPro(QWidget):
     def __init__(self):
@@ -152,7 +162,7 @@ def get_pro_manual_html():
         
         <hr>
         <center>
-        <img src="file://{image_path}">
+        <img src="{get_pro_image_data_uri()}">
         <h3>Universal GS-PRO Spectrometer</h3>
         <p>The GS-PRO spectrometer is a low cost spectrometer with high performance, it's resolution and features outperform spectrometers costing many times it's price. <br>The PRO will work with all your exising and future scintillation detectors which is why we call it universal.<br>Order online from gammaspectacular.com .
         </center>
