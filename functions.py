@@ -1,5 +1,6 @@
 # functions.py
 
+import pandas as pd
 import pyaudio
 import webbrowser
 import wave
@@ -16,7 +17,6 @@ import platform
 import threading
 import queue
 import sqlite3 as sql
-import pandas as pd
 import pulsecatcher as pc
 import logging
 import glob
