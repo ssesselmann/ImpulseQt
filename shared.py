@@ -12,6 +12,12 @@ from threading import Lock, Event
 from PySide6.QtCore import QStandardPaths
 from default_settings import DEFAULT_SETTINGS
 
+
+# --- Thread Control ---
+write_lock = Lock()
+run_flag = Event()
+run_flag_lock = Lock()
+
 # --------------------
 # Versioning
 __version__ = "v3.0.0"
@@ -257,11 +263,6 @@ cached_device_info_ts = 0.0
 flags_selected = ""
 theme = "light-theme"
 spec_notes = ""
-
-# --- Thread Control ---
-write_lock = Lock()
-run_flag = Event()
-run_flag_lock = Lock()
 
 max_pulse_length = 0
 max_pulse_height = 0
