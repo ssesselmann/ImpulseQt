@@ -1,57 +1,42 @@
 # -*- mode: python ; coding: utf-8 -*-
-# install-pc.spec
+# This builds a single-file executable: ImpulseQt.exe
 
-import sys
 from pathlib import Path
 from glob import glob
-from PyInstaller.utils.hooks import collect_submodules
 
-version = "3.0"
-project_root = Path('.').resolve()
-block_cipher = None
+project_root = Path(".").resolve()
 app_name = "ImpulseQt"
 
 a = Analysis(
     ['ImpulseQt.py'],
     pathex=[str(project_root)],
     binaries=[],
-    datas=[(f, "assets") for f in glob("assets/*")],
+    datas=[
+        (f, "assets") for f in glob("assets/*")
+    ],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[],
-    win_no_prefer_redirects=False,
-    win_private_assemblies=False,
-    cipher=block_cipher,
-    noarchive=True
+    noarchive=False,  # Keep archive for onefile
 )
 
-pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+pyz = PYZ(a.pure, a.zipped_data, cipher=None)
 
 exe = EXE(
     pyz,
     a.scripts,
-    [],
-    exclude_binaries=True,
+    a.binaries,
+    a.datas,
+    exclude_binaries=False,
     name=app_name,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=False,
+    upx=True,
     console=False,
     icon=str(project_root / "assets" / "favicon.ico"),
-    onefile=True
-)
-
-
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    strip=False,
-    upx=False,
-    upx_exclude=[],
-    name=app_name
+    # This builds ONE FILE
+    singlefile=True
 )

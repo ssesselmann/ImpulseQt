@@ -48,12 +48,10 @@ pulse_data_queue    = queue.Queue()
 
 
 def resource_path(relative_path):
-    """Get absolute path to resource, works for dev and for PyInstaller"""
-    if getattr(sys, 'frozen', False):
-        base_path = sys._MEIPASS
-    else:
-        base_path = os.path.abspath(".")
+    """ Get absolute path to resource, works for dev and PyInstaller """
+    base_path = getattr(sys, '_MEIPASS', os.path.abspath("."))
     return os.path.join(base_path, relative_path)
+
 
 # Finds pulses in string of data over a given threshold
 def find_pulses(left_channel):
