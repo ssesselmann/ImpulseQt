@@ -14,6 +14,7 @@ from tab4 import Tab4
 from tab5 import Tab5
 from pathlib import Path
 
+from qt_compat import IS_QT6
 from qt_compat import Qt
 from qt_compat import QMainWindow
 from qt_compat import QTabWidget
@@ -169,6 +170,10 @@ if __name__ == "__main__":
     win = MainWindow()
     win.show()
 
-    exit_code = app.exec()
+    if IS_QT6:
+        exit_code = app.exec()
+    else:
+        exit_code = app.exec_()  
+
     shared.save_settings()
     sys.exit(exit_code)

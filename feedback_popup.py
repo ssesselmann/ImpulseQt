@@ -1,7 +1,12 @@
 # feedback_popup.py
 
-from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout
-from PySide6.QtCore import Qt
+from qt_compat import QDialog
+from qt_compat import QVBoxLayout
+from qt_compat import QLabel
+from qt_compat import QPushButton
+from qt_compat import QHBoxLayout
+from qt_compat import Qt
+
 from send_feedback import send_feedback_email
 import shared
 
