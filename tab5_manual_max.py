@@ -6,7 +6,7 @@ from qt_compat import QVBoxLayout
 from shared import __version__ , DATA_DIR, USER_DATA_DIR, SETTINGS_FILE, LIB_DIR, LOG_DIR, DLD_DIR
 from functions import resource_path
 
-image_path = resource_path("assets/max-desk.png")
+image_path = resource_path("assets/max-desk.png").replace("\\", "/") 
 
 
 class ManualMax(QWidget):
