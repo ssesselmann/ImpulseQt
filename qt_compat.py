@@ -23,6 +23,7 @@ QHBoxLayout         = QtWidgets.QHBoxLayout
 QHeaderView         = QtWidgets.QHeaderView
 QLabel              = QtWidgets.QLabel
 QLineEdit           = QtWidgets.QLineEdit
+QMainWindow         = QtWidgets.QMainWindow
 QMessageBox         = QtWidgets.QMessageBox
 QPushButton         = QtWidgets.QPushButton
 QSizePolicy         = QtWidgets.QSizePolicy

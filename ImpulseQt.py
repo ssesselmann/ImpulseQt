@@ -13,8 +13,19 @@ from tab3 import Tab3
 from tab4 import Tab4
 from tab5 import Tab5
 from pathlib import Path
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QMainWindow, QTabWidget, QWidget, QVBoxLayout, QApplication, QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout
+
+from qt_compat import Qt
+from qt_compat import QMainWindow
+from qt_compat import QTabWidget
+from qt_compat import QWidget
+from qt_compat import QVBoxLayout
+from qt_compat import QApplication
+from qt_compat import QDialog
+from qt_compat import QVBoxLayout
+from qt_compat import QLabel
+from qt_compat import QPushButton
+from qt_compat import QHBoxLayout
+
 from shared import logger, USER_DATA_DIR
 from feedback_popup import FeedbackPopup
 from send_feedback import send_feedback_email
