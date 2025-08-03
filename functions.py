@@ -1246,3 +1246,7 @@ def generate_device_settings_table_data():
     ]
 
     return rows, tco_pairs
+
+
+def sanitize_for_log(data, min_value=0.1):
+    return [max(min_value, y) for y in data]

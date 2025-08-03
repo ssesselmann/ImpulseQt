@@ -46,7 +46,8 @@ from functions import (
     peak_finder,
     get_flag_options,
     read_flag_data,
-    resource_path
+    resource_path,
+    sanitize_for_log
     )
 from audio_spectrum import play_wav_file
 from shared import logger, device_type, P1, P2, H1, H2, MONO, START, STOP, BTN, FOOTER, DLD_DIR, USER_DATA_DIR
@@ -652,7 +653,7 @@ class Tab2(QWidget):
             counts  = shared.counts
             elapsed = shared.elapsed
             dropped = shared.dropped_counts
-            cps     = shared.cps 
+            cps     = int(shared.cps/1e+6)
 
         self.counts_label.setText(str(counts))
         self.elapsed_label.setText(str(elapsed))
@@ -1153,17 +1154,17 @@ class Tab2(QWidget):
             return [y * x for x, y in zip(x_vals, y_vals)]
         return y_vals
 
-    def apply_log_scale(self, y_vals):
+    def apply_log_scale(self, y_vals, min_val=0.1):
 
         with shared.write_lock:
             log_switch = shared.log_switch
 
+        self.plot_widget.setLogMode(x=False, y=log_switch)
+
         if log_switch:
-            self.plot_widget.setLogMode(x=False, y=True)
-            return [max(1, y) for y in y_vals]
-        else:
-            self.plot_widget.setLogMode(x=False, y=False)
-            return y_vals
+            return [max(min_val, y) for y in y_vals]
+        return y_vals
+
 
     
     def update_compression_setting(self):
@@ -1192,7 +1193,7 @@ class Tab2(QWidget):
         self.update_histogram()
         self.update_peak_markers()
 
-  
+
     def update_histogram(self):
         
         logger.info("update_histogram called")
@@ -1204,7 +1205,6 @@ class Tab2(QWidget):
             log_switch  = shared.log_switch
             epb_switch  = shared.epb_switch
             cal_switch  = shared.cal_switch
-            log_switch  = shared.log_switch
             comp_switch = shared.comp_switch
             coeff_1     = shared.coeff_1
             coeff_2     = shared.coeff_2 
@@ -1233,7 +1233,7 @@ class Tab2(QWidget):
 
             # === Prepare calibration coefficients ===
             coeff_abc      = [coeff_1, coeff_2, coeff_3]
-            comp_coeff_abc = [shared.comp_coeff_1, shared.comp_coeff_2, shared.comp_coeff_3] 
+            comp_coeff_abc = [comp_coeff_1, comp_coeff_2, comp_coeff_3] 
 
             # Base histogram (blue)
             if histogram and diff_switch == False:
@@ -1247,7 +1247,7 @@ class Tab2(QWidget):
                     x_vals = np.polyval(np.poly1d(coeff_abc), x_vals)
 
                 if log_switch:
-                    y_vals = [max(1, y) for y in y_vals]
+                    y_vals = sanitize_for_log(y_vals)
 
                 if slb_switch:
                     y_vals = y_vals[:-1] + [0]
@@ -1271,7 +1271,7 @@ class Tab2(QWidget):
                     x_vals2 = np.polyval(np.poly1d(comp_coeff_abc), x_vals2)
 
                 if log_switch:
-                    y_vals2 = [max(1, y) for y in y_vals2]
+                    y_vals2 = sanitize_for_log(y_vals2)
 
                 self.comp_curve = self.plot_widget.plot(x_vals2, y_vals2, pen=pg.mkPen("r", width=1.5))
 
@@ -1293,6 +1293,9 @@ class Tab2(QWidget):
                 diff = [a - b for a, b in zip(hist1, hist2)]
                 x_vals = list(range(max_len))
                 y_vals = [y * x for x, y in enumerate(diff)] if epb_switch else diff
+                
+                if log_switch:
+                    y_vals = sanitize_for_log(y_vals)
 
                 # Remove previous
                 if self.diff_curve:
@@ -1319,7 +1322,8 @@ class Tab2(QWidget):
                     corr = [y * x for x, y in enumerate(corr)]
 
                 if log_switch:
-                    corr = [max(1, y) for y in corr]
+                    corr = sanitize_for_log(corr, min_value=0.1)
+
 
                 self.gauss_curve = self.plot_widget.plot(
                     x_vals,
