@@ -41,14 +41,7 @@ calibration_lock    = threading.Lock()
 
 _start_lock         = threading.Lock()
 
-# ---- CPS publisher globals (module-scope) ----
-_pub_prev_tt = None
-_pub_prev_counts = None
-_accum_counts = 0.0
-_accum_time = 0.0
-_pub_armed = False
-_skip_first_cps_bucket = True
-
+_TIME_SCALE         = 1e-6 #µs
 
 # ---- local elapsed timer (host based) ----
 _elapsed_lock = threading.Lock()
@@ -57,6 +50,8 @@ _elapsed_start_host = None      # perf_counter() when running, else None
 _elapsed_running = False        # True while "started"
 _elapsed_last_push = 0.0        # last time we pushed shared.elapsed
 
+# CPS from full-spectrum (between STATs)
+_hist_delta_since_stat = 0      # sum of bin deltas since last STAT
 
 pkts01              = 0
 pkts03              = 0
@@ -83,37 +78,20 @@ def _init_runtime():
     if _runtime_init:
         return
 
-    global _skip_first_cps_bucket
-    _skip_first_cps_bucket = True
-
-    # ---- histogram & running totals ----
+    # Raw histogram + running total
     global raw_hist, cps_total_counts
     raw_hist = array('I', [0]) * max_bins
     cps_total_counts = 0
 
-    # ---- CPS publisher state (starts unarmed; no first-sample spike) ----
-    global _pub_prev_tt, _pub_prev_counts, _accum_counts, _accum_time, _pub_armed
-    _pub_prev_tt     = None
-    _pub_prev_counts = None
-    _accum_counts    = 0.0
-    _accum_time      = 0.0
-    _pub_armed       = False
+    # STAT-gated CPS (live on dispatcher, no 'global' needed)
+    shproto.dispatcher.stat_prev_tt = None
+    shproto.dispatcher.hist_delta_since_stat = 0
 
-    # ---- timebase mapping & (optional) STAT unit auto-detect helpers ----
-    global _host_t0, _device_host_offset
-    _host_t0                = time.perf_counter()   # host monotonic origin
-    _device_host_offset     = None                  # set after first STAT
-
-
-    # ---- device time scale (set explicitly; override via auto-detect if used) ----
-    global _TIME_SCALE
-    _TIME_SCALE = 1e-6  # use 1e-6 if STAT total_time is microseconds; 0.001 for ms; 1.0 for s
-
-    # ---- ensure shared history is a bounded deque ----
     if not isinstance(getattr(shared, "count_history", None), deque):
         shared.count_history = deque(maxlen=600)
 
     _runtime_init = True
+
 
 def _elapsed_now_seconds() -> float:
     """Compute total elapsed seconds using host monotonic clock."""
@@ -162,65 +140,6 @@ def _elapsed_reset():
         shared.elapsed = 0
 
 
-def _reset_cps_publisher(now_sec: float, curr_counts: int):
-    """Reset CPS publisher state and arm it starting from 'now'."""
-    global _pub_prev_tt, _pub_prev_counts, _accum_counts, _accum_time, _pub_armed
-    _pub_prev_tt     = now_sec
-    _pub_prev_counts = curr_counts
-    _accum_counts    = 0.0
-    _accum_time      = 0.0
-    _pub_armed       = True
-
-
-def _publish_cps(now_sec: float, curr_counts: int):
-    global _pub_prev_tt, _pub_prev_counts, _accum_counts, _accum_time, _pub_armed, _skip_first_cps_bucket, _device_host_offset
-
-    # First call or not armed yet → initialise, do not publish
-    if _pub_prev_tt is None or not _pub_armed:
-        _pub_prev_tt = now_sec
-        _pub_prev_counts = curr_counts
-        _accum_counts = 0.0
-        _accum_time = 0.0
-        _pub_armed = True
-        return
-
-    dt = now_sec - _pub_prev_tt
-    dc = curr_counts - _pub_prev_counts
-
-    # advance cursor
-    _pub_prev_tt = now_sec
-    _pub_prev_counts = curr_counts
-
-    # guard against bogus intervals
-    if dt <= 0 or dc < 0 or dt > 2.0:
-        _accum_counts = 0.0
-        _accum_time   = 0.0
-        return
-
-    # accumulate
-    _accum_counts += dc
-    _accum_time   += dt
-
-    # publish only once per ~1 s
-    if _accum_time >= 1.0:
-        # Skip the very first bucket to avoid the startup spike
-        if _skip_first_cps_bucket:
-            _skip_first_cps_bucket = False
-            _accum_counts = 0.0
-            _accum_time   = 0.0
-            return
-
-        cps_int = int(round(_accum_counts / _accum_time))
-        with shared.write_lock:
-            shared.cps = cps_int                 # integer, stays steady until next bucket
-            shared.count_history.append(cps_int) # no huge first value
-        _accum_counts = 0.0
-        _accum_time   = 0.0
-
-
-
-
-
 def ensure_running(sn=None):
     """
     Start the dispatcher.start() loop once in a daemon thread.
@@ -255,10 +174,9 @@ def ensure_running(sn=None):
 #===========================================================
 def start(sn=None):
 
-    global _device_host_offset
     _init_runtime()
 
-    READ_BUFFER = 16384  # fixed upper-bound read size
+    READ_BUFFER = 16384 
 
     pulse_file_opened = 0
 
@@ -287,7 +205,7 @@ def start(sn=None):
 
     while not shproto.dispatcher.stopflag:
 
-        _elapsed_push_if_needed(period=0.25) 
+        _elapsed_push_if_needed(period=0.95)
 
         # send any pending text command
         if shproto.dispatcher.command:
@@ -388,23 +306,19 @@ def start(sn=None):
                 shproto.dispatcher.pkts01 += 1
                 pl = response.payload
 
-                # Guard: need at least 2 bytes for offset
                 if len(pl) < 2:
                     response.clear()
                     continue
 
-                # Parse offset (little-endian 16-bit)
                 offset = (pl[0] & 0xFF) | ((pl[1] & 0xFF) << 8)
-
-                # 4 bytes per bin after the offset; ignore trailing <4 bytes
-                data  = pl[2:]
-                count = len(data) // 4
+                data   = pl[2:]
+                count  = len(data) // 4
 
                 rhist = shproto.dispatcher.raw_hist
 
-                # Update bins & running total
                 with shproto.dispatcher.histogram_lock:
                     hlist = shproto.dispatcher.histogram
+
                     for i in range(count):
                         idx = offset + i
                         if idx >= 8192:
@@ -421,14 +335,19 @@ def start(sn=None):
                         old_val = rhist[idx]
                         if new_val != old_val:
                             delta = int(new_val) - int(old_val)
+                            if delta < 0:
+                                delta = 0  # guard against wrap/reset
                             rhist[idx] = new_val
                             hlist[idx] = new_val
+
+                            # running totals
                             shproto.dispatcher.cps_total_counts += delta
+                            shproto.dispatcher.hist_delta_since_stat += delta
 
-                # ---- once per HIST packet (outside the lock) ----
-                _publish_cps(time.perf_counter(), shproto.dispatcher.cps_total_counts)
+
+
+
                 response.clear()
-
 
             # ===========================================================================
             # MODE_PULSE
@@ -480,11 +399,28 @@ def start(sn=None):
                                  ((payload[2] & 0xFF) << 16) | \
                                  ((payload[3] & 0xFF) << 24)
                 shproto.dispatcher.total_time = total_time_raw
+                shproto.dispatcher.cpu_load   = (payload[4] & 0xFF) | ((payload[5] & 0xFF) << 8)
 
-                shproto.dispatcher.cpu_load = (payload[4] & 0xFF) | ((payload[5] & 0xFF) << 8)
+                curr_tt = total_time_raw * _TIME_SCALE  # device seconds
 
-                # Optional: also bump CPS publisher on STAT cadence (host timebase)
-                _publish_cps(time.perf_counter(), shproto.dispatcher.cps_total_counts)
+                prev_tt = shproto.dispatcher.stat_prev_tt
+                if prev_tt is None:
+                    # first STAT starts a new window
+                    shproto.dispatcher.stat_prev_tt = curr_tt
+                    shproto.dispatcher.hist_delta_since_stat = 0
+                else:
+                    dt = curr_tt - prev_tt
+                    if dt <= 0:
+                        dt = 1.0  # fallback; should not happen if device time advances
+
+                    cps_int = int(round(shproto.dispatcher.hist_delta_since_stat / dt))
+                    with shared.write_lock:
+                        shared.cps = cps_int
+                        shared.count_history.append(cps_int)
+
+                    # next window
+                    shproto.dispatcher.stat_prev_tt = curr_tt
+                    shproto.dispatcher.hist_delta_since_stat = 0
 
                 response.clear()
 
@@ -537,21 +473,26 @@ def process_01(filename, compression, device, t_interval):
     while True:
         if shproto.dispatcher.spec_stopflag or shproto.dispatcher.stopflag:
             logger.info("MAX process_01 received stop signal.")
-            # snapshot CPS history for save
+            
+            # before each save (and on stop) take a fresh snapshot
             with shared.write_lock:
                 cps_hist_snapshot = list(shared.count_history)
-                spec_notes = shared.spec_notes
+
+            # device elapsed seconds from STAT
+            elapsed_for_save = int(shproto.dispatcher.total_time * _TIME_SCALE)
+
             save_spectrum_json(
                 filename,
                 device,
                 compressed_hst,
                 cps_hist_snapshot,
-                elapsed,
+                elapsed_for_save,
                 [coeff_3, coeff_2, coeff_1],
                 spec_notes,
                 start_time,
                 end_time,
             )
+
             break
 
         # Stop on counts or time limit
@@ -587,10 +528,6 @@ def process_01(filename, compression, device, t_interval):
             hst = shproto.dispatcher.histogram.copy()
             tt  = shproto.dispatcher.total_time
 
-        # Device elapsed in seconds for local logic in this worker
-        elapsed_local = tt * getattr(shproto.dispatcher, "_TIME_SCALE", 1.0)
-
-
         # Clear counts in the last bin if requested
         if suppress_last_bin and hst:
             hst[-1] = 0
@@ -611,9 +548,11 @@ def process_01(filename, compression, device, t_interval):
 
         # Periodic save (or on external stop)
         if (t1 - last_save_time) >= 60 or shproto.dispatcher.spec_stopflag or shproto.dispatcher.stopflag:
+            
             with shared.write_lock:
                 cps_hist_snapshot = list(shared.count_history)
                 spec_notes = shared.spec_notes
+            
             save_spectrum_json(
                 filename,
                 device,
@@ -689,9 +628,6 @@ def process_02(filename_hmp, compression3d, device, t_interval):  # Compression 
             hst = shproto.dispatcher.histogram.copy()
             tt  = shproto.dispatcher.total_time
 
-        # Device elapsed in seconds using dispatcher scale (0.001 if ms, else 1.0)
-        elapsed = tt * getattr(shproto.dispatcher, "_TIME_SCALE", 1.0)
-
         # Clear counts in the last bin if requested
         if suppress_last_bin and hst:
             hst[-1] = 0
@@ -717,7 +653,10 @@ def process_02(filename_hmp, compression3d, device, t_interval):  # Compression 
 
         # Periodic save (or on external stop)
         if (t1 - last_save_time) >= 60 or shproto.dispatcher.spec_stopflag or shproto.dispatcher.stopflag:
+            
             logger.info(f'shproto process_02 saving {filename_hmp}_hmp.json\n')
+            
+            elapsed_for_save = int(shproto.dispatcher.total_time * _TIME_SCALE)
 
             data = {
                 "schemaVersion": "NPESv2",
@@ -742,7 +681,7 @@ def process_02(filename_hmp, compression3d, device, t_interval):  # Compression 
                                     "coefficients": [coeff_3, coeff_2, coeff_1]
                                 },
                                 "validPulseCount": counts,
-                                "measurementTime": elapsed,
+                                "measurementTime": elapsed_for_save,
                                 "spectrum": hst3d
                             }
                         }
@@ -795,14 +734,7 @@ def spec_stop():
         return
 
 def clear():
-    # we assign to module-level names below
-    global _device_host_offset, _skip_first_cps_bucket
-    _device_host_offset      = None
-    _skip_first_cps_bucket   = True
-
-
     with shproto.dispatcher.histogram_lock:
-        # legacy histogram + counters
         shproto.dispatcher.histogram         = [0] * max_bins
         shproto.dispatcher.pkts01            = 0
         shproto.dispatcher.pkts03            = 0
@@ -815,32 +747,22 @@ def clear():
         shproto.dispatcher.total_pulse_width = 0
         shproto.dispatcher.dropped           = 0
 
-        # runtime histogram state
         try:
             shproto.dispatcher.raw_hist[:] = [0] * max_bins
         except Exception:
             pass
         shproto.dispatcher.cps_total_counts = 0
 
-    # ---- CPS publisher: DISARM + skip first bucket after clear ----
-    _pub_prev_tt     = None
-    _pub_prev_counts = None
-    _accum_counts    = 0.0
-    _accum_time      = 0.0
-    _pub_armed       = False
-    _skip_first_cps_bucket = True  # ← this makes the first 1-s bucket be ignored
+        # STAT-gated CPS
+        shproto.dispatcher.stat_prev_tt = None
+        shproto.dispatcher.hist_delta_since_stat = 0
 
-    # device↔host time mapping will be re-established by the next STAT
-    _device_host_offset = None
-
-    # ---- reset local elapsed timer state ----
-    with _elapsed_lock:
-        globals()['_elapsed_accum'] = 0.0
-        globals()['_elapsed_start_host'] = None
-        globals()['_elapsed_running'] = False
-        globals()['_elapsed_last_push'] = 0.0
     with shared.write_lock:
-        shared.elapsed = 0
+        shared.cps = 0
+        shared.count_history = deque(maxlen=600)
+        # shared.elapsed = 0  # only if you use elapsed
+
+    
 
 def save_spectrum_json(filename, device, compressed_hst, count_history, elapsed, coeffs, spec_notes, start_time, end_time):
     try:
