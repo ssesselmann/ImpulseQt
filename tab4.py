@@ -44,6 +44,12 @@ class Tab4(QWidget):
         self.sum_n = 1
         self.last_loaded_filename = None
 
+        self.cps_timer = QTimer()
+        self.cps_timer.setInterval(1000)
+        self.cps_timer.timeout.connect(self.update_cps_label)
+        self.cps_timer.start()
+
+
         self.layout = QVBoxLayout(self)
 
         # === Plot ===
@@ -86,6 +92,25 @@ class Tab4(QWidget):
 
         # Add the slider section to your main layout or controls row
         self.layout.addLayout(slider_section)
+
+        # === CPS Display Label (bold, updates every second) ===
+        self.cps_label = QLabel("cps")
+        self.cps_label.setStyleSheet(P1)
+        self.cps_label.setAlignment(Qt.AlignLeft)
+        self.layout.addWidget(self.cps_label)
+
+        self.cps_live = QLabel("0")
+        self.cps_live.setStyleSheet(H1)
+        self.cps_live.setAlignment(Qt.AlignLeft)
+        self.layout.addWidget(self.cps_live)
+
+        # Horizontal layout to align CPS left under the slider
+        cps_row = QHBoxLayout()
+        cps_row.addWidget(self.cps_live)
+        cps_row.addStretch()
+        self.layout.addLayout(cps_row)
+
+
 
         # === Controls Row: Start/Stop/Download ===
         controls_layout = QHBoxLayout()
@@ -234,6 +259,15 @@ class Tab4(QWidget):
         self.ax.clear()
         self.canvas.draw()
 
+    def update_cps_label(self):
+        try:
+            with shared.write_lock:
+                cps = int(shared.cps/1e+6)
+            self.cps_live.setText(f"{cps}")
+        except Exception as e:
+            logger.warning(f"Failed to update CPS label: {e}")
+
+
     def update_plot(self):
         try:
             with shared.write_lock:
@@ -245,6 +279,10 @@ class Tab4(QWidget):
                 counts = counts[-300:]
 
             self.ax.clear()
+
+            self.ax.grid(True, which='both', linestyle='--', linewidth=0.5, color='gray')
+
+            self.ax.set_xticks(range(0, max(300, len(counts)) + 1, 10))
 
             # --- Base trace (Left or Mono) ---
             self.ax.plot(counts, label="Counts/sec", color="darkblue", linewidth=1.0)

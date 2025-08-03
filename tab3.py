@@ -614,15 +614,33 @@ class Tab3(QWidget):
                 y_min -= 0.5
                 y_max += 0.5
 
-            self.ax.imshow(Z, aspect='auto', origin='lower', cmap='turbo',
-                           extent=[x_axis.min(), x_axis.max(), y_min, y_max])
 
             # ── Create fresh 2D plot ────────────────────────────────────────
             self.figure.clf()
             self.ax = self.figure.add_subplot(111)
 
-            img = self.ax.imshow(Z, aspect='auto', origin='lower', cmap='turbo',
-               extent=[x_axis.min(), x_axis.max(), y_min, y_max])
+            # ── Compute color limits safely ─────────────────────────────────────
+            z_min = np.nanmin(Z)
+            z_max = np.nanmax(Z)
+
+            # Avoid vmin == vmax which causes color scale bugs
+            if np.isclose(z_max, z_min):
+                z_max = z_min + 1e-3  # Small fixed delta
+
+            # Optional: Always anchor 0 to blue in turbo colormap
+            if not log_switch:
+                z_min = min(0, z_min)
+
+            # ── Display the image ───────────────────────────────────────────────
+            img = self.ax.imshow(
+                Z,
+                aspect='auto',
+                origin='lower',
+                cmap='turbo',
+                extent=[x_axis.min(), x_axis.max(), y_min, y_max],
+                vmin=z_min,
+                vmax=z_max
+            )
 
             self.ax.set_xlabel("Energy (keV)" if cal_switch else "Bin #")
             self.ax.set_ylabel("Time (s)")
