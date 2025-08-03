@@ -387,7 +387,20 @@ def read_flag_data(path):
         return []  
         
 def to_settings():
-    return {key: globals().get(key, meta["default"]) for key, meta in SETTINGS_SCHEMA.items()}
+    result = {}
+    for key, meta in SETTINGS_SCHEMA.items():
+        val = globals().get(key, meta["default"])
+
+        # Fix non-serializable entries
+        if key == "count_history":
+            try:
+                val = list(map(float, val))  # safest: ensure it's a list of floats
+            except Exception:
+                val = []  # fallback on error
+
+        result[key] = val
+    return result
+
 
 
 def from_settings(settings: dict):
