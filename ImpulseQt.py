@@ -39,9 +39,9 @@ def copy_lib_if_needed():
         src = Path(resource_path("assets/lib"))
         try:
             shutil.copytree(src, dest)
-            print(f"[INFO] Copied lib to {dest}")
+            logger.info(f"[INFO] Copied lib to {dest}")
         except Exception as e:
-            print(f"[ERROR] Could not copy lib: {e}")
+            logger.error(f"[ERROR] Could not copy lib: {e}")
 
 # --------------------------------------
 # One-time setup for user data folders
@@ -102,24 +102,21 @@ class MainWindow(QMainWindow):
         shared.window_pos_y = pos.y()
         shared.window_width = size.width()
         shared.window_height = size.height()
-
         shared.session_end = datetime.datetime.now()
+        # save settings
         shared.save_settings()
-
         # Show feedback popup
         popup = FeedbackPopup(self)
         popup.exec()  # Modal
-
+        # Close app
         super().closeEvent(event)
 
     def on_tab_changed(self, index):
         current_widget = self.tabs.widget(index)
 
         if index == 1:
-            print("Tab 2 activated — loading histogram...")
             self.tab2.load_on_show() 
         elif index == 2:
-            print("Tab 3 activated — loading histogram...")
             self.tab3.load_on_show() 
 
         # Check if current tab has update_bins_selector method
