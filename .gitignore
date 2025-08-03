@@ -2,10 +2,13 @@
 *.pyc
 *.cer
 *.plist
-production/*
+
 dist/*
 build/*
+
+shproto/__pycache__/*
+shproto/.DS_Store/*
+
 credentials.py
 appsigner.py
-shproto/__pycache__/dispatcher.cpython-310.pyc
-shproto/.DS_Store
+
