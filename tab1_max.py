@@ -283,7 +283,7 @@ class Tab1MaxWidget(QWidget):
                 with shared.write_lock:
                     shared.device = int(device_value)
             except ValueError:
-                print(f"[WARN] Could not convert {device_value} to int.")
+                logger.warning(f"[WARN] Could not convert {device_value} to int.")
 
     def on_send_command(self):
         cmd = self.serial_command_input.text().strip()
