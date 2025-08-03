@@ -389,7 +389,6 @@ class Tab3(QWidget):
 
     def load_selected_file(self, filename):
         try:
-            print(filename)
             load_histogram_hmp(filename)
             logger.info(f"Loaded: {filename}")
 
