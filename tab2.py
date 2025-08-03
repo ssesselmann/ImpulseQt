@@ -1220,6 +1220,7 @@ class Tab2(QWidget):
         logger.info(f"Types in shared.histogram_2: {set(type(x) for x in shared.histogram_2)}")
         
 
+
         try:
             self.plot_widget.clear()
             self.plot_widget.addItem(self.vline, ignoreBounds=True)
@@ -1275,8 +1276,6 @@ class Tab2(QWidget):
 
                 self.comp_curve = self.plot_widget.plot(x_vals2, y_vals2, pen=pg.mkPen("r", width=1.5))
 
-
-         
             if histogram and histogram_2 and diff_switch == True:
                 len1 = len(histogram)
                 len2 = len(histogram_2)
