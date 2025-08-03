@@ -847,8 +847,6 @@ class Tab2(QWidget):
                 shared.compression = compression
                 shared.bins = shared.bins_abs // compression
                 logger.info(f"Compression set to {compression}, bins = {shared.bins}")
-                print(f"shared.bins updated: {shared.bins}")
-
 
     def on_select_filename_changed(self, index):
 
