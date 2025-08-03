@@ -15,7 +15,18 @@ a = Analysis(
     ['ImpulseQt.py'],
     pathex=[str(project_root)],
     binaries=[],
-    datas = [(f, f) for f in glob("assets/**/*", recursive=True) if os.path.isfile(f)],
+    datas = [
+        ("assets/max-desk.png", "assets"),
+        ("assets/gs_pro_v5.png", "assets"),
+        ("assets/impulse.gif", "assets"),
+        ("assets/footer.gif", "assets"),
+        ("assets/favicon.icns", "assets"),
+        ("assets/max-shape.png", "assets"),
+        ("assets/footer-small.gif", "assets"),
+        ("assets/favicon.ico", "assets"),
+        ] + [
+            (f, os.path.join("assets", "lib")) for f in glob("assets/lib/*") if os.path.isfile(f)
+        ],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
