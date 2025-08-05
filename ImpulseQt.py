@@ -159,6 +159,7 @@ class FeedbackPopup(QDialog):
 # Application Entry Point
 # --------------------------------------
 if __name__ == "__main__":
+    
     shared.ensure_settings_exists()
     shared.load_settings()
     initialize_user_data()
