@@ -25,6 +25,7 @@ from qt_compat import QWidget
 from shared import FOOTER, P1, P2, H1, H2, BTN, START, STOP
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
+from shproto.dispatcher import process_03
 
 class Tab1MaxWidget(QWidget):
     def __init__(self):
@@ -291,7 +292,9 @@ class Tab1MaxWidget(QWidget):
         if not cmd:
             cmd = "-inf"
 
+        # admin override
         is_override = cmd.startswith("+")
+
         if is_override:
             cmd = cmd[1:]
 
@@ -300,8 +303,8 @@ class Tab1MaxWidget(QWidget):
             return
 
         # Send the command
-        fn.process_03(cmd)
-        time.sleep(0.2)  # Wait for response to arrive
+        process_03(cmd)
+        time.sleep(0.05)  # Wait for response to arrive
 
         # Update the table
         self.update_device_info_table()
@@ -313,7 +316,7 @@ class Tab1MaxWidget(QWidget):
         # Show the latest received response
         with shared.write_lock:
             raw_output = getattr(shared, "max_serial_output", "[No output]")
-
+        self.serial_output_received = QLabel("Waiting for response...")
         self.serial_output_received.setText(f"Response: {raw_output}")
 
 
