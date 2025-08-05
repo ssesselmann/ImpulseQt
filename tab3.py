@@ -362,13 +362,15 @@ class Tab3(QWidget):
         self.update_graph()    
 
     def refresh_file_list(self):
+
         folder = Path(USER_DATA_DIR)
+
         pattern = "*_hmp.json"
+
         files = sorted(folder.glob(pattern), reverse=True)
 
         # Save original filenames and display names without extension
         self.file_options = [f.stem.replace("_hmp", "") for f in files]  # just the base names
-
         self.filename_dropdown.blockSignals(True)  # prevent accidental signal firing
         self.filename_dropdown.clear()
         self.filename_dropdown.addItem("Select file to load")
@@ -411,9 +413,13 @@ class Tab3(QWidget):
 
 
     def stop(self):
+
         self.refresh_timer.stop()
+
         stop_recording()
+
         self.refresh_file_list()
+
         self.filename_dropdown.setCurrentIndex(0)
 
 
