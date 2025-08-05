@@ -16,3 +16,4 @@ shproto/.DS_Store
 concept plot.py
 /shproto
 /shproto
+/shproto/__pycache__
