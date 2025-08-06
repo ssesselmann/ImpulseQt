@@ -1,3 +1,5 @@
+# shproto.dispatcher.py
+
 import sys
 import threading
 import time
@@ -15,7 +17,6 @@ from struct import *
 from datetime import datetime
 from collections import deque
 from array import array
-
 from shared import USER_DATA_DIR
 
 max_bins            = 8192
@@ -41,7 +42,7 @@ calibration_lock    = threading.Lock()
 
 _start_lock         = threading.Lock()
 
-_TIME_SCALE         = 1e-6 #µs
+_TIME_SCALE         = 1
 
 # ---- local elapsed timer (host based) ----
 _elapsed_lock = threading.Lock()
@@ -62,10 +63,12 @@ total_time          = 0
 cpu_load            = 0
 lost_impulses       = 0
 last_counts         = 0
-cps_list            = []
+stat_prev_tt        = 0
+count_history       = []
 serial_number       = ""
 calibration         = [0., 1., 0., 0., 0.]
 inf_str             = ''
+_hist_delta_since_stat = 0
 _dispatcher_thread  = None
 _dispatcher_started = False
 
@@ -74,21 +77,16 @@ _dispatcher_started = False
 _runtime_init = False   # module-private guard
 
 def _init_runtime():
-    global _runtime_init
+
+    global _runtime_init,raw_hist, cps_total_counts, stat_prev_tt, _hist_delta_since_stat
+
     if _runtime_init:
         return
 
-    # Raw histogram + running total
-    global raw_hist, cps_total_counts
     raw_hist = array('I', [0]) * max_bins
+
     cps_total_counts = 0
 
-    # STAT-gated CPS (live on dispatcher, no 'global' needed)
-    shproto.dispatcher.stat_prev_tt = None
-    shproto.dispatcher.hist_delta_since_stat = 0
-
-    if not isinstance(getattr(shared, "count_history", None), deque):
-        shared.count_history = deque(maxlen=600)
 
     _runtime_init = True
 
@@ -107,9 +105,13 @@ def _elapsed_push_if_needed(period=0.25):
     now = time.perf_counter()
     if (now - _elapsed_last_push) >= period:
         val = int(_elapsed_now_seconds())
-        with shared.write_lock:
-            shared.elapsed = val
+
+        if shared.run_flag.is_set():
+            with shared.write_lock:
+                shared.elapsed = val
+
         _elapsed_last_push = now
+
 
 def _elapsed_start():
     """Start/resume the local elapsed counter."""
@@ -118,7 +120,7 @@ def _elapsed_start():
             _elapsed_start_host = time.perf_counter()
             # assign to outer name
             globals()['_elapsed_start_host'] = _elapsed_start_host
-            globals()['_elapsed_running'] = True
+            globals()['_elapsed_running']    = True
 
 def _elapsed_stop():
     """Stop/pause the local elapsed counter."""
@@ -126,8 +128,9 @@ def _elapsed_stop():
         if _elapsed_running and _elapsed_start_host is not None:
             elapsed = time.perf_counter() - _elapsed_start_host
             globals()['_elapsed_accum'] = _elapsed_accum + elapsed
+
         globals()['_elapsed_start_host'] = None
-        globals()['_elapsed_running'] = False
+        globals()['_elapsed_running']    = False
 
 def _elapsed_reset():
     """Reset to zero; if running, keep running from now."""
@@ -141,10 +144,7 @@ def _elapsed_reset():
 
 
 def ensure_running(sn=None):
-    """
-    Start the dispatcher.start() loop once in a daemon thread.
-    Safe to call multiple times; does nothing if already running.
-    """
+
     global _dispatcher_started, _dispatcher_thread
 
     with _start_lock:
@@ -154,20 +154,22 @@ def ensure_running(sn=None):
 
         # Defensive reset if the old thread died
         _dispatcher_started = False
+
         _dispatcher_thread = threading.Thread(
             target=start,
             kwargs={'sn': sn},
             daemon=True,
             name="DispatcherThread",
         )
+
         _dispatcher_thread.start()
+
         _dispatcher_started = True
 
         # Optional tiny pause; not required, but keeps existing behavior.
         time.sleep(0.05)
 
         return _dispatcher_thread
-
 
 # ==========================================================
 # NANO Communicator function
@@ -178,16 +180,16 @@ def start(sn=None):
 
     READ_BUFFER = 16384 
 
-    pulse_file_opened = 0
-
-    shproto.dispatcher.clear()
+    #clear()
 
     with shproto.dispatcher.stopflag_lock:
-        shproto.dispatcher.stopflag = 0
+
+        globals()['stopflag'] = 0
+
 
     nano = shproto.port.connectdevice(sn)
     if not nano:
-        logger.error("Failed to connect to MAX.")
+        logger.error("Failed to connect to MAX\n")
         return
 
     # ---- moved here (after connect) ----
@@ -201,9 +203,15 @@ def start(sn=None):
 
     # Track whether the CSV file has been initialized
     pulse_file_initialized = False
+
     csv_file_path = os.path.join(USER_DATA_DIR, "_max-pulse-shape.csv")  # hoisted for safety
 
-    while not shproto.dispatcher.stopflag:
+    while not stopflag:
+
+        if not shared.run_flag.is_set():
+            time.sleep(0.25)  # Quarter-second pause
+        else:
+            time.sleep(0.05)
 
         _elapsed_push_if_needed(period=0.95)
 
@@ -214,13 +222,15 @@ def start(sn=None):
                 local_cmd = shproto.dispatcher.command
                 shproto.dispatcher.command = ""
 
-            logger.debug(f"Dispatcher command: {local_cmd!r}")
+            logger.debug(f"Dispatcher command: {local_cmd!r}\n")
 
             # Elapsed control (host-based)
             if   local_cmd == "-sta":
                 _elapsed_start()
+
             elif local_cmd == "-sto":
                 _elapsed_stop()
+
             elif local_cmd == "-rst":
                 _elapsed_reset()
                 shproto.dispatcher.clear() 
@@ -236,18 +246,18 @@ def start(sn=None):
             tx.stop()
 
             nano.write(tx.payload)
-            logger.debug(f"  → sent bytes: {tx.payload!r}")
+            logger.debug(f"  → sent bytes: {tx.payload!r}\n")
 
         # ---- blocking read with timeout; no busy spin, no lock around I/O ----
         try:
             rx_byte_arr = nano.read(size=READ_BUFFER)
             if not rx_byte_arr:
                 continue  # timed out, loop again
+
         except serial.SerialException as e:
-            if "device disconnected" in str(e):
-                logger.error("Device disconnected\n")
-            else:
-                logger.error(f"SerialException: {e}")
+
+            logger.error(f"[ERROR] shproto.dispatcher.start: {e}\n")
+
             break
 
         for rx_byte in rx_byte_arr:
@@ -273,14 +283,14 @@ def start(sn=None):
                     resp_lines = resp_decoded.splitlines()
                     if re.search('^VERSION', resp_decoded):
                         shproto.dispatcher.inf_str = resp_decoded
-                        logger.info(f"Got MAX settings:{shproto.dispatcher.inf_str} \n")
+                        logger.info(f"Got MAX settings:\n")
 
                 except UnicodeDecodeError:
                     logger.info("Unknown non-text response in dispatcher line 100\n")
 
                 if len(resp_lines) == 40:
-                    shproto.dispatcher.serial_number = "{}".format(resp_lines[39])
-                    logger.info("Found MAX serial # {}\n".format(shproto.dispatcher.serial_number))
+                    serial_number = "{}".format(resp_lines[39])
+                    logger.info("Found MAX serial # {}\n".format(serial_number))
                     b_str = ''
                     for b in resp_lines[0:10]:
                         b_str += b
@@ -342,10 +352,7 @@ def start(sn=None):
 
                             # running totals
                             shproto.dispatcher.cps_total_counts += delta
-                            shproto.dispatcher.hist_delta_since_stat += delta
-
-
-
+                            shproto.dispatcher._hist_delta_since_stat += delta
 
                 response.clear()
 
@@ -363,7 +370,7 @@ def start(sn=None):
 
                 if pulse_data:
                     pulse_data = pulse_data[:-1]  # Remove last item if needed
-                    logger.debug(f"Processed Pulse Data: {pulse_data}")
+                    logger.debug(f"[DEBUG] Processed Pulse Data: {pulse_data}\n")
 
                     with shared.write_lock:
                         shared.max_pulse_shape = pulse_data
@@ -401,26 +408,26 @@ def start(sn=None):
                 shproto.dispatcher.total_time = total_time_raw
                 shproto.dispatcher.cpu_load   = (payload[4] & 0xFF) | ((payload[5] & 0xFF) << 8)
 
-                curr_tt = total_time_raw * _TIME_SCALE  # device seconds
-
+                curr_tt = total_time_raw * _TIME_SCALE
                 prev_tt = shproto.dispatcher.stat_prev_tt
+
                 if prev_tt is None:
-                    # first STAT starts a new window
                     shproto.dispatcher.stat_prev_tt = curr_tt
-                    shproto.dispatcher.hist_delta_since_stat = 0
+                    shproto.dispatcher._hist_delta_since_stat = 0
                 else:
                     dt = curr_tt - prev_tt
-                    if dt <= 0:
-                        dt = 1.0  # fallback; should not happen if device time advances
 
-                    cps_int = int(round(shproto.dispatcher.hist_delta_since_stat / dt))
+                    if dt <= 0:
+                        dt = 1.0  # fallback
+
+                    cps_int = int(round(shproto.dispatcher._hist_delta_since_stat / dt))
+
                     with shared.write_lock:
                         shared.cps = cps_int
                         shared.count_history.append(cps_int)
 
-                    # next window
                     shproto.dispatcher.stat_prev_tt = curr_tt
-                    shproto.dispatcher.hist_delta_since_stat = 0
+                    shproto.dispatcher._hist_delta_since_stat = 0
 
                 response.clear()
 
@@ -431,142 +438,170 @@ def start(sn=None):
 # ========================================================
 def process_01(filename, compression, device, t_interval):
 
-    logger.info(f'process_01({filename})\n')
+    logger.info(f'[START] process_01({filename})\n')
 
     global counts, last_counts
+    # Initialize variables
+    counts       = 0
+    last_counts  = 0
+    elapsed      = 0
+    max_counts   = 0
+    max_bins     = 8192
+    spec_notes   = ""
 
-    counts              = 0
-    last_counts         = 0
-    elapsed             = 0
-    max_bins            = 8192
-    t0                  = time.time()
-    compression         = int(compression)
+    # time stamps
+    et_start     = time.time()
+    dt_start     = datetime.fromtimestamp(et_start)
+    dt_now       = dt_start
+    # time stamps
+    et_start     = time.time()
+    dt_start     = datetime.fromtimestamp(et_start)
+
+    # Integer spectrum compression 8, 16, 32 etc
+    with shared.write_lock:
+        compression = shared.compression
+        max_counts  = shared.max_counts
+        max_seconds = shared.max_seconds
+        compression = shared.compression
+
+    # integer number of bins 256, 512 1024 etc..
     compressed_bins     = int(max_bins / compression)
 
-    with shared.write_lock:
-        shared.bins = int(max_bins / compression)
-        # Load settings from shared
-        max_counts        = shared.max_counts
-        coeff_1           = shared.coeff_1
-        coeff_2           = shared.coeff_2
-        coeff_3           = shared.coeff_3
-        max_seconds       = shared.max_seconds
-        suppress_last_bin = shared.slb_switch
-        elapsed           = shared.elapsed
+    # Create a blank histogram map
+    hst      = [0] * max_bins
+    comp_hst = [0] * (max_bins // compression)
 
-    logger.info("passed all variables")
 
-    # Original histogram buffer (we'll copy from dispatcher.histogram)
-    hst = [0] * max_bins
-
-    # ---- Initialize items used in early-exit save paths ----
-    start_time     = datetime.fromtimestamp(t0)
-    end_time       = start_time
-    spec_notes     = ""                         # will refresh from shared each loop
-    compressed_hst = [0] * (max_bins // compression)
-
-    # Timing for UI publish & periodic save
-    last_update_time = time.time()
-    last_save_time   = time.time()
-
-    # We no longer build a local count_history; STAT handler owns shared.count_history
     while True:
-        if shproto.dispatcher.spec_stopflag or shproto.dispatcher.stopflag:
-            logger.info("MAX process_01 received stop signal.")
-            
-            # before each save (and on stop) take a fresh snapshot
-            with shared.write_lock:
-                cps_hist_snapshot = list(shared.count_history)
+        # ============================================================
+        # ACTUAL PROCESS_01 LOOP
+        # ============================================================
 
-            # device elapsed seconds from STAT
-            elapsed_for_save = int(shproto.dispatcher.total_time * _TIME_SCALE)
-
-            save_spectrum_json(
-                filename,
-                device,
-                compressed_hst,
-                cps_hist_snapshot,
-                elapsed_for_save,
-                [coeff_3, coeff_2, coeff_1],
-                spec_notes,
-                start_time,
-                end_time,
-            )
-
-            break
-
-        # Stop on counts or time limit
-        if counts >= max_counts or elapsed > max_seconds:
-            logger.info("MAX process_01 reached stopping condition (counts or time).")
-            with shared.write_lock:
-                cps_hist_snapshot = list(shared.count_history)
-                spec_notes = shared.spec_notes
-            save_spectrum_json(
-                filename,
-                device,
-                compressed_hst,
-                cps_hist_snapshot,
-                elapsed,
-                [coeff_3, coeff_2, coeff_1],
-                spec_notes,
-                start_time,
-                end_time,
-            )
-            break
-
+        # Sleep Seconds (usually 1 second)
         time.sleep(t_interval)
-
-        # Host time
-        t1 = time.time()
-
-        # Convert float timestamps to datetime objects
-        # (start_time is constant; end_time updated each loop)
-        end_time = datetime.fromtimestamp(t1)
+        # Epoch time now
+        et_now = time.time()
+        # Date time now
+        dt_now = datetime.fromtimestamp(et_now)
 
         # Fetch histogram and device time (raw units) from dispatcher
-        with shproto.dispatcher.histogram_lock:
-            hst = shproto.dispatcher.histogram.copy()
-            tt  = shproto.dispatcher.total_time
-
-        # Clear counts in the last bin if requested
-        if suppress_last_bin and hst:
-            hst[-1] = 0
+        with histogram_lock:
+            hst = histogram.copy()
+            tt  = total_time
 
         # Compress to requested number of channels
-        compressed_hst = [sum(hst[i:i + compression]) for i in range(0, max_bins, compression)]
+        comp_hst = [sum(hst[i:i + compression]) for i in range(0, max_bins, compression)]
 
         # Update totals for UI & stop condition
-        counts = sum(compressed_hst)
+        counts = sum(comp_hst)
 
-        # Publish to shared at UI cadence (do NOT touch shared.cps or shared.count_history here)
-        if (t1 - last_update_time) >= t_interval:
+        cps = counts/t_interval
+
+        # Update shared every interval (seconds)
+        if (et_now - et_start) >= t_interval:
+            
             with shared.write_lock:
                 shared.counts    = counts
-                shared.histogram = compressed_hst
-                spec_notes       = shared.spec_notes   # keep a fresh copy for saves
-            last_update_time = t1
+                shared.histogram = comp_hst
+                coeff_1     = shared.coeff_1
+                coeff_2     = shared.coeff_2
+                coeff_3     = shared.coeff_3
+                spec_notes  = shared.spec_notes
 
-        # Periodic save (or on external stop)
-        if (t1 - last_save_time) >= 60 or shproto.dispatcher.spec_stopflag or shproto.dispatcher.stopflag:
+            
+            et_start = et_now
+
+        # ==============================================================================================
+        # Save data do file once a minute to prevent data loss
+        # ==============================================================================================
+        if (et_now - et_start) >= 60 or spec_stopflag or stopflag:
             
             with shared.write_lock:
-                cps_hist_snapshot = list(shared.count_history)
-                spec_notes = shared.spec_notes
+                counts      = shared.counts
+                spec_notes  = shared.spec_notes
+                max_counts  = shared.max_counts
+                max_seconds = shared.max_seconds
+                elapsed     = shared.elapsed
             
+            save_spectrum_json(
+                filename, 
+                device, 
+                comp_hst, 
+                counts, 
+                elapsed, 
+                [coeff_3, coeff_2, coeff_1], 
+                spec_notes, 
+                dt_start, 
+                dt_now
+                )
+
+            et_start = et_now
+
+        last_counts = counts
+
+        # ================================================================
+        # STOP CONDITION #1 - Requested by user
+        # ================================================================
+        if spec_stopflag or stopflag:
+            
+            logger.info("[DO] dispatcher process_01 received stop signal\n")
+
+            # Final compression step
+            comp_hst = [sum(hst[i:i + compression]) for i in range(0, max_bins, compression)]
+
+            counts         = sum(comp_hst)
+
+            # Final save
             save_spectrum_json(
                 filename,
                 device,
-                compressed_hst,
-                cps_hist_snapshot,
+                comp_hst,
+                counts,
                 elapsed,
                 [coeff_3, coeff_2, coeff_1],
                 spec_notes,
-                start_time,
-                end_time,
-            )
-            last_save_time = t1
+                dt_start,
+                dt_now,
+                )
 
-        last_counts = counts
+            # sends process_03("-sto")
+            stop() 
+
+            with shared.write_lock:
+                spec_notes = shared.spec_notes
+                shared.run_flag.clear()
+
+            break
+
+        # ===============================================
+        # STOP CONDITION #2 Preset stop values
+        # ===============================================
+        if counts >= max_counts or elapsed > max_seconds:
+
+            logger.info("[IF] process_01 stop condition (counts or time)\n")
+
+            counts      = sum(comp_hst)
+
+            # save spectrum
+            save_spectrum_json(
+                filename, device, 
+                comp_hst, 
+                counts, 
+                elapsed, 
+                [coeff_3, coeff_2, coeff_1], 
+                spec_notes, 
+                dt_start, 
+                dt_now
+                )
+
+            # sends process_03("-sto")
+            stop() 
+
+            with shared.write_lock:
+                spec_notes = shared.spec_notes
+                shared.run_flag.clear()
+
+            break   
 
     return
 
@@ -579,7 +614,7 @@ def process_02(filename_hmp, compression3d, device, t_interval):  # Compression 
 
     global counts, last_counts, histogram_hmp
 
-    t0                  = time.time()
+    et_start                  = time.time()
     counts              = 0
     last_counts         = 0
     elapsed             = 0
@@ -588,73 +623,69 @@ def process_02(filename_hmp, compression3d, device, t_interval):  # Compression 
     last_hst            = [0] * compressed_bins
 
     with shared.write_lock:
+        t_interval        = shared.t_interval
         max_counts        = shared.max_counts
+        max_seconds       = shared.max_seconds
         coeff_1           = shared.coeff_1
         coeff_2           = shared.coeff_2
         coeff_3           = shared.coeff_3
-        max_seconds       = shared.max_seconds
-        t_interval        = shared.t_interval
-        suppress_last_bin = getattr(shared, "slb_switch", False)
-
+        
     # Define the histogram list
     hst = [0] * max_bins  # Initialize the original histogram list
 
     # Initialize last update and save times
-    last_update_time = time.time()
-    last_save_time   = time.time()
+    et_start = time.time()
+    et_start   = time.time()
 
     # --- Initialize timestamps used by save path BEFORE the loop ---
-    start_time = datetime.fromtimestamp(t0)
-    end_time   = start_time
+    dt_start = datetime.fromtimestamp(et_start)
+    dt_now   = dt_start
 
     while True:
         if shproto.dispatcher.spec_stopflag or shproto.dispatcher.stopflag:
-            logger.info("MAX process_02 received stop signal.")
+            logger.info("MAX process_02 received stop signal\n")
             break
 
         # Stop on counts or time limit
         if counts >= max_counts or elapsed > max_seconds:
-            logger.info("MAX process_02 reached stopping condition (counts or time).")
+            logger.info("MAX process_02 reached stopping condition (counts or time)\n")
             break
 
         time.sleep(t_interval)
 
         # Host time (for file timestamps)
-        t1 = time.time()
-        end_time = datetime.fromtimestamp(t1)
+        et_now = time.time()
+        dt_now = datetime.fromtimestamp(et_now)
 
         # Fetch the latest histogram snapshot and device time
         with shproto.dispatcher.histogram_lock:
             hst = shproto.dispatcher.histogram.copy()
             tt  = shproto.dispatcher.total_time
 
-        # Clear counts in the last bin if requested
-        if suppress_last_bin and hst:
-            hst[-1] = 0
-
         # Compress channels
-        compressed_hst = [sum(hst[i:i + compression3d]) for i in range(0, max_bins, compression3d)]
+        comp_hst = [sum(hst[i:i + compression3d]) for i in range(0, max_bins, compression3d)]
 
         # Sum total counts for UI / stop condition
-        counts = sum(compressed_hst)
+        counts = sum(comp_hst)
 
         # Net counts in each compressed bin for this time slice
-        this_hst = [a - b for a, b in zip(compressed_hst, last_hst)]
+        this_hst = [a - b for a, b in zip(comp_hst, last_hst)]
         hst3d.append(this_hst)
 
-        # Update globals for UI at cadence; do NOT touch CPS or count_history here
-        if (t1 - last_update_time) >= t_interval:
+        # Update globals for UI at cadence; do NOT touch CPS or cps list here
+        if (et_now - et_start) >= t_interval:
             # keep only recent window (e.g., last 60 slices) for plotting
             histogram_hmp_window = hst3d[-60:]
             with shared.write_lock:
                 shared.counts         = counts
                 shared.histogram_hmp  = histogram_hmp_window
-            last_update_time = t1
+            
+            et_start = et_now
 
         # Periodic save (or on external stop)
-        if (t1 - last_save_time) >= 60 or shproto.dispatcher.spec_stopflag or shproto.dispatcher.stopflag:
+        if (et_now - et_start) >= 60 or shproto.dispatcher.spec_stopflag or shproto.dispatcher.stopflag:
             
-            logger.info(f'shproto process_02 saving {filename_hmp}_hmp.json\n')
+            logger.info(f'[INFO] shproto process_02 saving {filename_hmp}_hmp.json\n')
             
             elapsed_for_save = int(shproto.dispatcher.total_time * _TIME_SCALE)
 
@@ -672,8 +703,8 @@ def process_02(filename_hmp, compression3d, device, t_interval):  # Compression 
                             "note": ""
                         },
                         "resultData": {
-                            "startTime": start_time.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
-                            "endTime": end_time.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+                            "startTime": dt_start.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+                            "endTime": dt_now.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
                             "energySpectrum": {
                                 "numberOfChannels": compressed_bins,
                                 "energyCalibration": {
@@ -692,79 +723,63 @@ def process_02(filename_hmp, compression3d, device, t_interval):  # Compression 
             json_data = json.dumps(data, separators=(",", ":"))
 
             file_path = os.path.join(USER_DATA_DIR, f'{filename_hmp}_hmp.json')
-            logger.info(f'file path = {file_path}\n')
+
+            logger.info(f'[INFO] file path = {file_path}\n')
 
             with open(file_path, "w") as wjf:
                 wjf.write(json_data)
 
-            last_save_time = t1
-            hst3d = []           # start a fresh block of time slices
-            # (no local count_history here anymore)
+            et_start = et_now
+            hst3d = []      
 
         last_counts = counts
-        last_hst    = compressed_hst
+        last_hst    = comp_hst
 
     return
 
 
 # This process is used for sending commands to the Nano device
 def process_03(cmd):
+
     ensure_running()
+
     with shproto.dispatcher.command_lock:
+
         shproto.dispatcher.command = cmd
-    time.sleep(0.1)
-    logger.info(f'Completed process_03("{cmd}"")\n')
 
-def stop():
-    logger.info('Command shproto.stop \n')
-    with shproto.dispatcher.stopflag_lock:
-        try:
-            logger.info('Request process_03(-sto)\n')
-            process_03('-sto')
-            shproto.dispatcher.spec_stopflag = 1
-        except Exception as e:
-            logger.error(f"Error in stop: {e}")
-        finally:
-            logger.info('shproto.stop_flag is set\n')
+    logger.info(f'[OK] dispatcher process_03("{cmd}")\n')
 
-def spec_stop():
-    with shproto.dispatcher.spec_stopflag_lock:
-        shproto.dispatcher.spec_stopflag = 1
-        logger.info('dispatcher - Stop flag set\n')
-        return
+
 
 def clear():
+
+    logger.info("[DO] dispatcher.clear()\n")
+
     with shproto.dispatcher.histogram_lock:
-        shproto.dispatcher.histogram         = [0] * max_bins
-        shproto.dispatcher.pkts01            = 0
-        shproto.dispatcher.pkts03            = 0
-        shproto.dispatcher.pkts04            = 0
-        shproto.dispatcher.total_pkts        = 0
-        shproto.dispatcher.cpu_load          = 0
-        shproto.dispatcher.cps               = 0
-        shproto.dispatcher.total_time        = 0
-        shproto.dispatcher.lost_impulses     = 0
-        shproto.dispatcher.total_pulse_width = 0
-        shproto.dispatcher.dropped           = 0
+        shproto.dispatcher.stat_prev_tt             = None
+        shproto.dispatcher._hist_delta_since_stat   = 0
+        shproto.dispatcher.histogram                = [0] * max_bins
+        #raw_hist[:]              = [0] * max_bins
+        shproto.dispatcher.pkts01                   = 0
+        shproto.dispatcher.pkts03                   = 0
+        shproto.dispatcher.pkts04                   = 0
+        shproto.dispatcher.total_pkts               = 0
+        shproto.dispatcher.cpu_load                 = 0
+        shproto.dispatcher.cps                      = 0
+        shproto.dispatcher.total_time               = 0
+        shproto.dispatcher.lost_impulses            = 0
+        shproto.dispatcher.total_pulse_width        = 0
+        shproto.dispatcher.dropped                  = 0
+        shproto.dispatcher.cps_total_counts         = 0
 
-        try:
-            shproto.dispatcher.raw_hist[:] = [0] * max_bins
-        except Exception:
-            pass
-        shproto.dispatcher.cps_total_counts = 0
-
-        # STAT-gated CPS
-        shproto.dispatcher.stat_prev_tt = None
-        shproto.dispatcher.hist_delta_since_stat = 0
 
     with shared.write_lock:
-        shared.cps = 0
-        shared.count_history = deque(maxlen=600)
-        # shared.elapsed = 0  # only if you use elapsed
+        shared.cps           = 0
+        shared.histogram     = [0] * max_bins
+        shared.count_history      = []
 
-    
 
-def save_spectrum_json(filename, device, compressed_hst, count_history, elapsed, coeffs, spec_notes, start_time, end_time):
+def save_spectrum_json(filename, device, comp_hst, counts, elapsed, coeffs, spec_notes, dt_start, dt_now):
     try:
         data = {
             "schemaVersion": "NPESv2",
@@ -780,17 +795,17 @@ def save_spectrum_json(filename, device, compressed_hst, count_history, elapsed,
                         "note": spec_notes,
                     },
                     "resultData": {
-                        "startTime": start_time.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
-                        "endTime": end_time.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+                        "startTime": dt_start.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+                        "endTime": dt_now.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
                         "energySpectrum": {
-                            "numberOfChannels": len(compressed_hst),
+                            "numberOfChannels": len(comp_hst),
                             "energyCalibration": {
                                 "polynomialOrder": 2,
                                 "coefficients": coeffs
                             },
-                            "validPulseCount": sum(compressed_hst),
+                            "validPulseCount": counts,
                             "measurementTime": elapsed,
-                            "spectrum": compressed_hst
+                            "spectrum": comp_hst
                         }
                     }
                 }
@@ -798,9 +813,12 @@ def save_spectrum_json(filename, device, compressed_hst, count_history, elapsed,
         }
 
         json_path = os.path.join(USER_DATA_DIR, f"{filename}.json")
+
         with open(json_path, "w") as f:
+
             json.dump(data, f, separators=(",", ":"))
-        logger.info(f"[OK] Spectrum saved to {json_path}")
+
+        logger.info(f"[OK] Spectrum saved to {json_path}\n")
 
         cps_data = {
             "filename": filename,
@@ -810,9 +828,11 @@ def save_spectrum_json(filename, device, compressed_hst, count_history, elapsed,
         }
 
         cps_path = os.path.join(USER_DATA_DIR, f"{filename}_cps.json")
+
         with open(cps_path, "w") as f:
             json.dump(cps_data, f, indent=2)
-        logger.info(f"[OK] CPS saved to {cps_path}")
+
+        logger.info(f"[OK] CPS saved to {cps_path}\n")
 
     except Exception as e:
         logger.error(f"[ERROR] Failed to save spectrum: {e}")
@@ -826,7 +846,7 @@ def load_json_data(file_path):
         return {
             "schemaVersion": "NPESv1",
             "resultData": {
-                "startTime": int(time.time() * 1e6),  # Convert seconds to microseconds
+                "startTime": time.time(),  # Convert seconds to microseconds
                 "energySpectrum": {
                     "numberOfChannels": 0,
                     "energyCalibration": {
@@ -840,3 +860,15 @@ def load_json_data(file_path):
                 }
             }
         }
+
+def stop():
+    with stopflag_lock:
+        try: 
+            process_03('-sto')
+            spec_stopflag = 1
+            logger.debug('[DEBUG] dispatcher.process_03("-sto")\n')
+
+        except Exception as e:
+            logger.error(f"[ERROR] dispatcher.stop(): {e}\n")
+
+
