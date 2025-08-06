@@ -223,6 +223,7 @@ class Tab1ProWidget(QWidget):
         # Label bar under the slider
         label_row = QHBoxLayout()
         label_row.setSpacing(0)
+        
         for val in range(-20, 21, 5):
             label = QLabel(str(val))
             label.setAlignment(Qt.AlignCenter)
