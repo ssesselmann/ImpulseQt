@@ -424,18 +424,23 @@ def start_recording(mode, device_type):
 def start_max_recording(mode):
     # Try to stop any previous process
     if hasattr(shared, "max_process_thread") and shared.max_process_thread.is_alive():
-        logger.warning("Previous MAX thread still running. Attempting to stop...")
+
+        logger.warning("[WARNING] Previous MAX thread still running. Attempting to stop\n")
+
         shproto.dispatcher.spec_stopflag = 1
         shared.max_process_thread.join(timeout=2)
-        logger.info("Previous MAX thread stopped.")
+        logger.info("[INFO] Previous MAX thread stopped\n")
 
     with shared.write_lock:
         shared.dropped_counts = 0
-        filename    = shared.filename
+        shared.counts         = 0
+        shared.elapsed        = 0
+        shared.run_flag.set()
+        filename     = shared.filename
         filename_hmp = shared.filename_hmp
-        compression = shared.compression
-        device      = shared.device
-        t_interval  = shared.t_interval
+        compression  = shared.compression
+        device       = shared.device
+        t_interval   = shared.t_interval
 
     logger.info(f"Starting MAX recording ({filename}) in mode {mode}")
 
@@ -445,25 +450,29 @@ def start_max_recording(mode):
     # Start dispatcher thread (if needed)
     dispatcher_thread = threading.Thread(target=shproto.dispatcher.start, daemon=True)
     dispatcher_thread.start()
-    time.sleep(0.4)
+    time.sleep(0.25)
     shproto.dispatcher.process_03('-mode 0')
-    time.sleep(0.4)
+    time.sleep(0.25)
     shproto.dispatcher.process_03('-rst')
-    time.sleep(0.4)
+    time.sleep(0.25)
     shproto.dispatcher.process_03('-sta')
-    time.sleep(0.4)
+    time.sleep(0.25)
 
     # Create a recording thread to run process_01 or process_02
     def run_dispatcher():
         try:
             if mode == 3:
-                logger.info("Launching MAX 3D process_02")
+                logger.info("[INFO] Launching MAX 3D process_02\n")
+
                 shproto.dispatcher.process_02(filename_hmp, compression, device, t_interval)
+
             else:
-                logger.info("Launching MAX 2D process_01")
+                logger.info("[INFO] Launching MAX 2D process_01\n")
+
                 shproto.dispatcher.process_01(filename, compression, device, t_interval)
+
         except Exception as e:
-            logger.error(f"[ERROR] MAX process thread crashed: {e}")
+            logger.error(f"[ERROR] MAX process thread crashed: {e}\n")
 
     process_thread = threading.Thread(target=run_dispatcher, daemon=True)
     process_thread.start()
@@ -476,13 +485,15 @@ def start_max_recording(mode):
     def run_dispatcher():
         try:
             if mode == 3:
-                logger.info("Launching MAX 3D process_02")
+                logger.info("[INFO] Launching MAX 3D process_02\n")
                 shproto.dispatcher.process_02(filename_hmp, compression3d, device, t_interval)
+
             else:
-                logger.info("Launching MAX 2D process_01")
+                logger.info("[INFO] Launching MAX 2D process_01\n")
                 shproto.dispatcher.process_01(filename, compression, device, t_interval)
+
         except Exception as e:
-            logger.error(f"[ERROR] MAX process thread crashed: {e}")
+            logger.error(f"[ERROR] MAX process thread crashed: {e}\n")
 
     process_thread = threading.Thread(target=run_dispatcher, daemon=True)
     process_thread.start()
@@ -532,15 +543,16 @@ def start_pro_recording(mode):
 
 
 def stop_recording():
+
     with shared.write_lock:
         device_type = shared.device_type
-        shared.run_flag.clear()  # for PRO
+        shared.run_flag.clear()
 
     if device_type == "MAX":
-        shproto.dispatcher.spec_stopflag = 1  # for MAX
-        shproto.dispatcher.process_03('-sto')
-
-    logger.info(f"[INFO] Recording stopped for device {device_type}")
+        shproto.dispatcher.spec_stopflag = 1
+        shproto.dispatcher.stop()
+        
+    logger.info(f"[INFO] Recording stopped for device [{device_type}]\n")
 
 
     
@@ -557,6 +569,8 @@ def clear_shared(mode):
             shared.histogram       = [0] * shared.bins
             shared.spec_notes      = ""
 
+        logger.info("[INFO] cleared shared variables on mode 2\n")    
+
 
     if mode == 3:
 
@@ -565,21 +579,25 @@ def clear_shared(mode):
         try:
             if os.path.exists(file_path):
                 os.remove(file_path)
-                logger.info(f"3..deleting file: {file_path}\n")
+                logger.info(f"[INFO] deleting file: {file_path}\n")
 
             else:
-                logger.warning(f"4..file does not exist: {file_path}\n")
+                logger.warning(f"[WARNING] file does not exist: {file_path}\n")
 
         except Exception as e:
 
             logger.error(f"[ERROR] deleting file {file_path}: {e}\n")
 
-        shared.count_history   = []
-        shared.counts          = 0
-        shared.cps             = 0
-        shared.elapsed         = 0
-        shared.dropped_counts  = 0
-        shared.histogram_hmp    = []
+        
+        with shared.write_lock:
+            shared.count_history   = []
+            shared.counts          = 0
+            shared.cps             = 0
+            shared.elapsed         = 0
+            shared.dropped_counts  = 0
+            shared.histogram_hmp    = []
+
+        logger.info("[INFO] cleared shared variables on mode 3\n")  
 
     return
 
@@ -612,7 +630,7 @@ def export_csv(filename, data_directory, calib_switch):
         with open(os.path.join(data_directory, f'{filename}.json')) as f:
             data = json.load(f)
     except FileNotFoundError:
-        logger.error(f"[ERROR] {filename}.json not found in {data_directory}")
+        logger.error(f"[ERROR] {filename}.json not found in {data_directory}\n")
         return
 
     if data.get("schemaVersion") == "NPESv2":
@@ -622,7 +640,7 @@ def export_csv(filename, data_directory, calib_switch):
         spectrum = data["resultData"]["energySpectrum"]["spectrum"]
         coefficients = data["resultData"]["energySpectrum"]["energyCalibration"]["coefficients"]
     except KeyError:
-        logger.error(f"[ERROR] Missing expected keys in {filename}.json")
+        logger.error(f"[ERROR] Missing expected keys in {filename}.json\n")
         return
 
     # Ensure the download folder exists
@@ -723,74 +741,9 @@ def fetch_json(file_id):
         logger.error(f"Error fetching JSON: {e}\n")
         return None
 
-def get_serial_device_information():
-    try:
-        with shproto.dispatcher.command_lock:  
-            shproto.dispatcher.command = "-inf" 
-
-        time.sleep(0.4)
-
-        dev_info = shproto.dispatcher.inf_str
-        shproto.dispatcher.inf_str = "" 
-
-        return dev_info if dev_info else "No response from device"
-
-    except Exception as e:
-        logger.error(f"[ERROR] retrieving device information: {e}")
-        return "[ERROR] retrieving device information"
 
 
-def parse_device_info(info_string):
 
-    tokens = info_string.split()
-    settings = {}
-    i = 0
-    n = len(tokens)
-
-    while i < n:
-        # 1) key is always one token
-        key = tokens[i]
-        i += 1
-        if i >= n:
-            break
-
-        # 2) if the next token starts a bracketed list, consume until the closing bracket
-        if tokens[i].startswith("["):
-            start = i
-            j = i
-            while j < n and not tokens[j].endswith("]"):
-                j += 1
-
-            # join all pieces of the list, strip brackets, split into parts
-            raw_list = " ".join(tokens[start : j + 1])
-            inner   = raw_list.strip("[]").strip()
-            parts   = re.split(r"[,\s]+", inner)
-
-            # convert each part to int/float if possible
-            lst = []
-            for part in parts:
-                if part.lstrip("-").replace(".", "", 1).isdigit() and part.count(".") < 2:
-                    lst.append(int(part) if "." not in part else float(part))
-                else:
-                    lst.append(part)
-            
-            settings[key] = lst
-            i = j + 1  # advance past the entire bracketed list
-
-        else:
-            # 3) single-token value case
-            val_token = tokens[i]
-            i += 1
-
-            # convert to int/float if it looks like a number
-            if val_token.lstrip("-").replace(".", "", 1).isdigit() and val_token.count(".") < 2:
-                converted = int(val_token) if "." not in val_token else float(val_token)
-            else:
-                converted = val_token
-
-            settings[key] = converted
-
-    return settings
 
 # Check if commands sent to processor is safe
 def allowed_command(cmd):
@@ -798,6 +751,7 @@ def allowed_command(cmd):
         r"^-U[0-9]{1,3}$",
         r"^-V[0-9]{1,3}$",
         r"^-sto$",
+        r"^-sta$",
         r"^-inf$",
         r"^-cal$",
         r"^-nos[0-9]{1,3}$",
@@ -825,11 +779,11 @@ def is_valid_json(file_path):
         return False
 
 
-def get_options(kind="user"):
+def get_filename_options(kind="user"):
     # Returns a list of file options for dropdowns, based on file type.
     def match(filename: str) -> bool:
         if kind == "user":
-            excluded = ["_cps.json", "-cps.json", "_hmp.json", "_settings.json", "_user.json"]
+            excluded = ["_cps.json", "-cps.json", "_hmp.json", "_user.json"]
             return not any(filename.endswith(sfx) for sfx in excluded)
         elif kind == "cps":
             return filename.endswith("_cps.json")
@@ -952,6 +906,7 @@ def reset_stores():
 
 
 def load_histogram(filename):
+
     with shared.write_lock:
         data_directory = shared.USER_DATA_DIR
 
@@ -970,7 +925,15 @@ def load_histogram(filename):
 
         spectrum_data = data["resultData"]["energySpectrum"]
         calibration = spectrum_data.get("energyCalibration", {})
-        coefficients = calibration.get("coefficients", [0.0, 0.0, 0.0])[::-1]
+        coefficients = calibration.get("coefficients")
+
+        # Handle missing, null, or invalid coefficient lists
+        if not isinstance(coefficients, list) or len(coefficients) < 1:
+            coefficients = [0.0, 0.0, 0.0]
+        else:
+            # Fill missing terms with zeros and reverse
+            coefficients = (coefficients + [0.0, 0.0, 0.0])[:3][::-1]
+
 
         with shared.write_lock:
             shared.histogram       = spectrum_data["spectrum"]
@@ -984,10 +947,12 @@ def load_histogram(filename):
             shared.coeff_2 = coefficients[1]
             shared.coeff_3 = coefficients[2]
 
+        logger.info(f"[INFO] Loaded histogram {filename} \n")    
+
         return True
 
     except Exception as e:
-        logger.info(f"[ERROR] in load_histogram('{filename}'): {e}")
+        logger.info(f"[ERROR] failed to load_histogram('{filename}'): {e}\n")
         return False
 
 def load_histogram_2(filename):
@@ -1017,34 +982,44 @@ def load_histogram_2(filename):
             shared.comp_coeff_2     = data["resultData"]["coefficients"][1]
             shared.comp_coeff_3     = data["resultData"]["coefficients"][2]
 
-            return True
+        logger.info(f"[INFO] Loaded histogram_2 {filename} \n") 
+
+        return True
 
     except Exception as e:
         
-        logger.info(f"[ERROR] loading histogram_2 from {filename}: {e}\n")
+        logger.info(f"[ERROR] failed loading histogram_2 {filename}: {e}\n")
+
         return False
 
 def load_histogram_hmp(stem):
-    logger.info("1.. load_histogram_hmp")
 
     # Strip any extension and suffix to avoid duplication
     clean_stem = Path(stem).stem.removesuffix("_hmp")
 
-    file_path = Path(shared.USER_DATA_DIR) / f"{clean_stem}_hmp.json"
+    file_path  = Path(shared.USER_DATA_DIR) / f"{clean_stem}_hmp.json"
 
     if not file_path.exists():
-        logger.error(f"[ERROR] Load_histogram_hmp, file not found: {file_path}")
+
+        logger.error(f"[ERROR] Load_histogram_hmp, file not found: {file_path}\n")
+
         with shared.write_lock:
+
             shared.histogram_hmp = [[0] * 512] * 10
+
         return
 
     try:
         with open(file_path, "r", encoding="utf-8") as file:
-            logger.info("2.. loading 3d file")
+
+            logger.info("[INFO] loading 3d file\n")
+
             data = json.load(file)
-            logger.info("3.. parsed 3d file")
+
+            logger.info("[INFO]parsed 3d file\n")
 
         if data.get("schemaVersion") == "NPESv2":
+
             data = data["data"][0]
 
         with shared.write_lock:
@@ -1058,20 +1033,24 @@ def load_histogram_hmp(stem):
             shared.startTime3d      = data["resultData"]["startTime"]
             shared.endTime3d        = data["resultData"]["startTime"]
 
-        logger.info(f"4.. shared updated from {file_path}")
+        logger.info(f"[INFO] shared updated from {file_path}\n")
 
     except KeyError as e:
-        logger.error(f"Missing expected data key in {file_path}: {e}")
+
+        logger.error(f"[ERROR] Missing expected data key in {file_path}: {e}\n")
 
     except Exception as e:
-        logger.error(f"[ERROR] Exception loading 3D histogram: {e}")
+
+        logger.error(f"[ERROR] Exception loading 3D histogram: {e}\n")
 
 
 
 def load_cps_file(filepath):
     
     if not os.path.exists(filepath):
-        logging.info("File does not exist:", filepath)
+
+        logging.info(f"[INFO] File does not exist:\n {filepath} \n")
+
         return
 
     try:
@@ -1120,9 +1099,9 @@ def start_max_pulse():
         process_03('-mode 2')  # Switch to pulse mode
         time.sleep(0.3)
         process_03('-sta')  # Start recording
-        time.sleep(0.4)
+        time.sleep(0.1)
     except Exception as e:
-        logger.error(f"Error in process_03 command: {e}")
+        logger.error(f"[ERROR] in process_03 command: {e}\n")
         return True  # Signal that the interval should remain disabled
 
     if not stop_thread.is_set():  # Check if the thread is already running
@@ -1136,9 +1115,9 @@ def start_max_oscilloscope():
         process_03('-mode 1')  # Switch to pulse mode
         time.sleep(0.3)
         process_03('-sta')     # Start process
-        time.sleep(0.4)
+        time.sleep(0.1)
     except Exception as e:
-        logger.error(f"[ERROR] in process_03 command: {e}")
+        logger.error(f"[ERROR] in process_03 command: {e}\n")
         return True  # Signal that the interval should remain disabled
 
     if not stop_thread.is_set():  # Check if the thread is already running
@@ -1149,10 +1128,10 @@ def start_max_oscilloscope():
 def stop_max_pulse_check():
     try:
         process_03('-sto')  # Stop recording
-        time.sleep(0.3)
+        time.sleep(0.1)
         process_03('-mode 0')  # Reset mode to default
     except Exception as e:
-        logger.error(f"[ERROR] in process_03 command: {e}")
+        logger.error(f"[ERROR] in process_03 command: {e}\n")
     
     stop_thread.set()  # Signal the thread to stop
     return True  # Signal that the interval should be disabled
@@ -1165,7 +1144,7 @@ def capture_pulse_data():
                 break
             pulse_data_queue.put(pulse_data)  # Add the list to the queue
     except Exception as e:
-        logger.error(f"[ERROR] while capturing pulse data: {e}")
+        logger.error(f"[ERROR] while capturing pulse data: {e}\n")
 
 
 def get_flag_options():
@@ -1181,7 +1160,7 @@ def get_flag_options():
                 'value': file.name  # Only the filename, not full path
             })
     except Exception as e:
-        loger.error(f"[ERROR] Failed to list flag files in {path}: {e}")
+        loger.error(f"[ERROR] Failed to list flag files in {path}: {e}\n")
 
     return options
 
@@ -1191,7 +1170,7 @@ def read_flag_data(path):
             data = json.load(f)
         return data
     except Exception as e:
-        logger.error(f"[ERROR] reading isotopes data: {e}")
+        logger.error(f"[ERROR] reading isotopes data: {e}\n")
         return []    
 
 # Opens and reads the isotopes.json file
@@ -1200,7 +1179,7 @@ def get_isotope_flags(path):
         with open(path, 'r') as file:
             return json.load(file)
     except:
-        logger.error('[ERROR] functions get_isotopes failed')
+        logger.error('[ERROR] functions get_isotopes failed\n')
 
 def extract_tco_pairs(dev_info):
     match = re.search(r'Tco\s+\[([-\d\s]+)\]', dev_info)
@@ -1209,23 +1188,47 @@ def extract_tco_pairs(dev_info):
     nums = list(map(int, match.group(1).split()))
     return list(zip(nums[::2], nums[1::2]))
 
+def get_serial_device_information():
+    try:
+        with shproto.dispatcher.command_lock:  
+
+            shproto.dispatcher.command = "-inf" 
+
+            time.sleep(0.4)
+
+        dev_info = shproto.dispatcher.inf_str
+
+        shproto.dispatcher.inf_str = "" 
+
+        return dev_info if dev_info else "No response from device"
+
+    except Exception as e:
+        logger.error(f"[ERROR] retrieving device information: {e}\n")
+        return "[ERROR] retrieving device information"
+
+
 def generate_device_settings_table_data():
 
     process_03('-cal')
-    time.sleep(0.3)
+
+    time.sleep(0.2)
 
     serial_number = shproto.dispatcher.serial_number
 
     time.sleep(0.2)
+
     dev_info = get_serial_device_information()
+
     time.sleep(0.2)
 
     info = parse_device_info(dev_info)
+
     tco_pairs = extract_tco_pairs(dev_info)
 
     with shared.write_lock:
+        shared.device_info   = info
         shared.serial_number = serial_number
-        shared.tco_pairs = tco_pairs  # Save for use elsewhere if needed
+        shared.tco_pairs     = tco_pairs  
 
     rows = [
         ("Version",           "-ver",  info.get("VERSION")),
@@ -1246,6 +1249,60 @@ def generate_device_settings_table_data():
     ]
 
     return rows, tco_pairs
+
+def parse_device_info(info_string):
+
+    tokens = info_string.split()
+    settings = {}
+    i = 0
+    n = len(tokens)
+
+    while i < n:
+        # 1) key is always one token
+        key = tokens[i]
+        i += 1
+        if i >= n:
+            break
+
+        # 2) if the next token starts a bracketed list, consume until the closing bracket
+        if tokens[i].startswith("["):
+            start = i
+            j = i
+            while j < n and not tokens[j].endswith("]"):
+                j += 1
+
+            # join all pieces of the list, strip brackets, split into parts
+            raw_list = " ".join(tokens[start : j + 1])
+            inner   = raw_list.strip("[]").strip()
+            parts   = re.split(r"[,\s]+", inner)
+
+            # convert each part to int/float if possible
+            lst = []
+            for part in parts:
+                if part.lstrip("-").replace(".", "", 1).isdigit() and part.count(".") < 2:
+                    lst.append(int(part) if "." not in part else float(part))
+                else:
+                    lst.append(part)
+            
+            settings[key] = lst
+            i = j + 1  # advance past the entire bracketed list
+
+        else:
+            # 3) single-token value case
+            val_token = tokens[i]
+            i += 1
+
+            # convert to int/float if it looks like a number
+            if val_token.lstrip("-").replace(".", "", 1).isdigit() and val_token.count(".") < 2:
+                converted = int(val_token) if "." not in val_token else float(val_token)
+            else:
+                converted = val_token
+
+            settings[key] = converted
+
+    logger.info(f"[DEBUG] Parsed device settings\n")
+
+    return settings
 
 
 def sanitize_for_log(data, min_value=0.1):
