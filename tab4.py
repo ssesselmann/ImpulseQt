@@ -25,7 +25,7 @@ from qt_compat import QPixmap
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from shared import logger, START, STOP, BTN, FOOTER, H1, P1, P2, DLD_DIR
-from functions import start_recording, stop_recording, get_options, load_cps_file, resource_path
+from functions import start_recording, stop_recording, get_filename_options, load_cps_file, resource_path
 from pathlib import Path
 
 class Tab4(QWidget):
@@ -123,7 +123,7 @@ class Tab4(QWidget):
         self.select_file.setStyleSheet(P2)
         self.select_file.addItem("— Select file —", "")
         options = []
-        options = get_options("cps")
+        options = get_filename_options("cps")
         for opt in options:
             self.select_file.addItem(opt['label'], opt['value'])
         self.select_file.currentIndexChanged.connect(self.on_select_filename_changed)
@@ -262,7 +262,7 @@ class Tab4(QWidget):
     def update_cps_label(self):
         try:
             with shared.write_lock:
-                cps = int(shared.cps/1e+6)
+                cps = int(shared.cps)
             self.cps_live.setText(f"{cps}")
         except Exception as e:
             logger.warning(f"Failed to update CPS label: {e}")
