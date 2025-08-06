@@ -64,7 +64,7 @@ class Tab2(QWidget):
         input_layout.setSpacing(0)
         input_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Center-align widgets like QCheckBox
+        # Center-align widgets
         if isinstance(widget, QCheckBox):
             hbox = QHBoxLayout()
             hbox.addStretch()
@@ -78,6 +78,7 @@ class Tab2(QWidget):
 
         container = QWidget()
         container.setLayout(input_layout)
+
         return container
 
     def safe_float(val):
