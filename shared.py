@@ -86,9 +86,9 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 log_file = LOG_DIR / "impulseqt_log.txt"
 
 # Set root logger to DEBUG
-logging.basicConfig(level=logging.INFO)
+#logging.basicConfig(level=logging.INFO)
 #logging.basicConfig(level=logging.DEBUG)
-# logging.basicConfig(level=logging.WARNING)
+logging.basicConfig(level=logging.WARNING)
 # logging.basicConfig(level=logging.ERROR)
 
 # Suppress noisy loggers
@@ -98,7 +98,6 @@ logging.getLogger('matplotlib.font_manager').propagate = False
 
 # Create app logger
 logger = logging.getLogger("ImpulseLogger")
-logger.setLevel(logging.WARNING)
 logger.propagate = False  # Optional: disable bubbling to root
 
 if not logger.handlers:
@@ -147,6 +146,7 @@ filename_hmp = "my_hmp_spectrum"
 # --- Audio Settings ---
 device = 0
 device_type = ""
+device_info = ""
 sample_rate = 44100
 chunk_size = 1024
 stereo = False
@@ -208,6 +208,7 @@ comp_coeff_3 = 0
 counts = 0
 counts_2 = 0
 cps = 0
+cps_list = []
 elapsed = 0
 elapsed_2 = 0
 elapsed_hmp = 0
