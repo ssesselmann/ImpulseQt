@@ -609,133 +609,77 @@ def process_01(filename, compression, device, t_interval):
 # ========================================================
 # 3D WATERFALL
 # ========================================================
-def process_02(filename_hmp, compression3d, device, t_interval):  # Compression reduces the number of channels by 8, 4, or 2
-    logger.info(f'dispatcher.process_02 ({filename_hmp})\n')
+def process_02(filename_hmp, compression3d, device, t_interval):
+    logger.info(f'dispatcher.process_03 ({filename_hmp})\n')
 
     global counts, last_counts, histogram_hmp
 
-    et_start                  = time.time()
-    counts              = 0
-    last_counts         = 0
-    elapsed             = 0
-    hst3d               = []
-    compressed_bins     = int(8192 / compression3d)
-    last_hst            = [0] * compressed_bins
+    et_start = time.time()
+    counts = 0
+    last_counts = 0
+    elapsed = 0
+    hst3d = []
+    compressed_bins = int(8192 / compression3d)
+    last_hst = [0] * compressed_bins
 
     with shared.write_lock:
-        t_interval        = shared.t_interval
-        max_counts        = shared.max_counts
-        max_seconds       = shared.max_seconds
-        coeff_1           = shared.coeff_1
-        coeff_2           = shared.coeff_2
-        coeff_3           = shared.coeff_3
-        
-    # Define the histogram list
-    hst = [0] * max_bins  # Initialize the original histogram list
+        t_interval = shared.t_interval
+        max_counts = shared.max_counts
+        max_seconds = shared.max_seconds
+        coeffs = [shared.coeff_3, shared.coeff_2, shared.coeff_1]
 
-    # Initialize last update and save times
-    et_start = time.time()
-    et_start   = time.time()
-
-    # --- Initialize timestamps used by save path BEFORE the loop ---
+    hst = [0] * max_bins
     dt_start = datetime.fromtimestamp(et_start)
-    dt_now   = dt_start
+    dt_now = dt_start
 
     while True:
         if shproto.dispatcher.spec_stopflag or shproto.dispatcher.stopflag:
-            logger.info("MAX process_02 received stop signal\n")
+            logger.info("MAX process_03 received stop signal\n")
             break
 
-        # Stop on counts or time limit
         if counts >= max_counts or elapsed > max_seconds:
-            logger.info("MAX process_02 reached stopping condition (counts or time)\n")
+            logger.info("MAX process_03 reached stopping condition (counts or time)\n")
             break
 
         time.sleep(t_interval)
-
-        # Host time (for file timestamps)
         et_now = time.time()
         dt_now = datetime.fromtimestamp(et_now)
 
-        # Fetch the latest histogram snapshot and device time
         with shproto.dispatcher.histogram_lock:
             hst = shproto.dispatcher.histogram.copy()
-            tt  = shproto.dispatcher.total_time
+            tt = shproto.dispatcher.total_time
 
-        # Compress channels
         comp_hst = [sum(hst[i:i + compression3d]) for i in range(0, max_bins, compression3d)]
-
-        # Sum total counts for UI / stop condition
         counts = sum(comp_hst)
-
-        # Net counts in each compressed bin for this time slice
         this_hst = [a - b for a, b in zip(comp_hst, last_hst)]
         hst3d.append(this_hst)
 
-        # Update globals for UI at cadence; do NOT touch CPS or cps list here
         if (et_now - et_start) >= t_interval:
-            # keep only recent window (e.g., last 60 slices) for plotting
             histogram_hmp_window = hst3d[-60:]
             with shared.write_lock:
-                shared.counts         = counts
-                shared.histogram_hmp  = histogram_hmp_window
-            
+                shared.counts = counts
+                shared.histogram_hmp = histogram_hmp_window
             et_start = et_now
 
-        # Periodic save (or on external stop)
         if (et_now - et_start) >= 60 or shproto.dispatcher.spec_stopflag or shproto.dispatcher.stopflag:
-            
-            logger.info(f'[INFO] shproto process_02 saving {filename_hmp}_hmp.json\n')
-            
-            elapsed_for_save = int(shproto.dispatcher.total_time * _TIME_SCALE)
-
-            data = {
-                "schemaVersion": "NPESv2",
-                "data": [
-                    {
-                        "deviceData": {
-                            "softwareName": "IMPULSE",
-                            "deviceName": f"{device}{shproto.dispatcher.serial_number}"
-                        },
-                        "sampleInfo": {
-                            "name": filename_hmp,
-                            "location": "",
-                            "note": ""
-                        },
-                        "resultData": {
-                            "startTime": dt_start.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
-                            "endTime": dt_now.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
-                            "energySpectrum": {
-                                "numberOfChannels": compressed_bins,
-                                "energyCalibration": {
-                                    "polynomialOrder": 2,
-                                    "coefficients": [coeff_3, coeff_2, coeff_1]
-                                },
-                                "validPulseCount": counts,
-                                "measurementTime": elapsed_for_save,
-                                "spectrum": hst3d
-                            }
-                        }
-                    }
-                ]
-            }
-
-            json_data = json.dumps(data, separators=(",", ":"))
-
-            file_path = os.path.join(USER_DATA_DIR, f'{filename_hmp}_hmp.json')
-
-            logger.info(f'[INFO] file path = {file_path}\n')
-
-            with open(file_path, "w") as wjf:
-                wjf.write(json_data)
+            save_spectrum_hmp_json(
+                filename_hmp=filename_hmp,
+                hst3d=hst3d,
+                counts=counts,
+                dt_start=dt_start,
+                dt_now=dt_now,
+                coeffs=coeffs,
+                device=device
+            )
 
             et_start = et_now
-            hst3d = []      
+            hst3d = []
 
         last_counts = counts
-        last_hst    = comp_hst
+        last_hst = comp_hst
 
     return
+
 
 
 # This process is used for sending commands to the Nano device
@@ -860,6 +804,52 @@ def load_json_data(file_path):
                 }
             }
         }
+
+
+def save_spectrum_hmp_json(filename_hmp, hst3d, counts, dt_start, dt_now, coeffs, device):
+    elapsed_for_save = int(shproto.dispatcher.total_time * _TIME_SCALE)
+    compressed_bins = len(hst3d[0]) if hst3d else 0
+
+    data = {
+        "schemaVersion": "NPESv2",
+        "data": [
+            {
+                "deviceData": {
+                    "softwareName": "IMPULSE",
+                    "deviceName": f"{device}{shproto.dispatcher.serial_number}"
+                },
+                "sampleInfo": {
+                    "name": filename_hmp,
+                    "location": "",
+                    "note": ""
+                },
+                "resultData": {
+                    "startTime": dt_start.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+                    "endTime": dt_now.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+                    "energySpectrum": {
+                        "numberOfChannels": compressed_bins,
+                        "energyCalibration": {
+                            "polynomialOrder": 2,
+                            "coefficients": coeffs
+                        },
+                        "validPulseCount": counts,
+                        "measurementTime": elapsed_for_save,
+                        "spectrum": hst3d
+                    }
+                }
+            }
+        ]
+    }
+
+    json_data = json.dumps(data, separators=(",", ":"))
+    file_path = os.path.join(USER_DATA_DIR, f'{filename_hmp}_hmp.json')
+
+    logger.info(f'[INFO] Saving HMP JSON: {file_path}\n')
+    with open(file_path, "w") as wjf:
+        wjf.write(json_data)
+
+
+
 
 def stop():
     with stopflag_lock:
