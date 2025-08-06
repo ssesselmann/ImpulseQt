@@ -451,18 +451,15 @@ def process_01(filename, compression, device, t_interval):
 
     # time stamps
     et_start     = time.time()
+    et_start_fix = et_start
     dt_start     = datetime.fromtimestamp(et_start)
     dt_now       = dt_start
-    # time stamps
-    et_start     = time.time()
-    dt_start     = datetime.fromtimestamp(et_start)
 
     # Integer spectrum compression 8, 16, 32 etc
     with shared.write_lock:
         compression = shared.compression
         max_counts  = shared.max_counts
         max_seconds = shared.max_seconds
-        compression = shared.compression
 
     # integer number of bins 256, 512 1024 etc..
     compressed_bins     = int(max_bins / compression)
@@ -507,6 +504,8 @@ def process_01(filename, compression, device, t_interval):
                 coeff_2     = shared.coeff_2
                 coeff_3     = shared.coeff_3
                 spec_notes  = shared.spec_notes
+                max_counts  = shared.max_counts
+                max_seconds = shared.max_seconds
 
             
             et_start = et_now
@@ -519,8 +518,6 @@ def process_01(filename, compression, device, t_interval):
             with shared.write_lock:
                 counts      = shared.counts
                 spec_notes  = shared.spec_notes
-                max_counts  = shared.max_counts
-                max_seconds = shared.max_seconds
                 elapsed     = shared.elapsed
             
             save_spectrum_json(
@@ -573,6 +570,8 @@ def process_01(filename, compression, device, t_interval):
 
             break
 
+        elapsed = int(time.time() - et_start_fix)
+        
         # ===============================================
         # STOP CONDITION #2 Preset stop values
         # ===============================================
