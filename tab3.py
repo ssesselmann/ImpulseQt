@@ -108,7 +108,7 @@ class Tab3(QWidget):
 
         self.stop_button = QPushButton("STOP")
         self.stop_button.setStyleSheet(STOP)
-        self.stop_button.clicked.connect(self.stop)
+        self.stop_button.clicked.connect(self.on_stop_clicked)
         self.stop_text = QLabel()
         self.elapsed_display = QLabel()
         self.elapsed_display.setStyleSheet(H1)
@@ -301,7 +301,6 @@ class Tab3(QWidget):
         self.canvas.draw()
         tab3_layout.addWidget(self.canvas, stretch=2)
 
-
         #=================
         # FOOTER
         #=================
@@ -311,7 +310,6 @@ class Tab3(QWidget):
         footer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         footer.setStyleSheet(H1)
         main_layout.addWidget(footer)  # Add the footer to the bottom
-
 
     # ======================================================================
     #    FUNCTIONS
@@ -412,14 +410,12 @@ class Tab3(QWidget):
                 shared.run_flag = False
 
 
-    def stop(self):
+    def on_stop_clicked(self):
 
         self.refresh_timer.stop()
-
         stop_recording()
-
+        time.sleep(1)
         self.refresh_file_list()
-
         self.filename_dropdown.setCurrentIndex(0)
 
 
@@ -586,9 +582,7 @@ class Tab3(QWidget):
             # Y-axis in seconds
             y_axis = np.arange(offset, offset + Z.shape[0]) * t_interval
 
-
             y_axis = np.arange(offset, offset + Z.shape[0]) * t_interval
-
 
             if Z.ndim != 2 or Z.shape[1] != bins:
                 logger.error(f"Z shape mismatch: {Z.shape}, expected (n_rows, {bins})")
@@ -619,7 +613,6 @@ class Tab3(QWidget):
             if y_min == y_max:
                 y_min -= 0.5
                 y_max += 0.5
-
 
             # ── Create fresh 2D plot ────────────────────────────────────────
             self.figure.clf()
