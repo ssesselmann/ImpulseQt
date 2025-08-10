@@ -49,7 +49,7 @@ from functions import (
     sanitize_for_log
     )
 from audio_spectrum import play_wav_file
-from shared import logger, device_type, P1, P2, H1, H2, MONO, START, STOP, BTN, FOOTER, DLD_DIR, USER_DATA_DIR
+from shared import logger, device_type, P1, P2, H1, H2, MONO, START, STOP, BTN, FOOTER, DLD_DIR, USER_DATA_DIR, BIN_OPTIONS
 from pathlib import Path
 from calibration_popup import CalibrationPopup
 
@@ -116,6 +116,19 @@ class Tab2(QWidget):
         self.plot_widget.addItem(self.vline, ignoreBounds=True)
         self.plot_widget.addItem(self.hline, ignoreBounds=True)
         self.plot_widget.scene().sigMouseMoved.connect(self.on_mouse_moved)
+
+        self.hist_curve = self.plot_widget.plot([], pen=pg.mkPen("b", width=2))
+        self.comp_curve = self.plot_widget.plot([], pen=pg.mkPen("r", width=2))
+        self.gauss_curve = self.plot_widget.plot([], pen=pg.mkPen("r", width=2))
+
+        self.plot_widget.getPlotItem().showGrid(x=True, y=True, alpha=0.3)
+        self.plot_widget.setTitle("Histogram", color='k', size="14pt")
+        self.plot_widget.setBackground('w')
+        self.plot_widget.setLabel('left', 'Counts')
+        self.plot_widget.setLabel('bottom', 'Bins')
+
+        self._last_peaks_t = 0
+
         tab2_layout.addWidget(self.plot_widget)
 
         # === 9x4 Grid ===
@@ -227,45 +240,39 @@ class Tab2(QWidget):
         self.pro_only_widgets.append(self.bin_size_container)
         # PRO CLOSE WRAPPER ===============================================
 
-        # UNIFIED BIN Selector ================================================
-        self.bins_container = QWidget()
-        self.bins_container.setObjectName("bins_container_unified")
+        # UNIFIED BIN Selector ============================================
+        self.bins_container = QWidget(objectName="bins_container_unified")
         bins_layout = QVBoxLayout(self.bins_container)
         bins_layout.setContentsMargins(0, 0, 0, 0)
+
         self.bins_label = QLabel("Select number of bins")
         self.bins_label.setStyleSheet(P1)
+
         self.bins_selector = QComboBox()
         self.bins_selector.setToolTip("Select number of channels (lower = more compression)")
-        self.bins_selector.addItem("128 Bins", 64)
-        self.bins_selector.addItem("256 Bins", 32)
-        self.bins_selector.addItem("512 Bins", 16)
-        self.bins_selector.addItem("1024 Bins", 8)
-        self.bins_selector.addItem("2048 Bins", 4)
-        self.bins_selector.addItem("4096 Bins", 2)
-        self.bins_selector.addItem("8192 Bins", 1)
+
+        # Populate combo from BIN_OPTIONS = [(label, compression), ...]
+        self.bins_selector.clear()
+        for label_txt, comp in BIN_OPTIONS:
+            self.bins_selector.addItem(label_txt, int(comp))
 
         bins_layout.addWidget(self.bins_label)
         bins_layout.addWidget(self.bins_selector)
 
-        # Determine the current index from shared.compression
-        compression_values = [64, 32, 16, 8, 4, 2, 1]
-        try:
-            with shared.write_lock:
-                current_compression = shared.compression
-            index = compression_values.index(current_compression)
-        except ValueError:
-            index = 6  # default to 8192 bins (compression=1)
-        self.bins_selector.setCurrentIndex(index)
-
+        # Place in your grid per device type
         if device_type == "MAX":
             grid.addWidget(self.bins_container, 1, 2)
-            self.max_only_widgets.append(self.bins_container) 
-
+            self.max_only_widgets.append(self.bins_container)
         elif device_type == "PRO":
             grid.addWidget(self.bins_container, 2, 2)
-            self.pro_only_widgets.append(self.bins_container)    
+            self.pro_only_widgets.append(self.bins_container)
+        else:
+            grid.addWidget(self.bins_container, 1, 2)
 
         self.bins_selector.currentIndexChanged.connect(self.on_select_bins_changed)
+
+        self.update_bins_selector()
+
 
         #================================================================
         # MAX OPEN WRAPPER 
@@ -588,7 +595,7 @@ class Tab2(QWidget):
     # === Timer to update live data ===
         self.ui_timer = QTimer()
         self.ui_timer.timeout.connect(self.update_ui)  # <- new combined method
-        self.ui_timer.start(t_interval)
+        self.ui_timer.start(int(max(50, t_interval * 1000)))
 
     def update_ui(self):
         self.update_labels()
@@ -653,16 +660,42 @@ class Tab2(QWidget):
         except ValueError:
             pass  # skip if input is invalid    
 
+
     def update_bins_selector(self):
-        compression_values = [64, 32, 16, 8, 4, 2, 1]
+        """Select combo index to match shared.compression, then refresh the graph."""
+        # Read shared.compression under lock
+        with shared.write_lock:
+            cur_comp = int(shared.compression)
+
         try:
-            with shared.write_lock:
-                current_compression = shared.compression
-            index = compression_values.index(current_compression)
-        except ValueError:
-            index = 6  # Default to 8192 bins
+            index = next(i for i, (_, value) in enumerate(BIN_OPTIONS) if int(value) == cur_comp)
+        except StopIteration:
+            logger.warning(f"Compression {cur_comp} not found in BIN_OPTIONS.")
+            index = len(BIN_OPTIONS) - 1  # Default to last (usually 8192 bins)
 
         self.bins_selector.setCurrentIndex(index)
+        self.update_histogram()
+
+
+    def on_select_bins_changed(self, index):
+        """Write selection back to shared and log it."""
+        self.plot_data.clear()
+
+        data = self.bins_selector.itemData(index)
+        if data is None:
+            logger.warning(f"No compression data found for index {index}")
+            return
+
+        compression = int(data)
+
+        with shared.write_lock:
+            shared.compression = compression
+            shared.bins = shared.bins_abs // compression
+
+        logger.info(f"Compression set to {compression}, bins = {shared.bins}")
+        # If Tab needs an immediate redraw beyond update_bins_selector():
+        self.update_graph()
+
 
     def make_cell(self, text):
         label = QLabel(text)
@@ -690,10 +723,7 @@ class Tab2(QWidget):
 
         if self.process_thread and self.process_thread.is_alive():
             logger.warning("[WARNING] thread still running, attempting to stop\n")
-            
-            # functions.stop_recording()
             stop_recording()
-
             self.process_thread.join(timeout=2)
             logger.info("[INFO] Previous thread joined\n")
        
@@ -728,7 +758,7 @@ class Tab2(QWidget):
         # --- Reset plotting ---
         self.plot_timer.stop()
         self.clear_session()
-        self.plot_timer.start(t_interval)
+        self.plot_timer.start(100)
 
         try:
             # Call the centralized recording logic
@@ -744,21 +774,15 @@ class Tab2(QWidget):
     def on_stop_clicked(self):
 
         if self.process_thread and self.process_thread.is_alive():
-
             logger.info("[INFO] Waiting for recording thread to finish\n")
-            
             self.process_thread.join(timeout=2)
-
             logger.info("[INFO] Recording thread stopped\new_note")
 
         self.process_thread = None
-
         self.plot_timer.stop()
 
         stop_recording()
-
         time.sleep(1) # [Botch] wait for save to complete
-
         self.refresh_file_dropdowns()
 
     def refresh_file_dropdowns(self):
@@ -910,113 +934,6 @@ class Tab2(QWidget):
         elif value > 0:
             self.peakfinder_label.setText(f"More peaks >>")
         self.update_histogram()
-    
-    def update_peak_markers(self): #WL Compliant
-
-        with shared.write_lock:
-            if shared.peakfinder == 0 or not shared.histogram:
-                return
-
-            histogram     = list(shared.histogram)
-            epb_switch    = shared.epb_switch
-            peakfinder    = shared.peakfinder
-            sigma         = shared.sigma
-            coeff_abc     = [shared.coeff_1, shared.coeff_2, shared.coeff_3]
-            cal_switch    = shared.cal_switch
-            iso_switch    = shared.iso_switch
-            log_switch    = shared.log_switch
-            isotope_flags = shared.isotope_flags   
-
-
-        # Remove old markers
-        for marker in getattr(self, "peak_markers", []):
-            self.plot_widget.removeItem(marker)
-        self.peak_markers = []
-
-        # Apply epb switch if needed
-        y_data = [y * x if epb_switch else y for x, y in enumerate(histogram)]
-
-        try:
-            peaks, fwhm = peak_finder(
-                y_values=y_data,
-                prominence=peakfinder,
-                min_width=sigma,
-                smoothing_window=3
-            )
-
-            use_cal = cal_switch and any(coeff_abc)
-            use_iso = iso_switch and isotope_flags and use_cal
-
-            for p, width in zip(peaks, fwhm):
-                if p >= len(y_data):
-                    logger.warning(f"[WARNING] Peak index {p} out of bounds for y_data with length {len(y_data)}\n")
-                    continue
-
-                y_raw = y_data[p]
-
-
-                y = np.log10(y_raw) if log_switch and y_raw > 0 else y_raw
-
-                offset = 0.1 if log_switch else 10
-
-                resolution = (width / p) * 100 if p != 0 else 0
-
-                energy = float(np.polyval(np.poly1d(coeff_abc), p)) if use_cal else p
-
-                x_offset = 5
-                x_pos    = (energy if use_cal else p) + offset
-
-                isotope_labels = []
-
-                if use_iso:
-
-                    if sigma == 0:
-                        warning = pg.TextItem("Set sigma > 0 to find isotope match", anchor=(0, 0), color="r")
-                        font = QFont("Arial")
-                        font.setPointSize(12)
-                        warning.setFont(font)
-                        warning.setPos(800, max(y_data) * 0.9 if y_data else 10)  # near top-left
-                        self.plot_widget.addItem(warning)
-                        self.peak_markers.append(warning)  # so it clears next update
-                        return
-
-                    for iso in isotope_flags:
-                        iso_energy = iso.get("energy")
-                        try:
-                            iso_energy = float(iso_energy)
-                        except (TypeError, ValueError):
-                            logger.warning(f"[WARNING] Skipping isotope with invalid energy: {iso_energy}\n")
-                            continue
-
-                        if abs(iso_energy - energy) <= sigma:
-                            isotope_labels.append(
-                                f"{iso['isotope']} {iso_energy:.1f} keV ({iso['intensity'] * 100:.1f}%)"
-                            )
-
-
-                # Build label text
-                if isotope_labels:
-                    label_text = "\n".join(isotope_labels)
-                elif use_cal:
-                    label_text = f"{energy:.1f} keV\n{resolution:.1f}%"
-                else:
-                    label_text = f"Bin {p}\n{resolution:.1f}%"
-
-
-    
-
-                label = pg.TextItem(text=label_text, anchor=(0, 0), color="k")
-                font = QFont("Courier New")
-                font.setPointSize(10)
-                label.setFont(font)
-                label.setPos(x_pos, y)
-                self.plot_widget.addItem(label)
-                self.peak_markers.append(label)
-
-        except Exception as e:
-            logger.error(f"[ERROR] Peak annotation failed: {e}")
-
-
 
     def open_calibration_popup(self):
         self.calibration_popup = CalibrationPopup(self.poly_label)
@@ -1134,7 +1051,6 @@ class Tab2(QWidget):
         return y_vals
 
 
-    
     def update_compression_setting(self):
         if device_type == "MAX":
             value = self.channel_selector.currentData()
@@ -1164,15 +1080,141 @@ class Tab2(QWidget):
         self.update_peak_markers()
 
 
+    def update_peak_markers(self):
+
+        # Always clear old markers first
+        for item in getattr(self, "peak_markers", []):
+            self.plot_widget.removeItem(item)
+        self.peak_markers = []
+
+
+        if shared.peakfinder == 0:
+            return
+        if not hasattr(self, "x_vals") or not hasattr(self, "y_vals_raw") or not hasattr(self, "y_vals_plot"):
+            return
+
+        x_vals = self.x_vals
+        y_vals_raw = self.y_vals_raw     # for peak finding
+        y_vals_plot = self.y_vals_plot   # for vertical label position
+
+        try:
+            peaks, fwhm = peak_finder(
+                y_values=y_vals_raw,
+                prominence=shared.peakfinder,
+                min_width=shared.sigma,
+                smoothing_window=3
+            )
+        except Exception as e:
+            logger.error(f"[ERROR] peak_finder failed: {e}")
+            return
+
+        coeffs = [shared.coeff_1, shared.coeff_2, shared.coeff_3]
+        use_cal = shared.cal_switch and any(coeffs)
+        use_iso = shared.iso_switch and shared.isotope_flags and use_cal
+
+        # Remove old markers
+        for item in getattr(self, "peak_markers", []):
+            self.plot_widget.removeItem(item)
+        self.peak_markers = []
+
+        for p, width in zip(peaks, fwhm):
+            if p >= len(y_vals_raw):
+                continue
+
+            try:
+                y_val = float(y_vals_plot[p])
+            except (ValueError, TypeError):
+                continue
+            if not np.isfinite(y_val):
+                continue
+
+            x_pos = x_vals[p] -5
+
+            # Slightly lift label above peak
+            if shared.log_switch:
+                y_pos = np.log10(y_val * 1.05)
+            else:
+                y_pos = y_val * 1.05
+
+            energy = float(np.polyval(coeffs, p)) if use_cal else p
+            resolution = (width / p) * 100 if p else 0
+
+            # ----- Optional isotope match (energy-aware tolerance) -----
+            isotope_lines = []
+            if use_iso and shared.sigma > 0 and peaks is not None:
+                # helpers
+                def energy_of_bin(idx: int) -> float:
+                    return float(np.polyval(coeffs, idx))
+
+                # local slope dE/dx at bin p (keV per bin)
+                # using derivative of ax^2 + bx + c => 2*a*p + b; fall back to finite diff
+                a, b, c = coeffs
+                dEdx = (2 * a * p + b) if (a or b) else (energy_of_bin(p + 1) - energy_of_bin(p))
+
+                fwhm_bins = float(width) if width else 0.0
+                fwhm_keV = abs(dEdx) * fwhm_bins
+
+                # tunables (could promote to shared.* if you want UI control)
+                base_tol_keV = 2.0                 # minimum absolute window
+                fwhm_mult    = 0.6                 # ~60% of FWHM is a good ID window
+                rel_frac     = 0.002               # 0.2% of energy
+
+                tol_keV = max(base_tol_keV, fwhm_mult * fwhm_keV, rel_frac * energy)
+
+                # rank matches by proximity and intensity
+                candidates = []
+                for iso in shared.isotope_flags:
+                    try:
+                        iso_e = float(iso["energy"])
+                        d = abs(iso_e - energy)
+                        if d <= tol_keV:
+                            intensity = float(iso.get("intensity", 0.0))  # 0..1
+                            # simple score: closer and stronger is better
+                            score = (1.0 - (d / tol_keV)) * (0.1 + intensity)
+                            candidates.append((score, iso_e, iso))
+                    except Exception:
+                        continue
+
+                if candidates:
+                    # show top few
+                    candidates.sort(reverse=True, key=lambda t: t[0])
+                    top = candidates[:3]
+                    lines = []
+                    for _, iso_e, iso in top:
+                        inten_pct = float(iso.get("intensity", 0.0)) * 100.0
+                        lines.append(
+                            f"\u2B60 {iso['isotope']} {iso_e:.1f} keV "
+                            f"({inten_pct:.1f}%)  Δ={abs(iso_e - energy):.2f} keV"
+                        )
+                    isotope_lines = lines
+
+
+            if isotope_lines:
+                label_text = "\n".join(isotope_lines)
+            elif use_cal:
+                label_text = f"\u2B60 {energy:.1f} keV ({resolution:.1f} %)"
+            else:
+                label_text = f"\u2B60 Bin {p} ({resolution:.1f} %)"
+
+            label = pg.TextItem(label_text, anchor=(0, 0), color="k")
+            label = pg.TextItem(label_text, anchor=(0, 0), color="k", fill=pg.mkBrush(230, 230, 230, 100))
+            label.setFont(QFont("Courier New", 10))
+            label.setPos(x_pos, y_pos)
+            self.plot_widget.addItem(label)
+            self.peak_markers.append(label)
+
+        logger.debug(f"[DEBUG] drew {len(self.peak_markers)} peak markers.")
+
+
+
     def update_histogram(self):
         with shared.write_lock:
-            # ---- Raw Data ----
             histogram      = shared.histogram
             elapsed        = shared.elapsed
             histogram_2    = shared.histogram_2 if shared.comp_switch else []
             elapsed_2      = shared.elapsed_2
+            filename       = shared.filename
 
-            # ---- Factors ----
             sigma          = shared.sigma
             peakfinder     = shared.peakfinder
             coeff_abc      = [shared.coeff_1, shared.coeff_2, shared.coeff_3]
@@ -1181,7 +1223,6 @@ class Tab2(QWidget):
             log_switch     = shared.log_switch
             cal_switch     = shared.cal_switch
 
-            # ---- Switches ----
             comp_switch    = shared.comp_switch
             diff_switch    = shared.diff_switch
             slb_switch     = shared.slb_switch
@@ -1197,76 +1238,100 @@ class Tab2(QWidget):
         x_vals2 = list(range(len(histogram_2))) if comp_switch else []
         y_vals2 = histogram_2.copy() if comp_switch else []
 
+        # Ensure these exist no matter what
+        corr = []
+        x_vals_corr = []
 
-        # ---- Difference Spectrum ----
+        # ---- Difference (if enabled) ----
         if diff_switch and comp_switch:
             max_len = max(len(histogram), len(histogram_2))
             hist1 = histogram   + [0] * (max_len - len(histogram))
             hist2 = histogram_2 + [0] * (max_len - len(histogram_2))
-
-            time_factor = elapsed / elapsed_2 if elapsed_2 else 1.0
-
+            time_factor = (elapsed / elapsed_2) if elapsed_2 else 1.0
             y_vals = [a - b * time_factor for a, b in zip(hist1, hist2)]
             x_vals = list(range(max_len))
 
-        # ---- Gaussian correlation ----
-        corr = []
+        # >>> Peak-finding series BEFORE EPB/log <<<
+        y_for_peaks = y_vals[:]
+
+        # ---- Gaussian correlation (optional) ----
         if sigma > 0:
+            # Use the raw histogram for correlation as you had before
             corr = gaussian_correl(histogram, sigma)
             x_vals_corr = list(range(len(corr)))
-        else:
-            x_vals_corr = []
+            # Optional: if you also want smoothing for peak-finding:
+            try:
+                y_for_peaks = gaussian_correl(y_for_peaks, sigma)
+            except TypeError:
+                pass
 
         # ---- Calibration ----
         if cal_switch:
-            x_vals      = self.apply_calibration(x_vals, coeff_abc)
-            x_vals2     = self.apply_calibration(x_vals2, comp_coeff_abc)
-            x_vals_corr = self.apply_calibration(x_vals_corr, coeff_abc)
+            x_vals  = self.apply_calibration(x_vals,  coeff_abc)
+            x_vals2 = self.apply_calibration(x_vals2, comp_coeff_abc)
+            if x_vals_corr:                              # guard!
+                x_vals_corr = self.apply_calibration(x_vals_corr, coeff_abc)
 
-        # ---- Energy per bin ----
+        # ---- Energy per bin (DISPLAY ONLY) ----
         if epb_switch:
-            y_vals  = [y * x for x, y in zip(x_vals, y_vals)]
+            y_vals  = [y * x for x, y in zip(x_vals,  y_vals)]
             y_vals2 = [y * x for x, y in zip(x_vals2, y_vals2)]
+            if len(x_vals_corr) and len(corr):
+                corr = [y * x for x, y in zip(x_vals_corr, corr)]
 
-        # ---- Log scale ----
+
+        # ---- Log scale (DISPLAY ONLY) ----
         if log_switch:
             y_vals  = sanitize_for_log(y_vals)
             y_vals2 = sanitize_for_log(y_vals2)
-            corr    = sanitize_for_log(corr)
+            if corr:                                     # guard!
+                corr = sanitize_for_log(corr)
 
         # ---- Suppress last bin ----
         if slb_switch:
-            if y_vals:
-                y_vals [-1] = 0
-            if y_vals2:
-                y_vals2[-1] = 0
+            if y_vals:  y_vals[-1]  = 0
+            if y_vals2: y_vals2[-1] = 0
 
-        # ---- Rendering ----
-        self.plot_widget.clear()
+        # ---- Store arrays for peak-annotations ----
+        self.x_vals      = list(x_vals)
+        self.y_vals_raw  = list(y_for_peaks)   # pre-EPB/log for detection
+        self.y_vals_plot = list(y_vals)        # post-EPB/log for label height
+
+        # Ensure curves exist (created once)
+        if getattr(self, "hist_curve", None) is None:
+            self.hist_curve  = self.plot_widget.plot([], pen=pg.mkPen("b", width=1.5))
+        if getattr(self, "comp_curve", None) is None:
+            self.comp_curve  = self.plot_widget.plot([], pen=pg.mkPen("r", width=1.5))
+        if getattr(self, "gauss_curve", None) is None:
+            self.gauss_curve = self.plot_widget.plot([], pen=pg.mkPen("r", width=3))
+
+        # Update plots (no clear)
         self.plot_widget.setLogMode(x=False, y=log_switch)
-        self.plot_widget.addItem(self.vline, ignoreBounds=True)
-        self.plot_widget.addItem(self.hline, ignoreBounds=True)
-        self.plot_widget.getPlotItem().showGrid(x=True, y=True, alpha=0.3)
 
+        main_pen = pg.mkPen("k" if (diff_switch and comp_switch) else "b", width=1.5)
+        self.hist_curve.setPen(main_pen)
+        self.hist_curve.setData(x_vals, y_vals)
 
-        # Main spectrum (blue or diff)
-        main_pen = pg.mkPen("k" if diff_switch else "b", width=1.5)
-        self.hist_curve = self.plot_widget.plot(x_vals, y_vals, pen=main_pen)
-
-        self.comp_curve  = None
-        self.diff_curve  = None
-        self.gauss_curve = None
-
-        # Comparison overlay (red)
         if comp_switch and not diff_switch:
-            self.comp_curve = self.plot_widget.plot(x_vals2, y_vals2, pen=pg.mkPen("r", width=1.5))
+            self.comp_curve.setData(x_vals2, y_vals2)
+        else:
+            self.comp_curve.setData([], [])
 
-        # Gaussian overlay
         if corr and not diff_switch:
-            self.gauss_curve = self.plot_widget.plot(
-                x_vals_corr, corr, pen=pg.mkPen("r", width=1.5),
-                fillLevel=0, brush=QBrush(QColor(0, 0, 255, 80))
-            )
+            self.gauss_curve.setData(x_vals_corr, corr)
+        else:
+            self.gauss_curve.setData([], [])
 
-        self.update_peak_markers()
+        self._last_peaks_t = 0
+
+        # Update peak markers less often
+        now = time.monotonic()
+
+        do_peaks = (now - self._last_peaks_t) > 1.0
+
+        if do_peaks:
+            self.update_peak_markers()
+            self._last_peaks_t = now
+
+
         logger.info("[INFO] update_histogram completed\n")
