@@ -175,6 +175,7 @@ def ensure_running(sn=None):
 # NANO Communicator function
 #===========================================================
 def start(sn=None):
+    global serial_number
 
     _init_runtime()
 
@@ -291,6 +292,8 @@ def start(sn=None):
                 if len(resp_lines) == 40:
                     serial_number = "{}".format(resp_lines[39])
                     logger.info("Found MAX serial # {}\n".format(serial_number))
+
+
                     b_str = ''
                     for b in resp_lines[0:10]:
                         b_str += b
