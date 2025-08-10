@@ -942,7 +942,7 @@ def load_histogram(filename):
             shared.counts          = sum(shared.histogram)
             shared.dropped_counts  = spectrum_data.get("droppedPulseCounts", 0)
             shared.spec_notes      = data["sampleInfo"].get("note", "")
-
+            shared.compression     = int(shared.bins_abs/spectrum_data["numberOfChannels"])
             shared.coeff_1 = coefficients[0]
             shared.coeff_2 = coefficients[1]
             shared.coeff_3 = coefficients[2]
@@ -981,6 +981,7 @@ def load_histogram_2(filename):
             shared.comp_coeff_1     = data["resultData"]["coefficients"][0]
             shared.comp_coeff_2     = data["resultData"]["coefficients"][1]
             shared.comp_coeff_3     = data["resultData"]["coefficients"][2]
+
 
         logger.info(f"[INFO] Loaded histogram_2 {filename} \n") 
 
@@ -1032,6 +1033,8 @@ def load_histogram_hmp(stem):
             shared.coeff_1, shared.coeff_2, shared.coeff_3 = coeffs
             shared.startTime3d      = data["resultData"]["startTime"]
             shared.endTime3d        = data["resultData"]["startTime"]
+            shared.compression     = int(shared.bins_abs/spectrum_data["numberOfChannels"])
+
 
         logger.info(f"[INFO] shared updated from {file_path}\n")
 
@@ -1225,6 +1228,7 @@ def generate_device_settings_table_data():
 
     tco_pairs = extract_tco_pairs(dev_info)
 
+    # 5) Use cached values if the new parse is empty
     with shared.write_lock:
         shared.device_info   = info
         shared.serial_number = serial_number
@@ -1305,5 +1309,15 @@ def parse_device_info(info_string):
     return settings
 
 
-def sanitize_for_log(data, min_value=0.1):
-    return [max(min_value, y) for y in data]
+def sanitize_for_log(y_values, floor=0.1):
+    """
+    Make data safe for log plotting without actually taking the log10.
+    PyQtGraph will do the log scaling when setLogMode(y=True).
+    """
+    arr = np.asarray(y_values, dtype=float)
+    mask_bad = ~np.isfinite(arr) | (arr <= 0)
+    if mask_bad.any():
+        arr[mask_bad] = floor
+    return arr.tolist()
+
+
