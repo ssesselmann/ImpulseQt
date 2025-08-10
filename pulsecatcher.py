@@ -51,14 +51,6 @@ def save_data(save_queue):
             fn.update_json_hmp_file(t0, t1, bins, local_counts, local_elapsed, filename_hmp, last_minute, coeff_1, coeff_2, coeff_3, device)
 
 
-# Function to handle mode 2 and 4 shared variable updates
-def update_mode_2_data(mode, shared, full_histogram, counts_per_sec):
-    if mode == 2 or mode == 4:
-        with shared.write_lock:
-            shared.histogram = full_histogram.copy()  
-            shared.count_history.append(counts_per_sec)
-
-
 # Appends 1-second slices to shared.histogram_hmp
 def update_mode_3_data(mode, shared, full_histogram, last_histogram, hmp_buffer,
                      interval_counter, t_interval, bins, now,
@@ -88,7 +80,6 @@ def update_mode_3_data(mode, shared, full_histogram, last_histogram, hmp_buffer,
                 aggregated = [sum(col) for col in zip(*hmp_buffer)]
 
                 # Append to live memory
-
                 shared.histogram_hmp.append(aggregated)
 
                 # Append to JSON via save thread
@@ -160,7 +151,7 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
         shared.dropped_counts  = 0
         shared.histogram       = [0] * bins
         shared.count_history   = []
-        shared.histogram_hmp    = []  # Initialize to ensure it’s empty
+        shared.histogram_hmp   = [] 
 
     # Fixed variables
     right_threshold = threshold  
@@ -177,8 +168,8 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
     full_histogram  = [0] * bins
     local_count_history = []
     right_pulses    = []
-    hmp_buffer = []
-    interval_counter = 0  # Initialize interval counter
+    hmp_buffer      = []
+    interval_counter = 0  
 
     # Open the selected audio input device
     channels = 2 if stereo else 1
@@ -226,8 +217,9 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
         for i in range(len(left_channel) - sample_length):
             height = fn.pulse_height(samples)
             if samples[peak] == max(samples) and abs(height) > threshold and samples[peak] < 32768:
+                
+                # Optimize coincident pulse check by using binary search or range filter
                 if mode == 4:
-                    # Optimize coincident pulse check by using binary search or range filter
                     coincident_pulse = next((rp for rp in right_pulses if i + peak - coi_window <= rp[0] <= i + peak + coi_window), None)
                     if not coincident_pulse:
                         continue  # Skip if no coincident pulse found
@@ -253,21 +245,18 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
         time_this_save = time.time()
         local_elapsed = int(time_this_save - time_start)
 
-        # Update shared variables every 1 second
+        # Update shared variables every second
         if time_this_save - time_last_save >= 1:
             counts_per_sec = local_counts - last_count
 
             with shared.write_lock:
-                shared.cps = counts_per_sec
-                shared.counts = local_counts
-                shared.elapsed = local_elapsed
-                shared.spec_notes = spec_notes
-                shared.dropped_counts = dropped_counts
-
-            # Mode-specific updates
-            update_mode_2_data(mode, shared, full_histogram, counts_per_sec)
-
-
+                shared.cps              = counts_per_sec
+                shared.counts           = local_counts
+                shared.elapsed          = local_elapsed
+                shared.spec_notes       = spec_notes
+                shared.dropped_counts   = dropped_counts
+                shared.histogram        = full_histogram.copy()  
+                shared.count_history.append(counts_per_sec)
 
             interval_counter, last_histogram = update_mode_3_data(
                 mode, shared, full_histogram, last_histogram,
