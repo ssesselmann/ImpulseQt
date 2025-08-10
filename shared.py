@@ -21,7 +21,7 @@ run_flag_lock = Lock()
 
 # --------------------
 # Versioning
-__version__ = "v3.0.1"
+__version__ = "v3.0.2"
 # --------------------
 
 SETTINGS = {}  
@@ -52,6 +52,10 @@ BTN     = "background-color: #E0751C; color: white; font-weight: bold;"
 BUD     = "background-color: #7C7C7C; color: white; font-weight: bold;"
 
 FOOTER  = f"ImpulseQt {__version__}"
+
+# At class level (e.g., Tab3Heatmap or similar)
+BIN_OPTIONS = [("128 Bins", 64),("256 Bins", 32), ("512 Bins", 16), ("1024 Bins", 8), ("2048 Bins", 4), ("4096 Bins", 2), ("8192 Bins", 1)]
+
 
 # -------------------------------
 # Paths & Directories
@@ -87,8 +91,8 @@ log_file = LOG_DIR / "impulseqt_log.txt"
 
 # Set root logger to DEBUG
 #logging.basicConfig(level=logging.INFO)
-#logging.basicConfig(level=logging.DEBUG)
-logging.basicConfig(level=logging.WARNING)
+logging.basicConfig(level=logging.DEBUG)
+#logging.basicConfig(level=logging.WARNING)
 # logging.basicConfig(level=logging.ERROR)
 
 # Suppress noisy loggers
