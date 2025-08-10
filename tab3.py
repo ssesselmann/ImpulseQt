@@ -30,6 +30,8 @@ from qt_compat import QTimer
 from qt_compat import QVBoxLayout
 from qt_compat import QWidget
 from qt_compat import Signal
+from qt_compat import QGroupBox
+
 
 from pathlib import Path
 from mpl_toolkits.mplot3d import Axes3D 
@@ -38,7 +40,7 @@ from matplotlib.figure import Figure
 from matplotlib import cm
 from datetime import datetime, timedelta
 from collections import deque 
-from shared import logger, P1, P2, H1, H2, MONO, START, STOP, BTN, BUD, FOOTER, DLD_DIR, USER_DATA_DIR
+from shared import logger, P1, P2, H1, H2, MONO, START, STOP, BTN, BUD, FOOTER, DLD_DIR, USER_DATA_DIR, BIN_OPTIONS
 from functions import (
     load_histogram_hmp, 
     get_options_hmp, 
@@ -64,12 +66,9 @@ class Tab3(QWidget):
         self.bins             = 0
         self.bin_size         = 0
         self.scroll_offset    = 0 
-        self.counts_display   = 0
-        self.elapsed_display  = 0
         self.init_ui()
         self.refresh_timer    = QTimer()
         self.refresh_timer.timeout.connect(self.update_graph)
-        self.filename = "Waterfall Heatmap"
 
     def init_ui(self):
         # Main layout for the entire widget
@@ -79,13 +78,17 @@ class Tab3(QWidget):
 
         # LEFT SIDE PANEL: Split into top/middle/bottom sections
         left_panel_layout = QVBoxLayout()
-        control_widget = QWidget()
+        control_widget  = QWidget()
         control_widget.setLayout(left_panel_layout)
         tab3_layout.addWidget(control_widget, stretch=1)
 
         # 1. Top Section — Start/Stop controls and settings
-        top_section = QWidget()
-        top_layout = QGridLayout(top_section)
+        top_section     = QWidget()
+        top_layout      = QHBoxLayout(top_section)
+        top_left_col    = QVBoxLayout()
+        top_right_col   = QVBoxLayout()
+        top_layout.addLayout(top_left_col)
+        top_layout.addLayout(top_right_col)
 
         with shared.write_lock:
             bins = shared.bins
@@ -95,176 +98,196 @@ class Tab3(QWidget):
 
         self.row_ptr      = 0
         self.time_buf     = deque(maxlen=self.plot_window_size)
-        self.last_plot_ts = -1                        #  ←  ensures attribute exists
+        self.last_plot_ts = -1      
 
+
+        # START button
         self.start_button = QPushButton("START")
         self.start_button.setStyleSheet(START)
         self.start_button.clicked.connect(self.confirm_overwrite)
-        self.start_text = QLabel()
-        self.counts_display = QLabel()
-        self.counts_display.setStyleSheet(H1)
+        top_left_col.addWidget(self.start_button)
 
-        self.max_counts_input = QLineEdit(str(shared.max_counts))
+        # select file dropdown label
+        self.select_filename_label = QLabel("Select existing file")
+        self.select_filename_label.setStyleSheet(P1)
+        top_left_col.addWidget(self.select_filename_label)
 
-        self.stop_button = QPushButton("STOP")
-        self.stop_button.setStyleSheet(STOP)
-        self.stop_button.clicked.connect(self.on_stop_clicked)
-        self.stop_text = QLabel()
-        self.elapsed_display = QLabel()
-        self.elapsed_display.setStyleSheet(H1)
-        self.max_seconds_input = QLineEdit(str(shared.max_seconds))
-
-        # Create a horizontal layout for the file selection row
-        file_row = QHBoxLayout()
-
+        # Filename dropdown selector
         self.filename_dropdown = QComboBox()
         self.filename_dropdown.addItem("Select or enter >")
         self.file_options = [opt['label'] for opt in get_options_hmp()]
         self.filename_dropdown.addItems(self.file_options)
         self.filename_dropdown.currentIndexChanged.connect(self.handle_file_selection)
+        top_left_col.addWidget(self.filename_dropdown)
 
-        self.filename_input = QLineEdit(shared.filename_hmp)
-        self.filename_input.setText(shared.filename_hmp)
-        self.filename_input.textChanged.connect(lambda text: self.on_text_changed(text, "filename"))
-
-        # Add both widgets to the row
-        file_row.addWidget(self.filename_dropdown)
-        file_row.addWidget(self.filename_input)
-
-        self.t_interval_input = QLineEdit(str(shared.t_interval))
-        self.t_interval_input.textChanged.connect(lambda text: self.on_text_changed(text, "t_interval"))
-
-        # UNIFIED BIN Selector ================================================
-        self.bins_container = QWidget()
-        self.bins_container.setObjectName("bins_container_unified")
-        bins_layout = QVBoxLayout(self.bins_container)
-        bins_layout.setContentsMargins(0, 0, 0, 0)
+        # Label for bin selector
         self.bins_label = QLabel("Bin Selection")
         self.bins_label.setStyleSheet(P1)
+        top_left_col.addWidget(self.bins_label)
+        
+
+        # Bin selector
         self.bins_selector = QComboBox()
+        self.bins_container = QWidget()
+        self.bins_container.setObjectName("bins_container_unified")
         self.bins_selector.setToolTip("Select number of channels (lower = more compression)")
-        self.bins_selector.addItem("128 Bins", 64)
-        self.bins_selector.addItem("256 Bins", 32)
-        self.bins_selector.addItem("512 Bins", 16)
-        self.bins_selector.addItem("1024 Bins", 8)
-        self.bins_selector.addItem("2048 Bins", 4)
-        self.bins_selector.addItem("4096 Bins", 2)
-        self.bins_selector.addItem("8192 Bins", 1)
 
-        bins_layout.addWidget(self.bins_label)
-        bins_layout.addWidget(self.bins_selector)
+        # Populate from shared.BIN_OPTIONS
+        for label, compression in BIN_OPTIONS:
+            self.bins_selector.addItem(label, compression)
 
-        # Determine the current index from shared.compression
-        compression_values = [64, 32, 16, 8, 4, 2, 1]
+        top_left_col.addWidget(self.bins_selector)
 
-        try:
-            with shared.write_lock:
-                current_compression = shared.compression
-            index = compression_values.index(current_compression)
-        except ValueError:
-            index = 6  # default to 8192 bins (compression=1)
-        self.bins_selector.setCurrentIndex(index)
- 
+        # Set current index based on shared.compression
+        with shared.write_lock:
+            current_compression = shared.compression
+
+        index = next(
+            (i for i, (_, val) in enumerate(BIN_OPTIONS) if val == current_compression),
+            -1
+        )
+        if index != -1:
+            self.bins_selector.setCurrentIndex(index)
+        else:
+            logger.warning(f"Compression {current_compression} not found in BIN_OPTIONS.")
+
         self.bins_selector.currentIndexChanged.connect(self.on_select_bins_changed)
 
+        # -------------------------------------------------------------
+        # Group live counts and elapsed time into a single boxed layout
+        info_box = QGroupBox("Live Data")
+        info_layout = QGridLayout(info_box)
 
+        # Live counts
+        self.live_counts_label = QLabel("Live counts")
+        self.live_counts_label.setStyleSheet(P1)
+        info_layout.addWidget(self.live_counts_label, 0, 0)
+
+        self.counts_display = QLabel()
+        self.counts_display.setAlignment(Qt.AlignCenter)
+        self.counts_display.setStyleSheet(H1)
+        info_layout.addWidget(self.counts_display,     1, 0)
+
+        # Elapsed time
+        self.elapsed_label = QLabel("Elapsed secs.")
+        self.elapsed_label.setStyleSheet(P1)
+        info_layout.addWidget(self.elapsed_label,      0, 1)
+
+        self.elapsed_display = QLabel()
+        self.elapsed_display.setAlignment(Qt.AlignCenter)
+        self.elapsed_display.setStyleSheet(H1)
+        info_layout.addWidget(self.elapsed_display,    1, 1)
+
+        # Add the group box to the left column
+        top_left_col.addWidget(info_box)
+        # -------------------------------------------------------------
+
+        # Enery per bin switch
         self.epb_switch = QCheckBox("Energy by bin")
         self.epb_switch.setChecked(shared.epb_switch)
         self.epb_switch.stateChanged.connect(self.update_graph)
         self.epb_switch.stateChanged.connect(lambda state: self.on_checkbox_toggle("epb_switch", state))
+        top_left_col.addWidget(self.epb_switch)
 
+        # Log switch
         self.log_switch = QCheckBox("Show log(y)")
         self.log_switch.setChecked(shared.log_switch)
         self.log_switch.stateChanged.connect(self.update_graph)
         self.log_switch.stateChanged.connect(lambda state: self.on_checkbox_toggle("log_switch", state))
+        top_left_col.addWidget(self.log_switch)
 
-
+        # cal switch
         self.cal_switch = QCheckBox("Calibration")
         self.cal_switch.setChecked(shared.cal_switch)
         self.cal_switch.stateChanged.connect(self.update_graph)
         self.cal_switch.stateChanged.connect(lambda state: self.on_checkbox_toggle("cal_switch", state))
+        top_left_col.addWidget(self.cal_switch)        
 
-        top_layout.addWidget(self.start_button, 0, 0)
 
-        self.max_counts_label = QLabel("Max Counts")
-        self.max_counts_label.setStyleSheet(P1)
-        top_layout.addWidget(self.max_counts_label, 1, 0)
-        top_layout.addWidget(self.max_counts_input, 2, 0)
-        self.max_counts_input.textChanged.connect(lambda text: self.on_text_changed(text, "max_counts"))
+        # Scroll up button
+        self.scroll_up_btn = QPushButton("Scroll ↑")
+        self.scroll_up_btn.setStyleSheet(BUD)
+        self.scroll_up_btn.clicked.connect(self.scroll_up)
+        top_left_col.addWidget(self.scroll_up_btn)
 
-        
 
-        self.live_counts_label = QLabel("Live counts")
-        self.live_counts_label.setStyleSheet(P1)
-        top_layout.addWidget(self.live_counts_label, 3, 0)
-        top_layout.addWidget(self.counts_display, 4, 0)
-        top_layout.addWidget(self.start_text, 5, 0)
-        top_layout.addWidget(self.stop_button, 0, 1)
+        # END LEFT COL
+        #==================================================================
+        # START RIHT COL
 
-        self.max_seconds_label = QLabel("Max Seconds")
+
+        # STOP button
+        self.stop_button = QPushButton("STOP")
+        self.stop_button.setStyleSheet(STOP)
+        self.stop_button.clicked.connect(self.on_stop_clicked)
+        top_right_col.addWidget(self.stop_button)
+
+        # Label for filename
+        self.filename_input_label = QLabel("Set new filename")
+        self.filename_input_label.setStyleSheet(P1)
+        top_right_col.addWidget(self.filename_input_label)
+
+        # Filename input
+        self.filename_input = QLineEdit(shared.filename_hmp)
+        self.filename_input.setText(shared.filename_hmp)
+        self.filename_input.textChanged.connect(lambda text: self.on_text_changed(text, "filename"))
+        top_right_col.addWidget(self.filename_input)
+
+        # Label for max_seconds
+        self.max_seconds_label = QLabel("Max Seconds (Stop Condition)")
         self.max_seconds_label.setStyleSheet(P1)
-        top_layout.addWidget(self.max_seconds_label, 1, 1)
-        top_layout.addWidget(self.max_seconds_input, 2, 1)
+        top_right_col.addWidget(self.max_seconds_label)
+
+        # Max seconds input
+        self.max_seconds_input = QLineEdit(str(shared.max_seconds))
         self.max_seconds_input.textChanged.connect(lambda text: self.on_text_changed(text, "max_seconds"))
+        top_right_col.addWidget(self.max_seconds_input)
 
-        
-        self.elapsed_label = QLabel("Elapsed secs.")
-        self.elapsed_label.setStyleSheet(P1)
-        top_layout.addWidget(self.elapsed_label, 3, 1)
-        top_layout.addWidget(self.elapsed_display, 4, 1)
-        top_layout.addWidget(self.stop_text, 5, 1)
+        # Label for max_counts
+        self.max_counts_label = QLabel("Max Counts (Stop Condition)")
+        self.max_counts_label.setStyleSheet(P1)
+        top_right_col.addWidget(self.max_counts_label)  
 
-        self.select_filename_label = QLabel("Select or enter file name:")
-        self.select_filename_label.setStyleSheet(P1)
-        top_layout.addWidget(self.select_filename_label, 5, 0, 1, 2)
+        # Input for max_counts
+        self.max_counts_input = QLineEdit(str(shared.max_counts))
+        self.max_counts_input.textChanged.connect(lambda text: self.on_text_changed(text, "max_counts"))
+        top_right_col.addWidget(self.max_counts_input)
 
-        top_layout.addLayout(file_row, 6, 0, 1, 2)
+        # Interval input label
+        label = QLabel("Time Interval (sec)")
+        label.setStyleSheet(P1)
+        top_right_col.addWidget(label)
 
-        top_layout.addWidget(QLabel("Time Interval (sec)"), 9, 0)
-        top_layout.addWidget(self.t_interval_input, 9, 1)
-        
-        self.bins_label = QLabel("Number of channels (x)")
-        self.bins_label.setStyleSheet(P1)
-        top_layout.addWidget(self.bins_label, 10, 1)
-
-        top_layout.addWidget(self.bins_selector, 11, 1)
+        # Input for time interval
+        self.t_interval_input = QLineEdit(str(shared.t_interval))
+        self.t_interval_input.textChanged.connect(lambda text: self.on_text_changed(text, "t_interval"))
+        top_right_col.addWidget(self.t_interval_input)
 
         # Download array button
         self.dld_array_btn = QPushButton("Download array")
         self.dld_array_btn.setStyleSheet(BTN)
         self.dld_array_btn.clicked.connect(self.download_array_csv)
-        top_layout.addWidget(self.dld_array_btn, 12, 1)
+        top_right_col.addWidget(self.dld_array_btn)
 
 
-        top_layout.addWidget(self.epb_switch, 10, 0)
-        top_layout.addWidget(self.log_switch, 11, 0)
-        top_layout.addWidget(self.cal_switch, 12, 0)
+        # Scroll down button
+        self.scroll_down_btn = QPushButton("Scroll ↓")
+        self.scroll_down_btn.setStyleSheet(BUD)
+        self.scroll_down_btn.clicked.connect(self.scroll_down)
+        top_right_col.addWidget(self.scroll_down_btn)
 
-        text =  """This 3D spectrum gets it's calibration ssettings from the 2D spectrum on tab2. 3D spectra quickly become large arrays, for this reason the number of channels have been restricted to less than 1024 channels. Calibration is automatically adjusted accordingly. The plot shows the last 60 seconds, to see the entire file download the csv and open the array in a third party application."""
-
-        text2 = "\n\nMore detailed arrays can be achieved by increasing the interval time."
         # 2. Middle Section — Instructions
         middle_section = QWidget()
-        middle_layout = QVBoxLayout(middle_section)
+        middle_layout = QVBoxLayout(middle_section)        
+        text =  """This 3D spectrum gets it's calibration ssettings from the 2D spectrum on tab2. 3D spectra quickly become large arrays, for this reason the number of channels have been restricted to less than 1024 channels. Calibration is automatically adjusted accordingly. The plot shows the last 60 seconds, to see the entire file download the csv and open the array in a third party application."""
+        text2 = "\n\nMore detailed arrays can be achieved by increasing the interval time."
         self.instructions_label = QLabel(text+text2)
         self.instructions_label.setStyleSheet(P1)
         self.instructions_label.setWordWrap(True)
         middle_layout.addWidget(self.instructions_label)
 
-        # ── Scroll buttons ───────────────────────────────────────────────────
-        
-        self.scroll_up_btn = QPushButton("Scroll ↑")
-        self.scroll_up_btn.setStyleSheet(BUD)
-        self.scroll_down_btn = QPushButton("Scroll ↓")
-        self.scroll_down_btn.setStyleSheet(BUD)
-        self.scroll_up_btn.clicked.connect(self.scroll_up)
-        self.scroll_down_btn.clicked.connect(self.scroll_down)
 
-        top_layout.addWidget(self.scroll_up_btn, 13, 0)
-        top_layout.addWidget(self.scroll_down_btn, 13, 1)
-
-
-        # 3. Bottom Section — Logo
+        # 3. Bottom Section with Logo
         bottom_section = QWidget()
         bottom_layout = QVBoxLayout(bottom_section)
         logo_path = resource_path("assets/impulse.gif")
@@ -316,13 +339,20 @@ class Tab3(QWidget):
     # ======================================================================
     def load_on_show(self):
         if not self.has_loaded:
-
             with shared.write_lock:
                 filename = shared.filename
+                compression = shared.compression
 
             load_histogram_hmp(filename)
-            
-            self.has_loaded = True    
+
+            index = self.bins_selector.findData(compression)
+            if index != -1:
+                self.bins_selector.setCurrentIndex(index)
+            else:
+                logger.warning(f"Compression {compression} not found in BIN_OPTIONS.")
+
+            self.has_loaded = True
+     
 
     def scroll_up(self):
         self.scroll_offset = min(self.scroll_offset + 30, len(self.plot_data) - self.plot_window_size)
@@ -357,6 +387,7 @@ class Tab3(QWidget):
         with shared.write_lock:
             setattr(shared, key, bool(state))
             shared.save_settings()
+
         self.update_graph()    
 
     def refresh_file_list(self):
@@ -384,31 +415,35 @@ class Tab3(QWidget):
         full_filename = f"{selected_name}_hmp.json"
         self.load_selected_file(full_filename)
 
-        # Update text input to reflect selected file
+        self.update_bins_selector()  # <- must happen before setCurrentIndex()
+
+        index = self.bins_selector.findData(shared.compression)
+        if index != -1:
+            self.bins_selector.setCurrentIndex(index)
+        else:
+            logger.warning(f"Compression {shared.compression} not found in BIN_OPTIONS.")
+
         self.filename_input.setText(selected_name)
+
 
     def load_selected_file(self, filename):
         try:
             load_histogram_hmp(filename)
-            logger.info(f"Loaded: {filename}")
 
-            # Strip "_hmp" and update input
-            input_name = Path(filename).stem.replace("_hmp", "")
-            self.filename_input.setText(input_name)
+            # Simplify input update
+            self.filename_input.setText(Path(filename).stem.replace("_hmp", ""))
             self.ready_to_plot = True
             self.refresh_timer.stop()
 
-            # Clear and update plot
-            self.plot_data = []
+            self.plot_data.clear()
             self.time_stamps.clear()
             self.update_graph()
 
         except Exception as e:
             logger.warning(f"Failed to load 3D file: {e}")
-            with shared.write_lock:
+            with write_lock:
                 self.ready_to_plot = False
-                shared.run_flag = False
-
+                run_flag = False
 
     def on_stop_clicked(self):
 
@@ -441,15 +476,13 @@ class Tab3(QWidget):
                 coi             = shared.coi_switch
                 device_type     = shared.device_type
                 t_interval      = shared.t_interval
-            
-            mode = 3
 
             # --- Reset plotting ---
             self.refresh_timer.stop()
             self.refresh_timer.start(t_interval * 1000)
 
             # Call the centralized recording logic
-            thread = start_recording(mode, device_type)
+            thread = start_recording(3, device_type)
             
             if thread:
                 self.process_thread = thread
@@ -457,26 +490,30 @@ class Tab3(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Start Error", f"Error starting: {str(e)}")
 
-    def update_bins_selector(self):
-        compression_values = [64, 32, 16, 8, 4, 2, 1]
-        try:
-            with shared.write_lock:
-                current_compression = shared.compression
-            index = compression_values.index(current_compression)
-        except ValueError:
-            index = 6  # Default to 8192 bins
 
-        self.bins_selector.setCurrentIndex(index)
+    def update_bins_selector(self):
+        try:
+            index = next(i for i, (_, value) in enumerate(BIN_OPTIONS) if value == shared.compression)
+            self.bins_selector.setCurrentIndex(index)
+        except StopIteration:
+            logger.warning(f"Compression {compression} not found in BIN_OPTIONS.")
+            self.bins_selector.setCurrentIndex(len(BIN_OPTIONS) - 1)  # Default to last (8192 bins)
+
         self.update_graph()
+
 
     def on_select_bins_changed(self, index):
         self.plot_data.clear()
+
         compression = self.bins_selector.itemData(index)
-        if compression is not None:
+        if compression:
             with shared.write_lock:
                 shared.compression = compression
                 shared.bins = shared.bins_abs // compression
-                logger.info(f"Compression set to {compression}, bins = {shared.bins}")
+            logger.info(f"Compression set to {compression}, bins = {shared.bins}")
+        else:
+            logger.warning(f"No compression data found for index {index}")
+
 
     def download_array_csv(self):
         # ── Any data to save? ───────────────────────────────────────────────
@@ -542,9 +579,10 @@ class Tab3(QWidget):
             with shared.write_lock:
                 run_flag   = shared.run_flag
                 hist3d     = list(shared.histogram_hmp)
+                filename   = shared.filename
                 t_interval = shared.t_interval
                 log_switch = shared.log_switch
-                epb_switch = shared.epb_switch  # not used in 2D
+                epb_switch = shared.epb_switch
                 cal_switch = shared.cal_switch
                 counts     = shared.counts
                 elapsed    = shared.elapsed
@@ -643,7 +681,9 @@ class Tab3(QWidget):
 
             self.ax.set_xlabel("Energy (keV)" if cal_switch else "Bin #")
             self.ax.set_ylabel("Time (s)")
-            self.ax.set_title(self.filename)
+            self.hmp_plot_title = f"Waterfall - {filename}"
+
+            self.ax.set_title(self.hmp_plot_title)
             self.figure.colorbar(img, ax=self.ax, label="log₁₀(Counts)" if log_switch else "Counts")
 
             # Optional: scrolls upward like a spectrogram
