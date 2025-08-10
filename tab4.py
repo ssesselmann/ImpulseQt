@@ -37,19 +37,20 @@ class Tab4(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.plot_timer = QTimer()
-        self.plot_timer.setInterval(1000)
-        self.plot_timer.timeout.connect(self.update_plot)
-        self.setWindowTitle("Count Rate")
+        # Timer function
+        self.ui_timer = QTimer(self)
+        self.ui_timer.setInterval(1000)
+        self.ui_timer.timeout.connect(self.update_plot)
+        self.ui_timer.timeout.connect(self.update_cps_label)
+        self.ui_timer.setTimerType(Qt.VeryCoarseTimer)  # fewer wakeups at 1s cadence
+        self.ui_timer.start()
+
+        # constants
         self.sum_n = 1
         self.last_loaded_filename = None
 
-        self.cps_timer = QTimer()
-        self.cps_timer.setInterval(1000)
-        self.cps_timer.timeout.connect(self.update_cps_label)
-        self.cps_timer.start()
-
-
+        self.setWindowTitle("Count Rate Plot")
+        
         self.layout = QVBoxLayout(self)
 
         # === Plot ===
@@ -73,24 +74,23 @@ class Tab4(QWidget):
         self.slider.setFixedHeight(30)
         self.slider.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
-        # Label appears above the slider
+        # === Label appears above the slider
         self.slider_label = QLabel(f"Smoothing sec: {self.slider.value()}")
         self.slider_label.setStyleSheet(P2)
         self.slider_label.setAlignment(Qt.AlignLeft)
 
-        # Connect the slider to update the label
+        # === Connect the slider to update the label
         self.slider.valueChanged.connect(self.update_slider_label)
         self.slider.valueChanged.connect(self.set_sum_n)
 
-
-        # Layout to group the label and the slider
+        # === Layout to group the label and the slider
         slider_section = QVBoxLayout()
         slider_section.setSpacing(0)
         slider_section.setAlignment(Qt.AlignTop)
         slider_section.addWidget(self.slider_label)
         slider_section.addWidget(self.slider)
 
-        # Add the slider section to your main layout or controls row
+        # === Add the slider section to your main layout or controls row
         self.layout.addLayout(slider_section)
 
         # === CPS Display Label (bold, updates every second) ===
@@ -104,19 +104,17 @@ class Tab4(QWidget):
         self.cps_live.setAlignment(Qt.AlignLeft)
         self.layout.addWidget(self.cps_live)
 
-        # Horizontal layout to align CPS left under the slider
+        # === Horizontal layout to align CPS left under the slider
         cps_row = QHBoxLayout()
         cps_row.addWidget(self.cps_live)
         cps_row.addStretch()
         self.layout.addLayout(cps_row)
 
-
-
         # === Controls Row: Start/Stop/Download ===
         controls_layout = QHBoxLayout()
         controls_layout.addStretch()
 
-        # Col 3 Row 3
+        # === Dropdown file select
         self.select_file = QComboBox()
         self.select_file.setEditable(False)
         self.select_file.setInsertPolicy(QComboBox.NoInsert)
@@ -129,17 +127,18 @@ class Tab4(QWidget):
         self.select_file.currentIndexChanged.connect(self.on_select_filename_changed)
         self.select_file
 
+        # === Download button
         self.download_button = QPushButton("Download CSV")
         self.download_button.setStyleSheet(BTN)
         self.download_button.clicked.connect(self.on_download_clicked)
 
-
-
+        # === Label 
         self.selected_label = QLabel("No file loaded")
         self.selected_label.setStyleSheet(P2)
         self.selected_label.setAlignment(Qt.AlignLeft)
+
+        # === 
         controls_layout.addWidget(self.selected_label)
-        
         controls_layout.addWidget(self.select_file)
         controls_layout.setAlignment(self.select_file, Qt.AlignTop)
         controls_layout.addWidget(self.download_button)
@@ -176,18 +175,18 @@ class Tab4(QWidget):
         self.footer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         footer_layout.addWidget(self.footer)
 
+        # === Add footer
         self.layout.addLayout(footer_layout)
 
-
+        # === Finally update plot
         self.update_plot()
 
-
     def showEvent(self, event):
-        self.plot_timer.start()
+        self.ui_timer.start()
         super().showEvent(event)
 
     def hideEvent(self, event):
-        self.plot_timer.stop()
+        self.ui_timer.stop()
         super().hideEvent(event)
 
 
@@ -212,8 +211,6 @@ class Tab4(QWidget):
             QMessageBox.critical(self, "File Error", str(e))
 
         QTimer.singleShot(0, lambda: self.select_file.setCurrentIndex(0))
-
-
 
     @Slot()
     def on_download_clicked(self, filename=None):
@@ -249,8 +246,6 @@ class Tab4(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Download Error", str(e))
 
-
-
     def clear_session(self):
         shared.counts = []
         shared.counts_left = []
@@ -266,7 +261,6 @@ class Tab4(QWidget):
             self.cps_live.setText(f"{cps}")
         except Exception as e:
             logger.warning(f"Failed to update CPS label: {e}")
-
 
     def update_plot(self):
         try:
@@ -286,7 +280,6 @@ class Tab4(QWidget):
 
             # --- Base trace (Left or Mono) ---
             self.ax.plot(counts, label="Counts/sec", color="darkblue", linewidth=1.0)
-
 
             # --- Green sum trace (averaged over n seconds) ---
             n = self.sum_n
