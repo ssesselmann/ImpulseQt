@@ -353,14 +353,14 @@ class Tab1MaxWidget(QWidget):
 
     def start_max_oscilloscope_check(self):
         fn.stop_max_pulse_check()
-        time.sleep(0.1)
+        time.sleep(0.2)
         fn.start_max_oscilloscope()
         self.current_max_mode = 1
         self.pulse_timer.start()
 
     def start_max_pulse_check(self):
         fn.stop_max_pulse_check()
-        time.sleep(0.1)
+        time.sleep(0.2)
         fn.start_max_pulse()
         self.current_max_mode = 2
         self.pulse_timer.start()
