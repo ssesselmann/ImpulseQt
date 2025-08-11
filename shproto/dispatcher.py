@@ -17,10 +17,9 @@ from struct import *
 from datetime import datetime
 from collections import deque
 from array import array
-from shared import USER_DATA_DIR
+from shared import USER_DATA_DIR, logger
 
 max_bins            = 8192
-logger              = logging.getLogger(__name__)
 
 stopflag            = 0
 stopflag_lock       = threading.Lock()
@@ -181,16 +180,13 @@ def start(sn=None):
 
     READ_BUFFER = 16384 
 
-    #clear()
-
     with shproto.dispatcher.stopflag_lock:
 
         globals()['stopflag'] = 0
 
-
     nano = shproto.port.connectdevice(sn)
     if not nano:
-        logger.error("Failed to connect to MAX\n")
+        logger.error("[ERROR] Failed to connect to MAX\n")
         return
 
     # ---- moved here (after connect) ----
@@ -199,7 +195,7 @@ def start(sn=None):
     nano.flushInput()
     nano.flushOutput()
 
-    logger.info("MAX connected successfully.\n")
+    logger.info("[INFO] MAX connected successfully.\n")
     response = shproto.packet()
 
     # Track whether the CSV file has been initialized
@@ -223,7 +219,7 @@ def start(sn=None):
                 local_cmd = shproto.dispatcher.command
                 shproto.dispatcher.command = ""
 
-            logger.debug(f"Dispatcher command: {local_cmd!r}\n")
+            logger.debug(f"[DEBUG] Dispatcher command: {local_cmd!r}\n")
 
             # Elapsed control (host-based)
             if   local_cmd == "-sta":
@@ -247,7 +243,7 @@ def start(sn=None):
             tx.stop()
 
             nano.write(tx.payload)
-            logger.debug(f"  → sent bytes: {tx.payload!r}\n")
+            logger.debug(f"[DEBUG] → sent bytes: {tx.payload!r}\n")
 
         # ---- blocking read with timeout; no busy spin, no lock around I/O ----
         try:
@@ -284,14 +280,14 @@ def start(sn=None):
                     resp_lines = resp_decoded.splitlines()
                     if re.search('^VERSION', resp_decoded):
                         shproto.dispatcher.inf_str = resp_decoded
-                        logger.info(f"Got MAX settings:\n")
+                        logger.info(f"[INFO] Got MAX settings:\n")
 
                 except UnicodeDecodeError:
-                    logger.info("Unknown non-text response in dispatcher line 100\n")
+                    logger.info("[INFO] Unknown non-text response in dispatcher line 100\n")
 
                 if len(resp_lines) == 40:
                     serial_number = "{}".format(resp_lines[39])
-                    logger.info("Found MAX serial # {}\n".format(serial_number))
+                    logger.info("[INFO] Found MAX serial # {}\n".format(serial_number))
 
 
                     b_str = ''
@@ -306,9 +302,9 @@ def start(sn=None):
                             shproto.dispatcher.calibration[3] = unpack('d', int((resp_lines[6] + resp_lines[7]), 16).to_bytes(8, 'little'))[0]
                             shproto.dispatcher.calibration[4] = unpack('d', int((resp_lines[8] + resp_lines[9]), 16).to_bytes(8, 'little'))[0]
                             shproto.dispatcher.calibration_updated = 1
-                        logger.info("Got calibration: {}\n".format(shproto.dispatcher.calibration))
+                        logger.info("[INFO] Got calibration: {}\n".format(shproto.dispatcher.calibration))
                     else:
-                        logger.info("dispatcher Wrong crc for calibration values got: {:08x} expected: {:08x} \n".format(int(resp_lines[10], 16), crc))
+                        logger.info("[INFO] dispatcher Wrong crc for calibration values got: {:08x} expected: {:08x} \n".format(int(resp_lines[10], 16), crc))
 
                 response.clear()
 
@@ -544,7 +540,7 @@ def process_01(filename, compression, device, t_interval):
         # ================================================================
         if spec_stopflag or stopflag:
             
-            logger.info("[DO] dispatcher process_01 received stop signal\n")
+            logger.info("[INFO] dispatcher process_01 received stop signal\n")
 
             # Final compression step
             comp_hst = [sum(hst[i:i + compression]) for i in range(0, max_bins, compression)]
@@ -580,7 +576,7 @@ def process_01(filename, compression, device, t_interval):
         # ===============================================
         if counts >= max_counts or elapsed > max_seconds:
 
-            logger.info("[IF] process_01 stop condition (counts or time)\n")
+            logger.info("[INFO] process_01 stop condition (counts or time)\n")
 
             counts      = sum(comp_hst)
 
@@ -612,7 +608,7 @@ def process_01(filename, compression, device, t_interval):
 # 3D WATERFALL
 # ========================================================
 def process_02(filename_hmp, compression3d, device, t_interval):
-    logger.info(f'dispatcher.process_03 ({filename_hmp})\n')
+    logger.info(f'[INFO] dispatcher.process_03 ({filename_hmp})\n')
 
     global counts, last_counts, histogram_hmp
 
@@ -636,11 +632,11 @@ def process_02(filename_hmp, compression3d, device, t_interval):
 
     while True:
         if shproto.dispatcher.spec_stopflag or shproto.dispatcher.stopflag:
-            logger.info("MAX process_03 received stop signal\n")
+            logger.info("[INFO] MAX process_03 received stop signal\n")
             break
 
         if counts >= max_counts or elapsed > max_seconds:
-            logger.info("MAX process_03 reached stopping condition (counts or time)\n")
+            logger.info("[INFO] MAX process_03 reached stopping condition (counts or time)\n")
             break
 
         time.sleep(t_interval)
@@ -693,13 +689,13 @@ def process_03(cmd):
 
         shproto.dispatcher.command = cmd
 
-    logger.info(f'[OK] dispatcher process_03("{cmd}")\n')
+    logger.info(f'[INFO] dispatcher process_03("{cmd}")\n')
 
 
 
 def clear():
 
-    logger.info("[DO] dispatcher.clear()\n")
+    logger.info("[INFO] dispatcher.clear()\n")
 
     with shproto.dispatcher.histogram_lock:
         shproto.dispatcher.stat_prev_tt             = None
@@ -764,7 +760,7 @@ def save_spectrum_json(filename, device, comp_hst, counts, elapsed, coeffs, spec
 
             json.dump(data, f, separators=(",", ":"))
 
-        logger.info(f"[OK] Spectrum saved to {json_path}\n")
+        logger.info(f"[INFO] Spectrum saved to {json_path}\n")
 
         cps_data = {
             "filename": filename,
@@ -778,13 +774,13 @@ def save_spectrum_json(filename, device, comp_hst, counts, elapsed, coeffs, spec
         with open(cps_path, "w") as f:
             json.dump(cps_data, f, indent=2)
 
-        logger.info(f"[OK] CPS saved to {cps_path}\n")
+        logger.info(f"[INFO] CPS saved to {cps_path}\n")
 
     except Exception as e:
         logger.error(f"[ERROR] Failed to save spectrum: {e}")
 
 def load_json_data(file_path):
-    logger.info(f'dispatcher.load_json_data({file_path})\n')
+    logger.info(f'[INFO]dispatcher.load_json_data({file_path})\n')
     if os.path.exists(file_path):
         with open(file_path, "r") as rjf:
             return json.load(rjf)
