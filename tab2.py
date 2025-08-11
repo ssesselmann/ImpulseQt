@@ -273,7 +273,6 @@ class Tab2(QWidget):
 
         self.update_bins_selector()
 
-
         #================================================================
         # MAX OPEN WRAPPER 
         # ===============================================================
@@ -379,7 +378,6 @@ class Tab2(QWidget):
         self.select_comparison.currentIndexChanged.connect(self.on_select_filename_2_changed)    
         grid.addWidget(self.labeled_input("Comparison spectrum", self.select_comparison), 3, 3)
 
-
         # Col 5 Row 1 ---------------------------------------------------------------------
         self.comp_container = self.make_checkbox_container(
             label="Show comparison",
@@ -411,7 +409,6 @@ class Tab2(QWidget):
         )
         grid.addWidget(self.diff_container, 2, 4)
 
-
         # Col 5 Row 4
         self.select_flag_table = QComboBox()
         self.select_flag_table.setEditable(False)
@@ -432,7 +429,6 @@ class Tab2(QWidget):
         self.select_flag_table.currentIndexChanged.connect(self.on_select_flag_table_changed)    
         grid.addWidget(self.labeled_input("Select Isotope Library", self.select_flag_table), 3, 4)
 
-
         # Col 6 Row 1 
         self.epb_container = self.make_checkbox_container(
             label="Energy per bin",
@@ -442,7 +438,6 @@ class Tab2(QWidget):
         )
         grid.addWidget(self.epb_container, 0, 5)
 
-        
         # Col 6 Row 2 
         self.log_container = self.make_checkbox_container(
             label="Show log(y)",
@@ -451,7 +446,6 @@ class Tab2(QWidget):
             shared_key="log_switch"
         )
         grid.addWidget(self.log_container, 1, 5)
-
 
         # Col 6 Row 3
         self.cal_container = self.make_checkbox_container(
@@ -462,7 +456,6 @@ class Tab2(QWidget):
         )
         grid.addWidget(self.cal_container, 2, 5)
 
-
         # Col 6 Row 4
         self.iso_container = self.make_checkbox_container(
             label="Show Isotopes",
@@ -471,7 +464,6 @@ class Tab2(QWidget):
             shared_key="iso_switch"
         )
         grid.addWidget(self.iso_container, 3, 5)
-
 
         # Col 7 Row 1
         self.sigma_slider = QSlider(Qt.Horizontal)
@@ -513,7 +505,6 @@ class Tab2(QWidget):
         grid.addWidget(peakfinder_widget, 1, 6)
         self.peakfinder_slider.valueChanged.connect(self.on_peakfinder_changed)
         self.on_peakfinder_changed(self.peakfinder_slider.value())
-
 
         # Col 7 Row 3
         self.poly_label = QLabel(f"E = {coeff_1:.3f}x² + {coeff_2:.3f}x + {coeff_3:.3f}")
@@ -598,9 +589,10 @@ class Tab2(QWidget):
         self.ui_timer.start(int(max(50, t_interval * 1000)))
 
     def update_ui(self):
+        if not self.isVisible():      # <- add this line
+            return                    # <- and this
         self.update_labels()
         self.update_histogram()
-
 
     def load_on_show(self):
 
@@ -660,7 +652,6 @@ class Tab2(QWidget):
         except ValueError:
             pass  # skip if input is invalid    
 
-
     def update_bins_selector(self):
         """Select combo index to match shared.compression, then refresh the graph."""
         # Read shared.compression under lock
@@ -675,7 +666,6 @@ class Tab2(QWidget):
 
         self.bins_selector.setCurrentIndex(index)
         self.update_histogram()
-
 
     def on_select_bins_changed(self, index):
         """Write selection back to shared and log it."""
@@ -695,7 +685,6 @@ class Tab2(QWidget):
         logger.info(f"[INFO] Compression set to {compression}, bins = {shared.bins}")
         # If Tab needs an immediate redraw beyond update_bins_selector():
         self.update_graph()
-
 
     def make_cell(self, text):
         label = QLabel(text)
@@ -822,8 +811,12 @@ class Tab2(QWidget):
 
         with shared.write_lock:
             setattr(shared, name, value)
+            sigma = shared.sigma
 
+        if sigma > 0:
             logger.info(f"[INFO] {name} set to {value}\n")
+        else:
+            logger.warning(f"[WARNING] {name} needs sigma > 0\n")
 
         self.update_histogram()
 
@@ -874,8 +867,6 @@ class Tab2(QWidget):
 
         # Selection spring back function
         QTimer.singleShot(0, lambda: self.select_file.setCurrentIndex(0))
-
-        #self.update_plot()
 
     def on_select_filename_2_changed(self, index):
         filename_2 = self.select_comparison.itemData(index)
@@ -976,8 +967,6 @@ class Tab2(QWidget):
         except Exception as e:
             logger.error(f"[ERROR] Exception during JSON update: {e}\n")
 
-
-
     def on_dld_csv_btn(self):
 
         with shared.write_lock:
@@ -1024,7 +1013,6 @@ class Tab2(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to save CSV:\n{str(e)}")
 
-
     def apply_calibration(self, x_vals, coeffs):
         if any(coeffs):
             return np.polyval(np.poly1d(coeffs), x_vals)
@@ -1050,7 +1038,6 @@ class Tab2(QWidget):
             return [max(min_val, y) for y in y_vals]
         return y_vals
 
-
     def update_compression_setting(self):
         if device_type == "MAX":
             value = self.channel_selector.currentData()
@@ -1060,7 +1047,6 @@ class Tab2(QWidget):
                 logger.info(f"[INFO] Compression set to {value} (i.e., {shared.bins_abs // value} bins)\n")
         return    
 
-    
     def send_selected_command(self):
 
         cmd = self.cmd_selector.currentData()
@@ -1079,14 +1065,12 @@ class Tab2(QWidget):
         self.update_histogram()
         self.update_peak_markers()
 
-
     def update_peak_markers(self):
 
         # Always clear old markers first
         for item in getattr(self, "peak_markers", []):
             self.plot_widget.removeItem(item)
         self.peak_markers = []
-
 
         if shared.peakfinder == 0:
             return
@@ -1141,6 +1125,7 @@ class Tab2(QWidget):
 
             # ----- Optional isotope match (energy-aware tolerance) -----
             isotope_lines = []
+
             if use_iso and shared.sigma > 0 and peaks is not None:
                 # helpers
                 def energy_of_bin(idx: int) -> float:
@@ -1202,10 +1187,6 @@ class Tab2(QWidget):
             label.setPos(x_pos, y_pos)
             self.plot_widget.addItem(label)
             self.peak_markers.append(label)
-
-        logger.debug(f"[DEBUG] drew {len(self.peak_markers)} peak markers.")
-
-
 
     def update_histogram(self):
         with shared.write_lock:
@@ -1332,6 +1313,3 @@ class Tab2(QWidget):
         if do_peaks:
             self.update_peak_markers()
             self._last_peaks_t = now
-
-
-        logger.info("[INFO] update_histogram completed\n")
