@@ -25,6 +25,7 @@ import shproto.dispatcher
 import serial.tools.list_ports
 import shared
 import numpy as np
+import shproto.dispatcher as disp
 
 from pulsecatcher import pulsecatcher
 from scipy.signal import find_peaks, peak_widths
@@ -35,7 +36,6 @@ from shproto.dispatcher import process_03, start
 from pathlib import Path
 from shared import logger, USER_DATA_DIR
 
-logger          = logging.getLogger(__name__)
 cps_list        = []
 
 with shared.write_lock:
@@ -46,12 +46,10 @@ stop_thread         = threading.Event()
 # Define the queue at the global level
 pulse_data_queue    = queue.Queue()
 
-
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and PyInstaller """
     base_path = getattr(sys, '_MEIPASS', os.path.abspath("."))
     return os.path.join(base_path, relative_path)
-
 
 # Finds pulses in string of data over a given threshold
 def find_pulses(left_channel):
@@ -136,7 +134,6 @@ def write_histogram_npesv2(t0, t1, bins, counts, dropped_counts, elapsed, filena
     with open(jsonfile, "w+") as f:
         json.dump(data, f, separators=(',', ':'))
 
-
 # Function to create a blank JSON NPESv2 schema filename_hmp.json
 def write_blank_json_schema_hmp(filename, device):
     jsonfile = get_path(f'{shared.USER_DATA_DIR}/{filename}_hmp.json')
@@ -175,9 +172,10 @@ def write_blank_json_schema_hmp(filename, device):
     try:
         with open(jsonfile, "w") as f:
             json.dump(data, f, separators=(',', ':'))
-        logger.info(f"Blank JSON schema created: {jsonfile}\n")
+        logger.info(f"[INFO] JSON schema created: {jsonfile}\n")
+
     except Exception as e:
-        logger.error(f"Error writing blank JSON file: {e}\n")
+        logger.error(f"[ERROR] writing blank JSON file: {e}\n")
 
 
 def update_json_hmp_file(t0, t1, bins, counts, elapsed, filename_hmp, last_histogram, coeff_1, coeff_2, coeff_3, device):
@@ -189,12 +187,12 @@ def update_json_hmp_file(t0, t1, bins, counts, elapsed, filename_hmp, last_histo
     
     # Check if the file exists
     if os.path.isfile(jsonfile):
-        logger.info(f"JSON file exists, updating file: {jsonfile}\n")
+        logger.info(f"[INFO] updating file: {jsonfile}\n")
         try:
             with open(jsonfile, "r") as f:
                 data = json.load(f)
         except Exception as e:
-            logger.error(f"Error reading JSON file: {e}\n")
+            logger.error(f"[ERROR] reading JSON file: {e}\n")
             return
         
         # Update other fields
@@ -206,10 +204,10 @@ def update_json_hmp_file(t0, t1, bins, counts, elapsed, filename_hmp, last_histo
         result_data["energySpectrum"]["validPulseCount"] = counts
         result_data["energySpectrum"]["measurementTime"] = elapsed
         # Append the new histogram to the existing spectrum list
-        result_data['energySpectrum']['spectrum'].extend(last_histogram)
+        result_data['energySpectrum']['spectrum'].append(last_histogram)
 
     else:
-        logger.info(f"JSON file does not exist, creating new file: {jsonfile}\n")
+        logger.info(f"[INFO]creating new json file: {jsonfile}\n")
         
         data = {
             "schemaVersion": "NPESv2",
@@ -246,9 +244,9 @@ def update_json_hmp_file(t0, t1, bins, counts, elapsed, filename_hmp, last_histo
     try:
         with open(jsonfile, "w") as f:
             json.dump(data, f, separators=(',', ':'))
-        logger.info(f"JSON 3D file updated: {jsonfile}")
+        logger.info(f"[INFO] 3D json file updated: {jsonfile}")
     except Exception as e:
-        logger.error(f"Error writing JSON file: {e}")
+        logger.error(f"[ERROR] writing json file: {e}")
 
 # This function writes counts per second to JSON
 def write_cps_json(filename, count_history, elapsed, valid_counts, dropped_counts):
@@ -266,7 +264,7 @@ def write_cps_json(filename, count_history, elapsed, valid_counts, dropped_count
         with open(cps_file_path, 'w') as file:
             json.dump(cps_data, file, separators=(',', ':'))
     except Exception as e:
-        logger.error(f"Error saving CPS data to {cps_file_path}: {e}\n")
+        logger.error(f"[ERROR] saving CPS data to {cps_file_path}: {e}\n")
      
     return    
 
@@ -330,7 +328,6 @@ def get_serial_device_list():
 
     return serial_device_list
 
-
 # Returns maxInputChannels in an unordered list
 def get_max_input_channels(device):
     p = pyaudio.PyAudio()
@@ -367,7 +364,7 @@ def restart_program():
     subprocess.Popen(['python', 'app.py'])
 
 def shutdown():
-    logger.info('Shutting down server...\n')
+    logger.info('[INFO] Shutting down server...\n')
     os._exit(0)
 
 def rolling_average(data, window_size):
@@ -407,7 +404,6 @@ def gaussian_correl(data, sigma):
     scaling_factor = 0.8 * max_data / max_correl_value if max_correl_value != 0 else 1
     return [int(value * scaling_factor) for value in correl_values]
 
-
 def start_recording(mode, device_type):
 
     if device_type == "MAX":
@@ -417,9 +413,8 @@ def start_recording(mode, device_type):
         return start_pro_recording(mode)
 
     else:
-        logger.error(f"Unsupported device_type: {device_type}")
+        logger.error(f"[ERROR] Unsupported device_type: {device_type}")
         return None
-
 
 def start_max_recording(mode):
     # Try to stop any previous process
@@ -442,7 +437,7 @@ def start_max_recording(mode):
         device       = shared.device
         t_interval   = shared.t_interval
 
-    logger.info(f"Starting MAX recording ({filename}) in mode {mode}")
+    logger.info(f"[INFO] Starting MAX recording ({filename}) in mode {mode}")
 
     # Reset dispatcher stop flag
     shproto.dispatcher.spec_stopflag = 0
@@ -480,8 +475,6 @@ def start_max_recording(mode):
     shared.max_process_thread = process_thread
     return process_thread
 
-
-
     def run_dispatcher():
         try:
             if mode == 3:
@@ -499,7 +492,6 @@ def start_max_recording(mode):
     process_thread.start()
     return process_thread
 
-
 def start_pro_recording(mode):
     with shared.write_lock:
         filename        = shared.filename
@@ -511,7 +503,7 @@ def start_pro_recording(mode):
         shared.recording = True
 
     if mode == 2 or mode == 4:
-        logger.info(f"Starting PRO 2D recording in mode {mode}")
+        logger.info(f"[INFO] Start PRO 2D recording in mode {mode}")
 
         try:
             thread = threading.Thread(target=pulsecatcher, args=(mode, run_flag, run_flag_lock))
@@ -523,7 +515,7 @@ def start_pro_recording(mode):
 
     elif mode == 3:
 
-        logger.info("Starting PRO 3D recording...")
+        logger.info("[INFO] Starting PRO 3D recording...")
 
         write_blank_json_schema_hmp(filename_hmp, device)
 
@@ -541,7 +533,6 @@ def start_pro_recording(mode):
         logger.error(f"[ERROR] Unsupported mode for PRO device: {mode}")
         return None
 
-
 def stop_recording():
 
     with shared.write_lock:
@@ -554,8 +545,6 @@ def stop_recording():
         
     logger.info(f"[INFO] Recording stopped for device [{device_type}]\n")
 
-
-    
 # clear variables
 def clear_shared(mode):
 
@@ -570,7 +559,6 @@ def clear_shared(mode):
             shared.spec_notes      = ""
 
         logger.info("[INFO] cleared shared variables on mode 2\n")    
-
 
     if mode == 3:
 
@@ -675,7 +663,7 @@ def get_api_key():
     try:
         user_file_path = get_path(f'{data_directory}/_user.json')
         if not os.path.exists(user_file_path):
-            logger.error(f"User file not found: {user_file_path}\n")
+            logger.error(f"[ERROR] User file not found: {user_file_path}\n")
             return None
 
         with open(user_file_path, 'r') as file:
@@ -693,10 +681,11 @@ def publish_spectrum(filename):
     with shared.write_lock:
         data_directory = shared.DATA_DIR
         
-    logger.info(f'functions.publish_spectrum {filename}\n')
+    logger.info(f'[INFO] functions.publish_spectrum {filename}\n')
+
     url = "https://gammaspectacular.com/spectra/publish_spectrum"
     api_key = get_api_key()
-    logger.info(f'Api key obtained {api_key}\n')
+    logger.info(f'[INFO] Api key obtained {api_key}\n')
     spectrum_file_path = f'{data_directory}/{filename}.json'
     try:
         with open(spectrum_file_path, 'rb') as file:
@@ -704,19 +693,19 @@ def publish_spectrum(filename):
             data = {'api_key': api_key}
             response = req.post(url, files=files, data=data)
             if response.status_code == 200:
-                logger.info(f'{filename} Published ok\n')
+                logger.info(f'[INFO] {filename} Published ok\n')
                 return f'{filename}\npublished:\n{response}'
             else:
-                logger.error(f'code/functions/publish_spectrum {response.text}\n')
+                logger.error(f'[ERROR] {response.text}\n')
                 return f'Error from /code/functions/publish_spectrum: {response.text}'
     except req.exceptions.RequestException as e:
-        logger.error(f'code/functions/publish_spectrum: {e}\n')
+        logger.error(f'[ERROR] publish failed {e}\n')
         return f'code/functions/publish_spectrum: {e}'
     except FileNotFoundError:
-        logger.error(f'Error from /code/functions/publish_spectrum: {spectrum_file_path}\n')
+        logger.error(f'[ERROR] from /code/functions/publish_spectrum: {spectrum_file_path}\n')
         return f'Error from /code/functions/publish_spectrum: {spectrum_file_path}'
     except Exception as e:
-        logger.error(f'Error from /code/functions/publish_spectrum: {e}\n')
+        logger.error(f'[ERROR] from /code/functions/publish_spectrum: {e}\n')
         return f'Error from /code/functions/publish_spectrum: {e}'
 
 
@@ -738,12 +727,8 @@ def fetch_json(file_id):
             return response.json()
         return None
     except req.exceptions.RequestException as e:
-        logger.error(f"Error fetching JSON: {e}\n")
+        logger.error(f"[ERROR] fetching JSON: {e}\n")
         return None
-
-
-
-
 
 # Check if commands sent to processor is safe
 def allowed_command(cmd):
@@ -778,7 +763,6 @@ def is_valid_json(file_path):
     except (json.JSONDecodeError, FileNotFoundError):
         return False
 
-
 def get_filename_options(kind="user"):
     # Returns a list of file options for dropdowns, based on file type.
     def match(filename: str) -> bool:
@@ -810,7 +794,6 @@ def get_filename_options(kind="user"):
     files.sort(key=lambda x: x['label'].lower())  # case-insensitive sort
 
     return files
-
 
 def get_filename_2_options():
     def is_valid(filename: str) -> bool:
@@ -904,7 +887,6 @@ def reset_stores():
         'store_load_flag_tab4': False,
     }
 
-
 def load_histogram(filename):
 
     with shared.write_lock:
@@ -912,9 +894,8 @@ def load_histogram(filename):
 
     # Ensure .json extension exactly once
     filename = Path(filename).stem + ".json"
-
     # Build full path using get_path logic
-    path = get_path(os.path.join(data_directory, filename))
+    path     = get_path(os.path.join(data_directory, filename))
 
     try:
         with open(path, "r", encoding="utf-8") as file:
@@ -982,7 +963,6 @@ def load_histogram_2(filename):
             shared.comp_coeff_2     = data["resultData"]["coefficients"][1]
             shared.comp_coeff_3     = data["resultData"]["coefficients"][2]
 
-
         logger.info(f"[INFO] Loaded histogram_2 {filename} \n") 
 
         return True
@@ -1033,7 +1013,7 @@ def load_histogram_hmp(stem):
             shared.coeff_1, shared.coeff_2, shared.coeff_3 = coeffs
             shared.startTime3d      = data["resultData"]["startTime"]
             shared.endTime3d        = data["resultData"]["startTime"]
-            shared.compression     = int(shared.bins_abs/spectrum_data["numberOfChannels"])
+            shared.compression      = int(shared.bins_abs / data["numberOfChannels"])
 
 
         logger.info(f"[INFO] shared updated from {file_path}\n")
@@ -1045,8 +1025,6 @@ def load_histogram_hmp(stem):
     except Exception as e:
 
         logger.error(f"[ERROR] Exception loading 3D histogram: {e}\n")
-
-
 
 def load_cps_file(filepath):
     
@@ -1080,8 +1058,7 @@ def load_cps_file(filepath):
     except json.JSONDecodeError as e:
         raise ValueError(f"[ERROR] loading cps JSON from {filepath}: {e}")
     except Exception as e:
-        raise RuntimeError(f"[ERROR] while loading CPS data from {filepath}: {e}")
-      
+        raise RuntimeError(f"[ERROR] while loading CPS data from {filepath}: {e}")  
 
 def format_date(iso_datetime_str):
     # Parse the datetime string to a datetime object
@@ -1149,7 +1126,6 @@ def capture_pulse_data():
     except Exception as e:
         logger.error(f"[ERROR] while capturing pulse data: {e}\n")
 
-
 def get_flag_options():
     """Returns a list of dicts with 'label' and 'value' for each .json file in the given directory."""
     options = []
@@ -1209,50 +1185,108 @@ def get_serial_device_information():
         logger.error(f"[ERROR] retrieving device information: {e}\n")
         return "[ERROR] retrieving device information"
 
+def _wait_for_change(getter, timeout=0.8, poll=0.02):
+    """Wait until getter() returns a non-empty value different from its baseline."""
+    baseline = getter() or ""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        val = getter() or ""
+        if val and val != baseline:
+            return val
+        time.sleep(poll)
+    # timeout: return whatever we have (maybe baseline or empty)
+    return getter() or baseline
 
 def generate_device_settings_table_data():
+    disp.ensure_running()
 
-    process_03('-cal')
+    # 1) Get serial from -cal
+    with disp.command_lock:
+        disp.command = "-cal"
+    serial_number = _wait_for_change(lambda: getattr(disp, "serial_number", ""), timeout=1.0)
 
-    time.sleep(0.2)
+    # 2) Get info text from -inf
+    with disp.command_lock:
+        disp.command = "-inf"
+    inf_text = _wait_for_change(lambda: getattr(disp, "inf_str", ""), timeout=1.0)
 
-    serial_number = shproto.dispatcher.serial_number
+    # 3) Parse whatever we got (don’t blank the UI if empty)
+    info_new  = parse_device_info(inf_text) if inf_text else {}
+    tco_pairs = extract_tco_pairs(inf_text) if inf_text else []
 
-    time.sleep(0.2)
-
-    dev_info = get_serial_device_information()
-
-    time.sleep(0.2)
-
-    info = parse_device_info(dev_info)
-
-    tco_pairs = extract_tco_pairs(dev_info)
-
-    # 5) Use cached values if the new parse is empty
     with shared.write_lock:
-        shared.device_info   = info
-        shared.serial_number = serial_number
-        shared.tco_pairs     = tco_pairs  
+        info_cached = getattr(shared, "device_info", {}) or {}
+        tco_cached  = getattr(shared, "tco_pairs", []) or []
+
+    info = info_new if info_new else info_cached
+    tco  = tco_pairs if tco_pairs else tco_cached
+
+    # Persist only if we parsed something
+    if info_new:
+        with shared.write_lock:
+            shared.device_info = info_new
+            shared.tco_pairs   = tco_pairs
 
     rows = [
-        ("Version",           "-ver",  info.get("VERSION")),
-        ("Serial number",     "-cal",  serial_number),
-        ("Rise samples",      "-ris",  info.get("RISE")),
-        ("Fall samples",      "-fall", info.get("FALL")),
-        ("Noise LLD",         "-nos",  info.get("NOISE")),
-        ("ADC freq (Hz)",     "-frq",  info.get("F")),
-        ("Max integral",      "-max",  info.get("MAX")),
-        ("Hysteresis",        "-hyst", info.get("HYST")),
-        ("Mode [0–2]",        "-mode", info.get("MODE")),
-        ("Discriminator step","-step", info.get("STEP")),
-        ("High voltage",      "-U",    info.get("POT")),
-        ("Baseline trim",     "-V",    info.get("POT2")),
-        ("Temp sensor 1 (°C)","status",info.get("T1")),
-        ("Energy window",     "-win",  info.get("OUT")),
-        ("Temp-comp enabled", "-tc",   info.get("TC")),
+        ("Version",           "-ver",  info.get("VERSION", "")),
+        ("Serial number",     "-cal",  serial_number or ""),
+        ("Rise samples",      "-ris",  info.get("RISE", "")),
+        ("Fall samples",      "-fall", info.get("FALL", "")),
+        ("Noise LLD",         "-nos",  info.get("NOISE", "")),
+        ("ADC freq (Hz)",     "-frq",  info.get("F", "")),
+        ("Max integral",      "-max",  info.get("MAX", "")),
+        ("Hysteresis",        "-hyst", info.get("HYST", "")),
+        ("Mode [0–2]",        "-mode", info.get("MODE", "")),
+        ("Discriminator step","-step", info.get("STEP", "")),
+        ("High voltage",      "-U",    info.get("POT", "")),
+        ("Baseline trim",     "-V",    info.get("POT2", "")),
+        ("Temp sensor 1 (°C)","status",info.get("T1", "")),
+        ("Energy window",     "-win",  info.get("OUT", "")),
+        ("Temp-comp enabled", "-tc",   info.get("TC", "")),
     ]
+    return rows, tco
 
-    return rows, tco_pairs
+
+
+# def generate_device_settings_table_data():
+
+#     process_03('-cal')
+#     time.sleep(0.2)
+
+#     serial_number = shproto.dispatcher.serial_number
+#     time.sleep(0.2)
+
+#     dev_info = get_serial_device_information()
+#     time.sleep(0.2)
+
+#     info        = parse_device_info(dev_info)
+#     tco_pairs   = extract_tco_pairs(dev_info)
+
+#     # 5) Use cached values if the new parse is empty
+#     with shared.write_lock:
+#         shared.device_info   = info
+#         shared.serial_number = serial_number
+#         shared.tco_pairs     = tco_pairs  
+
+#     rows = [
+#         ("Version",           "-ver",  info.get("VERSION")),
+#         ("Serial number",     "-cal",  serial_number),
+#         ("Rise samples",      "-ris",  info.get("RISE")),
+#         ("Fall samples",      "-fall", info.get("FALL")),
+#         ("Noise LLD",         "-nos",  info.get("NOISE")),
+#         ("ADC freq (Hz)",     "-frq",  info.get("F")),
+#         ("Max integral",      "-max",  info.get("MAX")),
+#         ("Hysteresis",        "-hyst", info.get("HYST")),
+#         ("Mode [0–2]",        "-mode", info.get("MODE")),
+#         ("Discriminator step","-step", info.get("STEP")),
+#         ("High voltage",      "-U",    info.get("POT")),
+#         ("Baseline trim",     "-V",    info.get("POT2")),
+#         ("Temp sensor 1 (°C)","status",info.get("T1")),
+#         ("Energy window",     "-win",  info.get("OUT")),
+#         ("Temp-comp enabled", "-tc",   info.get("TC")),
+#     ]
+
+#     return rows, tco_pairs
 
 def parse_device_info(info_string):
 
