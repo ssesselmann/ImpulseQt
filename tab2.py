@@ -670,7 +670,7 @@ class Tab2(QWidget):
         try:
             index = next(i for i, (_, value) in enumerate(BIN_OPTIONS) if int(value) == cur_comp)
         except StopIteration:
-            logger.warning(f"Compression {cur_comp} not found in BIN_OPTIONS.")
+            logger.warning(f"[WARNING] Compression {cur_comp} not found in BIN_OPTIONS.")
             index = len(BIN_OPTIONS) - 1  # Default to last (usually 8192 bins)
 
         self.bins_selector.setCurrentIndex(index)
@@ -683,7 +683,7 @@ class Tab2(QWidget):
 
         data = self.bins_selector.itemData(index)
         if data is None:
-            logger.warning(f"No compression data found for index {index}")
+            logger.warning(f"[WARNING] No compression data found for index {index}")
             return
 
         compression = int(data)
@@ -692,7 +692,7 @@ class Tab2(QWidget):
             shared.compression = compression
             shared.bins = shared.bins_abs // compression
 
-        logger.info(f"Compression set to {compression}, bins = {shared.bins}")
+        logger.info(f"[INFO] Compression set to {compression}, bins = {shared.bins}")
         # If Tab needs an immediate redraw beyond update_bins_selector():
         self.update_graph()
 
@@ -823,7 +823,7 @@ class Tab2(QWidget):
         with shared.write_lock:
             setattr(shared, name, value)
 
-            logger.info(f"[TOGGLE] {name} set to {value}\n")
+            logger.info(f"[INFO] {name} set to {value}\n")
 
         self.update_histogram()
 
@@ -887,7 +887,7 @@ class Tab2(QWidget):
             success = load_histogram_2(filename_2)
 
             if success:
-                logger.info(f"[OK] Loaded comparison spectrum: {filename_2}\n")
+                logger.info(f"[INFO] Loaded comparison spectrum: {filename_2}\n")
             else:
                 logger.error(f"[ERROR] Failed to load comparison spectrum: {filename_2}\n")
 
@@ -916,7 +916,7 @@ class Tab2(QWidget):
         if flags:
             logger.info(f"[INFO] Loaded {len(flags)} isotope flags from {isotope_tbl}\n")
         else:
-            logger.warning(f"[WARN] No isotope flags loaded from {isotope_tbl}\n")
+            logger.warning(f"[WARNING] No isotope flags loaded from {isotope_tbl}\n")
         
     def on_sigma_changed(self, val):
         sigma = val / 10.0
