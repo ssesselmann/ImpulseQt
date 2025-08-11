@@ -3,7 +3,7 @@ import shproto.dispatcher  # Importing the 'dispatcher' module from the 'shproto
 import statistics  # Importing the 'statistics' module for mathematical statistics functions
 import threading  # Importing the 'threading' module for multi-threading support
 import os  # Importing the 'os' module for interacting with the operating system
-import logging
+from shared import logger
 
 # Initialize global variables
 avg_cps = 0  # Global variable to store average cycles per second
@@ -29,7 +29,7 @@ spec_dir = os.path.expanduser("~/nanopro_data/")
 def alertmode(spec_dir, cps_ratio=1.5):
     count = 0  # Counter for the number of cycles collected for averaging
     cps_arr = []  # List to store CPS values for averaging
-    logger.info("Collecting average CPS, this will take about {} seconds.\n".format(avg_cycles * avg_cycles_timeout))
+    logger.info("[INFO] Collecting average CPS, this will take about {} seconds.\n".format(avg_cycles * avg_cycles_timeout))
     
     # Collect average CPS values
     while count <= avg_cycles:
@@ -41,7 +41,7 @@ def alertmode(spec_dir, cps_ratio=1.5):
             count += 1
         time.sleep(avg_cycles_timeout)
     
-    logger.info("Average CPS collected: {}, starting alert mode.\n".format(avg_cps))
+    logger.info("[INFO] Average CPS collected: {}, starting alert mode.\n".format(avg_cps))
     
     cur_relax_cycles = 0
     fd = None
@@ -81,13 +81,13 @@ def alertmode(spec_dir, cps_ratio=1.5):
                 fd.truncate()
             
             if cur_relax_cycles > relax_cycles:
-                logger.info("Alert gone. Current CPS = {}, for {} seconds\n".format(current_cps, relax_cycles * alert_loop_timeout))
+                logger.info("[INFO] Alert gone. Current CPS = {}, for {} seconds\n".format(current_cps, relax_cycles * alert_loop_timeout))
                 alert_rised = 0
                 fd.close()
         
         time.sleep(alert_loop_timeout)
     
-    logger.info("Exit alert mode.\n")
+    logger.info("[INFO] Exit alert mode.\n")
 
 # Function to stop the alert mode
 def stop():
