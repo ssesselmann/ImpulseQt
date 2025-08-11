@@ -93,7 +93,7 @@ log_file = LOG_DIR / "impulseqt_log.txt"
 #logging.basicConfig(level=logging.INFO)
 logging.basicConfig(level=logging.DEBUG)
 #logging.basicConfig(level=logging.WARNING)
-# logging.basicConfig(level=logging.ERROR)
+#logging.basicConfig(level=logging.ERROR)
 
 # Suppress noisy loggers
 logging.getLogger('matplotlib').setLevel(logging.WARNING)
@@ -140,6 +140,7 @@ USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
 LIB_DIR = USER_DATA_DIR / "lib"
 ISO_DIR = LIB_DIR / "iso"  # Gamma reference spectra
 TBL_DIR = LIB_DIR / "tbl"  # Flagging tables
+
 
 # --- Application Settings ---
 filename = "my_spectrum"
