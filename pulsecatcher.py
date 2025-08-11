@@ -13,97 +13,6 @@ import functions as fn
 
 from shared import logger
 
-def queue_save_data(save_queue, meta, full_histogram, filename):
-    data = meta.copy()
-    data["filename"] = filename
-    data["full_histogram"] = full_histogram.copy()
-    save_queue.put(data)
-
-# Function to save data in a separate thread
-def save_data(save_queue):
-    while True:
-        data = save_queue.get()
-        if data is None:
-            break
-        t0                  = data['t0']
-        t1                  = data['t1']
-        bins                = int(data['bins'])
-        local_counts        = data['local_counts']
-        dropped_counts      = data['dropped_counts']
-        local_elapsed       = data['local_elapsed']
-        coeff_1             = data['coeff_1']
-        coeff_2             = data['coeff_2']
-        coeff_3             = data['coeff_3']
-        device              = data['device']
-        location            = data['location']
-        spec_notes          = data['spec_notes']
-        local_count_history = data['local_count_history']
-
-        if 'filename' in data and 'full_histogram' in data:
-            filename        = data['filename']
-            full_histogram  = data['full_histogram']
-            fn.write_histogram_npesv2(t0, t1, bins, local_counts, dropped_counts, local_elapsed, filename, full_histogram, coeff_1, coeff_2, coeff_3, device, location, spec_notes)
-            fn.write_cps_json(filename, local_count_history, local_elapsed, local_counts, dropped_counts)
-
-        if 'filename_hmp' in data and 'last_minute' in data:
-            filename_hmp = data['filename_hmp']
-            last_minute  = [data['last_minute']]
-            fn.update_json_hmp_file(t0, t1, bins, local_counts, local_elapsed, filename_hmp, last_minute, coeff_1, coeff_2, coeff_3, device)
-
-
-# Appends 1-second slices to shared.histogram_hmp
-def update_mode_3_data(mode, shared, full_histogram, last_histogram, hmp_buffer,
-                     interval_counter, t_interval, bins, now,
-                     save_queue, meta, filename_hmp):
-
-    if mode != 3:
-
-        return interval_counter, last_histogram
-
-    with shared.write_lock:
-        # Compute delta histogram for the last second
-        interval_hist = [full_histogram[i] - last_histogram[i] for i in range(bins)]
-        last_histogram[:] = full_histogram
-
-        if any(interval_hist):
-            hmp_buffer.append(interval_hist)
-
-        else:
-            logger.debug("No new data this interval.")
-
-        interval_counter += 1
-
-        if interval_counter >= t_interval:
-
-            if hmp_buffer:
-                # Sum across seconds (columns) to get one t_interval slice
-                aggregated = [sum(col) for col in zip(*hmp_buffer)]
-
-                # Append to live memory
-                shared.histogram_hmp.append(aggregated)
-
-                # Append to JSON via save thread
-                data = meta.copy()
-
-                data["filename_hmp"] = filename_hmp
-
-                data["last_minute"] = aggregated
-
-                save_queue.put(data)
-
-                logger.debug(f"Appended histogram slice: {aggregated[:10]}")
-
-                hmp_buffer.clear()
-
-                interval_counter = 0
-
-            else:
-                logger.debug("Skipped appending: hmp_buffer was empty")
-
-    return interval_counter, last_histogram
-
-#====================================================================================================
-
 # Function reads audio stream and finds pulses then outputs time, pulse height, and distortion
 def pulsecatcher(mode, run_flag, run_flag_lock):
     # Start timer
@@ -173,15 +82,18 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
 
     # Open the selected audio input device
     channels = 2 if stereo else 1
-    stream = p.open(
-        format=pyaudio.paInt16,
-        channels=channels,
-        rate=sample_rate,
-        input=True,
-        output=False,
-        frames_per_buffer=chunk_size * channels,
-        input_device_index=device,
-    )
+    try:
+        stream = p.open(
+            format=pyaudio.paInt16,
+            channels=channels,
+            rate=sample_rate,
+            input=True,
+            output=False,
+            frames_per_buffer=chunk_size * channels,
+            input_device_index=device,
+        )
+    except Exception as e:
+        with shared.write_lock: shared.doing = f"[ERROR] {e}"
 
     save_queue = queue.Queue()
     save_thread = threading.Thread(target=save_data, args=(save_queue,))
@@ -311,8 +223,6 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
             time_last_save_time = time_this_save
             time.sleep(0)
 
-
-
     # Signal the save thread to exit
     save_queue.put(None)
     save_thread.join()
@@ -323,3 +233,88 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
 
     #======================================================================================
 
+def queue_save_data(save_queue, meta, full_histogram, filename):
+    data = meta.copy()
+    data["filename"] = filename
+    data["full_histogram"] = full_histogram.copy()
+    save_queue.put(data)
+
+# Function to save data in a separate thread
+def save_data(save_queue):
+    while True:
+        data = save_queue.get()
+        if data is None:
+            break
+        t0                  = data['t0']
+        t1                  = data['t1']
+        bins                = int(data['bins'])
+        local_counts        = data['local_counts']
+        dropped_counts      = data['dropped_counts']
+        local_elapsed       = data['local_elapsed']
+        coeff_1             = data['coeff_1']
+        coeff_2             = data['coeff_2']
+        coeff_3             = data['coeff_3']
+        device              = data['device']
+        location            = data['location']
+        spec_notes          = data['spec_notes']
+        local_count_history = data['local_count_history']
+
+        if 'filename' in data and 'full_histogram' in data:
+            filename        = data['filename']
+            full_histogram  = data['full_histogram']
+            fn.write_histogram_npesv2(t0, t1, bins, local_counts, dropped_counts, local_elapsed, filename, full_histogram, coeff_1, coeff_2, coeff_3, device, location, spec_notes)
+            fn.write_cps_json(filename, local_count_history, local_elapsed, local_counts, dropped_counts)
+
+        if 'filename_hmp' in data and 'last_minute' in data:
+            filename_hmp = data['filename_hmp']
+            last_minute  = [data['last_minute']]
+            fn.update_json_hmp_file(t0, t1, bins, local_counts, local_elapsed, filename_hmp, last_minute, coeff_1, coeff_2, coeff_3, device)
+            fn.write_cps_json(filename_hmp, local_count_history, local_elapsed, local_counts, dropped_counts)
+
+
+# Appends 1-second slices to shared.histogram_hmp
+def update_mode_3_data(mode, shared, full_histogram, last_histogram, hmp_buffer,
+                     interval_counter, t_interval, bins, now,
+                     save_queue, meta, filename_hmp):
+
+    if mode != 3:
+
+        return interval_counter, last_histogram
+
+    with shared.write_lock:
+        # Compute delta histogram for the last second
+        interval_hist = [full_histogram[i] - last_histogram[i] for i in range(bins)]
+        last_histogram[:] = full_histogram
+
+        if any(interval_hist):
+            hmp_buffer.append(interval_hist)
+
+        else:
+            logger.debug("[ERROR] no data.")
+
+        interval_counter += 1
+
+        if interval_counter >= t_interval:
+
+            if hmp_buffer:
+                # Sum across seconds (columns) to get one t_interval slice
+                aggregated = [sum(col) for col in zip(*hmp_buffer)]
+                # Append to live memory
+                shared.histogram_hmp.append(aggregated)
+                # Append to JSON via save thread
+                data = meta.copy()
+                data["filename_hmp"] = filename_hmp
+                data["last_minute"] = aggregated
+                # Add data to save queue
+                save_queue.put(data)
+                # clear buffer and retet counter
+                hmp_buffer.clear()
+                interval_counter = 0
+                # Log success
+                logger.debug(f"[INFO] 3d data added: {aggregated[:10]}")                
+            else:
+                logger.debug("[ERROR] hmp_buffer was empty")
+
+    return interval_counter, last_histogram
+
+#====================================================================================================
