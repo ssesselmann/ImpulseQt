@@ -6,6 +6,7 @@ import shared
 import time
 import platform
 import datetime
+import logging
 
 from tab1 import Tab1
 from tab2 import Tab2
@@ -26,7 +27,10 @@ from qt_compat import QVBoxLayout
 from qt_compat import QLabel
 from qt_compat import QPushButton
 from qt_compat import QHBoxLayout
-
+from qt_compat import QStatusBar
+from qt_compat import QTimer
+from qt_compat import QTime
+from status_bar_handler import StatusBarHandler
 from shared import logger, USER_DATA_DIR
 from feedback_popup import FeedbackPopup
 from send_feedback import send_feedback_email
@@ -78,21 +82,84 @@ class MainWindow(QMainWindow):
         self.tab5 = Tab5()
 
         self.tabs = QTabWidget()
-        self.tabs.addTab(Tab1(), "Device Setup")
-        self.tabs.addTab(Tab2(), "2D Histogram")
-        self.tabs.addTab(Tab3(), "Waterfall")
-        self.tabs.addTab(Tab4(), "Count Rate")
-        self.tabs.addTab(Tab5(), "Manual")
-        self.tabs.currentChanged.connect(self.on_tab_changed)
 
+        self.tabs.addTab(self.tab1, "Device Setup")
+        self.tabs.addTab(self.tab2, "2D Histogram")
+        self.tabs.addTab(self.tab3, "Waterfall")
+        self.tabs.addTab(self.tab4, "Count Rate")
+        self.tabs.addTab(self.tab5, "Manual")
+
+        self.tabs.currentChanged.connect(self.on_tab_changed)
 
         container = QWidget()
         layout = QVBoxLayout()
-        layout.setContentsMargins(0, 20, 0, 0)  # <-- top margin: 10px
+        layout.setContentsMargins(0, 20, 0, 0)
         layout.addWidget(self.tabs)
         container.setLayout(layout)
-
         self.setCentralWidget(container)
+
+
+        # --- Status bar ---
+        self.status = QStatusBar(self)
+        self.setStatusBar(self.status)
+
+        self.status_label = QLabel("")
+        self.status_label.setStyleSheet("padding-left: 10px; color: gray;")
+        self.status.addPermanentWidget(self.status_label, 1)
+
+        self._min_show_ms = 500
+        self._last_commit_ms = 0
+
+        # Attach to root so you see everything
+        root = logging.getLogger()
+        root.setLevel(logging.DEBUG)
+
+        # Avoid duplicate handler if MainWindow is recreated
+
+        if not any(isinstance(h, StatusBarHandler) for h in logger.handlers):
+            self._status_handler = StatusBarHandler(self._log_to_status)
+            self._status_handler.setLevel(logging.DEBUG)
+            self._status_handler.setFormatter(logging.Formatter('%(message)s'))
+            logger.addHandler(self._status_handler)
+
+        logger.setLevel(logging.DEBUG)
+        logger.propagate = True  # optional, keeps logs flowing up to root if you also want console handlers there
+            
+
+
+    def _log_to_status(self, msg: str, level: int):
+        """Called from logging handler; ensure update happens on UI thread."""
+        QTimer.singleShot(0, lambda m=msg, lv=level: self._commit_status(m, lv))
+
+    def _commit_status(self, msg: str, level: int):
+        now = QTime.currentTime().msecsSinceStartOfDay()
+        if now - self._last_commit_ms < self._min_show_ms:
+            delay = self._min_show_ms - (now - self._last_commit_ms)
+            QTimer.singleShot(delay, lambda m=msg, lv=level: self._commit_status(m, lv))
+            return
+
+        # Color by severity
+        if level >= logging.ERROR:
+            color = "#d32f2f"   # red
+        elif level >= logging.WARNING:
+            color = "#f57c00"   # orange
+        else:
+            color = "green"      # info/debug
+
+        self.status_label.setStyleSheet(f"padding-left: 10px; color: {color};")
+        self.status_label.setText(msg)
+        self._last_commit_ms = QTime.currentTime().msecsSinceStartOfDay()
+
+
+    def show_status_message(self, msg):
+        """Called by the StatusBarHandler when a log is emitted."""
+        from PySide6.QtCore import QTime
+        now = QTime.currentTime().msecsSinceStartOfDay()
+        if now - self._last_commit_ms >= self._min_show_ms:
+            self.status_label.setText(msg)
+            self._last_commit_ms = now
+
+
 
     def closeEvent(self, event):
         # Save size/position
