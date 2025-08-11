@@ -28,6 +28,7 @@ QMessageBox         = QtWidgets.QMessageBox
 QPushButton         = QtWidgets.QPushButton
 QSizePolicy         = QtWidgets.QSizePolicy
 QSlider             = QtWidgets.QSlider
+QStatusBar          = QtWidgets.QStatusBar
 QTabWidget          = QtWidgets.QTabWidget
 QTableWidget        = QtWidgets.QTableWidget
 QTableWidgetItem    = QtWidgets.QTableWidgetItem
@@ -52,6 +53,7 @@ QPixmap         = QtGui.QPixmap
 # =========================================
 Qt              = QtCore.Qt
 QTimer          = QtCore.QTimer
+QTime           = QtCore.QTime
 Slot            = QtCore.Slot
 Signal          = QtCore.Signal
 QUrl            = QtCore.QUrl
