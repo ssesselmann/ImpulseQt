@@ -87,11 +87,11 @@ class Tab1(QWidget):
             QMessageBox.Yes | QMessageBox.No
         )
         if reply == QMessageBox.Yes:
-            logger.info(f"Tab1: Device type changed to {value}")
+            logger.info(f"[INFO] Device type changed to {value}")
             with shared.write_lock:
                 shared.device_type = value
                 shared.save_settings()
-            logger.info("Quitting application to apply new device type")
+            logger.info("[INFO] Quitting application to apply new device type")
             QApplication.quit()
         else:
             self.selector.setCurrentText(shared.device_type)  # Revert selection
