@@ -260,7 +260,7 @@ class Tab4(QWidget):
                 cps = int(shared.cps)
             self.cps_live.setText(f"{cps}")
         except Exception as e:
-            logger.warning(f"Failed to update CPS label: {e}")
+            logger.warning(f"[WARNING] Failed to update CPS label: {e}")
 
     def update_plot(self):
         try:
@@ -300,4 +300,4 @@ class Tab4(QWidget):
             self.canvas.draw()
 
         except Exception as e:
-            logger.error(f"[Tab4] update_plot error: {e}")   
+            logger.error(f"[ERROR] update_plot error: {e}")   
