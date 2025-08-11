@@ -11,11 +11,6 @@ shproto/.DS_Store/*
 
 credentials.py
 appsigner.py
-
-shproto/.DS_Store
 concept plot.py
-/shproto
-/shproto
-/shproto/__pycache__
-/shproto
-shproto/__pycache__/dispatcher.cpython-310.pyc
+audio_spectrum.py
+
