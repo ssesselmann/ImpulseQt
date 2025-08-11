@@ -32,7 +32,7 @@ from qt_compat import QSlider
 
 from shapecatcher import shapecatcher
 from distortionchecker import distortion_finder
-from shared import logger, P1, P2, H1, H2, MONO
+from shared import logger, P1, P2, H1, H2, MONO, BTN
 
 def styled_label(text, style=P2):
     label = QLabel(text)
@@ -55,7 +55,6 @@ class Tab1ProWidget(QWidget):
             shapecatches    = shared.shapecatches
             chunk_size      = shared.chunk_size
             stereo          = shared.stereo
-
 
         # --- Selection Controls
         self.device_selector = QComboBox()
@@ -99,7 +98,7 @@ class Tab1ProWidget(QWidget):
         self.pulse_catcher.currentTextChanged.connect(lambda val: setattr(shared, "shapecatches", int(val)))
 
         self.buffer_size = QComboBox()
-        self.buffer_size.addItems(["516", "1024", "2048", "4096", "8192", "16184"])
+        self.buffer_size.addItems(["512", "1024", "2048", "4096", "8192", "16184"])
         self.buffer_size.setMaximumWidth(100)
         self.buffer_size.setCurrentText(str(chunk_size))
         self.buffer_size.currentTextChanged.connect(lambda val: setattr(shared, "chunk_size", int(val)))
@@ -197,6 +196,7 @@ class Tab1ProWidget(QWidget):
         middle_layout = QVBoxLayout()
         middle_layout.setContentsMargins(0, 0, 0, 0)
         self.get_pulse_button = QPushButton("Get Pulse Shape")
+        self.get_pulse_button.setStyleSheet(BTN)
         self.get_pulse_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.get_pulse_button.clicked.connect(self.run_shapecatcher)
         middle_layout.addWidget(self.get_pulse_button)
@@ -237,9 +237,7 @@ class Tab1ProWidget(QWidget):
         slider_widget.setLayout(slider_layout)
         slider_container.addStretch()
         slider_widget.setFixedWidth(400)
-        slider_container.addStretch()
-
-        slider_container = QHBoxLayout()
+        
         slider_container.addStretch()
         slider_container.addWidget(slider_widget)
         slider_container.addStretch()
@@ -251,6 +249,7 @@ class Tab1ProWidget(QWidget):
         right_layout = QVBoxLayout()
         right_layout.setContentsMargins(0, 0, 0, 0)
         self.get_distortion_button = QPushButton("Get Distortion Curve")
+        self.get_distortion_button.setStyleSheet(BTN)
         self.get_distortion_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.get_distortion_button.clicked.connect(self.run_distortion_finder)
 
@@ -286,7 +285,6 @@ class Tab1ProWidget(QWidget):
         self.setLayout(tab1_pro_layout)
         self.plot_saved_shapes()
 
-
     def update_device(self, index):
         selected_index = self.device_selector.itemData(index)
         with shared.write_lock:
@@ -295,6 +293,7 @@ class Tab1ProWidget(QWidget):
     def run_shapecatcher(self):
 
         try:
+            logger.info("[INFO] Looking for pulses")
             pulses_left, pulses_right = shapecatcher()
 
             # Save to shared if needed elsewhere
@@ -361,8 +360,13 @@ class Tab1ProWidget(QWidget):
             logger.error(f"[ERROR] during shapecatcher: {e}")
 
     def run_distortion_finder(self):
+
         with shared.write_lock:
             stereo = shared.stereo
+
+        if stereo: 
+            logger.info('[INFO] Impulse is in Stereo mode')
+
         left_distortion, right_distortion = distortion_finder(stereo)
 
         # Optional: plot distortion histogram
@@ -453,7 +457,6 @@ class Tab1ProWidget(QWidget):
             )
 
             self.draw_shape_lld()
-
 
         except Exception as e:
             logger.error(f"[ERROR] in plot_saved_shapes: {e}")
