@@ -98,40 +98,57 @@ class Tab2(QWidget):
         positive_float_validator.setDecimals(2) 
 
         # === Plot ===
-        self.plot_timer = QTimer()
         self.process_thread = None
-        self.has_loaded = False
-        self.plot_timer.timeout.connect(self.update_histogram)
-        self.plot_widget = pg.PlotWidget(title="2D Count Rate Histogram")
+        self.has_loaded     = False
+        self._last_peaks_t  = 0
+        self._last_x_span   = None
+
+        self.plot_widget    = pg.PlotWidget(title="2D Count Rate Histogram")
+
+        # snapshot histogram once for initial draw
         with shared.write_lock:
-            histogram_data = shared.histogram.copy()
-        self.hist_curve = self.plot_widget.plot(histogram_data, pen='b')
-        self.hist_curve_2 = self.plot_widget.plot([], pen=pg.mkPen("r", width=1.5))  # comparison in red
-        self.diff_curve = None  # Holds the plotted difference line
+            histogram_data  = shared.histogram.copy()
+
+        # ONE set of labels/background (you had these twice)
         self.plot_widget.setBackground('w')
         self.plot_widget.setLabel('left', 'Counts')
         self.plot_widget.setLabel('bottom', 'Bins')
+        self.plot_widget.getPlotItem().showGrid(x=True, y=True, alpha=0.3)
+        self.plot_widget.setTitle("Histogram", color='k', size="14pt")
+
+        # crosshair lines
         self.vline = pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen('gray', width=1))
-        self.hline = pg.InfiniteLine(angle=0, movable=False, pen=pg.mkPen('gray', width=1))
+        self.hline = pg.InfiniteLine(angle=0,  movable=False, pen=pg.mkPen('gray', width=1))
         self.plot_widget.addItem(self.vline, ignoreBounds=True)
         self.plot_widget.addItem(self.hline, ignoreBounds=True)
         self.plot_widget.scene().sigMouseMoved.connect(self.on_mouse_moved)
 
-        self.hist_curve = self.plot_widget.plot([], pen=pg.mkPen("b", width=2))
-        self.comp_curve = self.plot_widget.plot([], pen=pg.mkPen("r", width=2))
-        self.gauss_curve = self.plot_widget.plot([], pen=pg.mkPen("r", width=2))
+        # main histogram (blue)
+        self.hist_curve     = self.plot_widget.plot(histogram_data, pen=pg.mkPen("b", width=2))
+        # comparison (red)
+        self.comp_curve     = self.plot_widget.plot([], pen=pg.mkPen("r", width=2))
+        # gaussian correlation (red, thicker)
+        self.gauss_curve    = self.plot_widget.plot([], pen=pg.mkPen("r", width=2))
 
-        self.plot_widget.getPlotItem().showGrid(x=True, y=True, alpha=0.3)
-        self.plot_widget.setTitle("Histogram", color='k', size="14pt")
-        self.plot_widget.setBackground('w')
-        self.plot_widget.setLabel('left', 'Counts')
-        self.plot_widget.setLabel('bottom', 'Bins')
+        # viewbox policy: fix X (we’ll set the range) and auto-range Y
+        vb = self.plot_widget.getViewBox()
+        # Old/new pyqtgraph compatibility
+        try:
+            vb.setAutoVisible(y=True)          # works on your Windows error message
+        except AttributeError:
+            pass                                # harmless if not available
 
-        self._last_peaks_t = 0
+        vb.enableAutoRange(x=False, y=True)     # keep X fixed, auto Y only
+
+        # set initial/follow-up X range to your current bin span
+        if histogram_data:
+            self.plot_widget.setXRange(0, len(histogram_data) - 1, padding=0)
+
 
         tab2_layout.addWidget(self.plot_widget)
 
-        # === 9x4 Grid ===
+
+        # === 9x4 Grid ==========================================
         grid = QGridLayout()
 
         grid.setSpacing(10)
@@ -419,7 +436,8 @@ class Tab2(QWidget):
             self.select_flag_table.addItem(opt['label'], opt['value'])
 
         # Restore previously selected isotope table from shared settings
-        saved_tbl = shared.isotope_tbl
+        with shared.write_lock:
+            saved_tbl = shared.isotope_tbl
         if saved_tbl:
             index = self.select_flag_table.findData(saved_tbl)
             if index != -1:
@@ -720,6 +738,13 @@ class Tab2(QWidget):
         self.start_recording_2d(filename)
 
     def clear_session(self):
+
+        with shared.write_lock:
+            shared.histogram   = []
+            shared.gauss_curve = None
+            shared.counts      = 0
+            shared.elapsed     = 0
+
         self.plot_widget.clear()
         self.peak_markers = []
         self.hist_curve   = None
@@ -728,11 +753,7 @@ class Tab2(QWidget):
         self.diff_curve   = None
         self.gauss_curve  = None
         
-        with shared.write_lock:
-            shared.histogram   = []
-            shared.gauss_curve = None
-            shared.counts      = 0
-            shared.elapsed     = 0
+
 
     def start_recording_2d(self, filename):
 
@@ -745,9 +766,9 @@ class Tab2(QWidget):
         mode = 4 if coi else 2
 
         # --- Reset plotting ---
-        self.plot_timer.stop()
+       # self.plot_timer.stop()
         self.clear_session()
-        self.plot_timer.start(100)
+       # self.plot_timer.start(100)
 
         try:
             # Call the centralized recording logic
@@ -768,7 +789,7 @@ class Tab2(QWidget):
             logger.info("[INFO] Recording thread stopped\new_note")
 
         self.process_thread = None
-        self.plot_timer.stop()
+        #self.plot_timer.stop()
 
         stop_recording()
         time.sleep(1) # [Botch] wait for save to complete
@@ -852,15 +873,12 @@ class Tab2(QWidget):
 
         self.filename_input.setText(filename_no_ext)
 
-        shared.filename = filename_no_ext
+        with shared.write_lock:
+            shared.filename = filename_no_ext
+            note = shared.spec_notes
 
         # Load histogram using just the stem
         load_histogram(filename_no_ext)
-
-
-        # Get value while locked
-        with shared.write_lock:
-            note = shared.spec_notes
 
         # Safe GUI update outside the lock
         self.notes_input.setText(note)
@@ -893,7 +911,7 @@ class Tab2(QWidget):
             return
 
         # Build full path
-        isotope_tbl_path = Path(shared.USER_DATA_DIR) / "lib" / "tbl" / isotope_tbl
+        isotope_tbl_path = Path(USER_DATA_DIR) / "lib" / "tbl" / isotope_tbl
 
         # Load isotope flags
         flags = read_flag_data(isotope_tbl_path)
@@ -1067,12 +1085,24 @@ class Tab2(QWidget):
 
     def update_peak_markers(self):
 
+        with shared.write_lock:
+            peakfinder  = shared.peakfinder
+            sigma       = shared.sigma
+            coeff_1     = shared.coeff_1
+            coeff_2     = shared.coeff_2
+            coeff_3     = shared.coeff_3
+            cal_switch  = shared.cal_switch
+            iso_switch  = shared.iso_switch
+            log_switch  = shared.log_switch
+            isotope_flags = shared.isotope_flags
+
+
         # Always clear old markers first
         for item in getattr(self, "peak_markers", []):
             self.plot_widget.removeItem(item)
         self.peak_markers = []
 
-        if shared.peakfinder == 0:
+        if peakfinder == 0:
             return
         if not hasattr(self, "x_vals") or not hasattr(self, "y_vals_raw") or not hasattr(self, "y_vals_plot"):
             return
@@ -1084,17 +1114,17 @@ class Tab2(QWidget):
         try:
             peaks, fwhm = peak_finder(
                 y_values=y_vals_raw,
-                prominence=shared.peakfinder,
-                min_width=shared.sigma,
+                prominence=peakfinder,
+                min_width=sigma,
                 smoothing_window=3
             )
         except Exception as e:
             logger.error(f"[ERROR] peak_finder failed: {e}")
             return
 
-        coeffs = [shared.coeff_1, shared.coeff_2, shared.coeff_3]
-        use_cal = shared.cal_switch and any(coeffs)
-        use_iso = shared.iso_switch and shared.isotope_flags and use_cal
+        coeffs = [coeff_1, coeff_2, coeff_3]
+        use_cal = cal_switch and any(coeffs)
+        use_iso = iso_switch and isotope_flags and use_cal
 
         # Remove old markers
         for item in getattr(self, "peak_markers", []):
@@ -1115,7 +1145,7 @@ class Tab2(QWidget):
             x_pos = x_vals[p] -5
 
             # Slightly lift label above peak
-            if shared.log_switch:
+            if log_switch:
                 y_pos = np.log10(y_val * 1.05)
             else:
                 y_pos = y_val * 1.05
@@ -1126,7 +1156,7 @@ class Tab2(QWidget):
             # ----- Optional isotope match (energy-aware tolerance) -----
             isotope_lines = []
 
-            if use_iso and shared.sigma > 0 and peaks is not None:
+            if use_iso and sigma > 0 and peaks is not None:
                 # helpers
                 def energy_of_bin(idx: int) -> float:
                     return float(np.polyval(coeffs, idx))
@@ -1148,7 +1178,7 @@ class Tab2(QWidget):
 
                 # rank matches by proximity and intensity
                 candidates = []
-                for iso in shared.isotope_flags:
+                for iso in isotope_flags:
                     try:
                         iso_e = float(iso["energy"])
                         d = abs(iso_e - energy)
@@ -1272,6 +1302,15 @@ class Tab2(QWidget):
         if slb_switch:
             if y_vals:  y_vals[-1]  = 0
             if y_vals2: y_vals2[-1] = 0
+
+        # Ensure X range is correct whenever data length or calibration changes
+        if x_vals:
+            x0 = x_vals[0]
+            x1 = x_vals[-1]
+            if self._last_x_span != (x0, x1):
+                self.plot_widget.setXRange(x0, x1, padding=0)
+                self._last_x_span = (x0, x1)
+
 
         # ---- Store arrays for peak-annotations ----
         self.x_vals      = list(x_vals)
