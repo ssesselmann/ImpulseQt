@@ -107,7 +107,7 @@ class MainWindow(QMainWindow):
         self.status_label.setStyleSheet("padding-left: 10px; color: gray;")
         self.status.addPermanentWidget(self.status_label, 1)
 
-        self._min_show_ms = 500
+        self._min_show_ms = 700
         self._last_commit_ms = 0
 
         # Attach to root so you see everything
