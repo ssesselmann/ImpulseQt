@@ -264,12 +264,14 @@ def save_data(save_queue):
             full_histogram  = data['full_histogram']
             fn.write_histogram_npesv2(t0, t1, bins, local_counts, dropped_counts, local_elapsed, filename, full_histogram, coeff_1, coeff_2, coeff_3, device, location, spec_notes)
             fn.write_cps_json(filename, local_count_history, local_elapsed, local_counts, dropped_counts)
+            logger.info(f'[INFO] histogram and cps saved {t1}')
 
         if 'filename_hmp' in data and 'last_minute' in data:
             filename_hmp = data['filename_hmp']
             last_minute  = [data['last_minute']]
             fn.update_json_hmp_file(t0, t1, bins, local_counts, local_elapsed, filename_hmp, last_minute, coeff_1, coeff_2, coeff_3, device)
             fn.write_cps_json(filename_hmp, local_count_history, local_elapsed, local_counts, dropped_counts)
+            logger.info(f'[INFO] heatmap and cps saved {t1}')
 
 
 # Appends 1-second slices to shared.histogram_hmp
