@@ -58,17 +58,28 @@ BIN_OPTIONS = [("128 Bins", 64),("256 Bins", 32), ("512 Bins", 16), ("1024 Bins"
 
 
 # -------------------------------
-# Paths & Directories
+# Application Paths
 # -------------------------------
+
 APP_NAME = "ImpulseQt"
+
+# AppData for internal use (not user-visible)
 DATA_DIR = Path(QStandardPaths.writableLocation(QStandardPaths.AppDataLocation)) / APP_NAME
+
 DATA_DIR.mkdir(parents=True, exist_ok=True)
-SETTINGS_FILE = DATA_DIR / "settings.json"
+# User-accessible data directory (e.g., saved spectra)
 USER_DATA_DIR = Path.home() / "ImpulseQtData"
+
 USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
+# Static library paths (packaged or local)
 LIB_DIR = USER_DATA_DIR / "lib"
-ISO_DIR = LIB_DIR / "iso"
+
+ISO_DIR = LIB_DIR / "iso"  # Gamma reference spectra
+
 TBL_DIR = LIB_DIR / "tbl"
+
+SETTINGS_FILE = DATA_DIR / "settings.json"
+
 
 # -------------------------------
 # Logging Setup
@@ -87,6 +98,7 @@ else:
     
 
 LOG_DIR.mkdir(parents=True, exist_ok=True)
+
 log_file = LOG_DIR / "impulseqt_log.txt"
 
 # Set root logger to DEBUG
@@ -122,30 +134,11 @@ if getattr(sys, 'frozen', False):
 else:
     BASE_DIR = Path(__file__).resolve().parent
 
-# -------------------------------
-# Application Paths
-# -------------------------------
-
-APP_NAME = "ImpulseQt"
-
-# AppData for internal use (not user-visible)
-DATA_DIR = Path(QStandardPaths.writableLocation(QStandardPaths.AppDataLocation)) / APP_NAME
-DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-# User-accessible data directory (e.g., saved spectra)
-USER_DATA_DIR = Path.home() / "ImpulseData"
-USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-# Static library paths (packaged or local)
-LIB_DIR = USER_DATA_DIR / "lib"
-ISO_DIR = LIB_DIR / "iso"  # Gamma reference spectra
-TBL_DIR = LIB_DIR / "tbl"  # Flagging tables
-
 
 # --- Application Settings ---
-filename = "my_spectrum"
-filename_2 = "background"
-filename_hmp = "my_hmp_spectrum"
+filename        = "my_spectrum"
+filename_2      = "background"
+filename_hmp    = "my_hmp_spectrum"
 
 
 # --- Audio Settings ---
