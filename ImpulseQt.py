@@ -31,19 +31,21 @@ from qt_compat import QStatusBar
 from qt_compat import QTimer
 from qt_compat import QTime
 from status_bar_handler import StatusBarHandler
-from shared import logger, USER_DATA_DIR
 from feedback_popup import FeedbackPopup
 from send_feedback import send_feedback_email
 from functions import resource_path
 
+from shared import logger, USER_DATA_DIR, BASE_DIR
 
 def copy_lib_if_needed():
     dest = Path(USER_DATA_DIR) / "lib"
     if not dest.exists():
         src = Path(resource_path("assets/lib"))
+
         try:
             shutil.copytree(src, dest)
             logger.info(f"[INFO] Copied lib to {dest}")
+
         except Exception as e:
             logger.error(f"[ERROR] Could not copy lib: {e}")
 
@@ -51,13 +53,16 @@ def copy_lib_if_needed():
 # One-time setup for user data folders
 # --------------------------------------
 def initialize_user_data():
-    source_lib = shared.BASE_DIR / "assets" / "lib"
-    target_lib = shared.USER_DATA_DIR / "lib"
+
+    source_lib = BASE_DIR / "assets" / "lib"
+
+    target_lib = USER_DATA_DIR / "lib"
 
     if not target_lib.exists():
         try:
             shutil.copytree(source_lib, target_lib)
             logger.info(f"Copied default lib directory to: {target_lib}")
+
         except Exception as e:
             logger.error(f"[ERROR] copying default lib directory: {e}")
     else:
@@ -97,7 +102,6 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.tabs)
         container.setLayout(layout)
         self.setCentralWidget(container)
-
 
         # --- Status bar ---
         self.status = QStatusBar(self)
