@@ -738,20 +738,33 @@ class Tab2(QWidget):
         self.start_recording_2d(filename)
 
     def clear_session(self):
-
+        # Reset shared state only
         with shared.write_lock:
             shared.histogram   = []
+            shared.histogram_2 = []
             shared.gauss_curve = None
             shared.counts      = 0
-            shared.elapsed     = 0
+            shared.elapsed     = 0.0
+            shared.elapsed_2   = 0.0
 
-        self.plot_widget.clear()
+        # DO NOT: self.plot_widget.clear()
+        # DO NOT set self.hist_curve/self.comp_curve/self.gauss_curve = None
+
+        # Just clear existing curve data (reusing the same items)
+        if hasattr(self, "hist_curve") and self.hist_curve:
+            self.hist_curve.setData([], [])
+        if hasattr(self, "comp_curve") and self.comp_curve:
+            self.comp_curve.setData([], [])
+        if hasattr(self, "gauss_curve") and self.gauss_curve:
+            self.gauss_curve.setData([], [])
+
+        # Remove any old peak labels
+        for item in getattr(self, "peak_markers", []):
+            self.plot_widget.removeItem(item)
         self.peak_markers = []
-        self.hist_curve   = None
-        self.hist_curve_2 = None
-        self.comp_curve   = None
-        self.diff_curve   = None
-        self.gauss_curve  = None
+
+        # Keep the crosshair lines; don’t re-add them elsewhere
+
         
 
 
@@ -1316,14 +1329,6 @@ class Tab2(QWidget):
         self.x_vals      = list(x_vals)
         self.y_vals_raw  = list(y_for_peaks)   # pre-EPB/log for detection
         self.y_vals_plot = list(y_vals)        # post-EPB/log for label height
-
-        # Ensure curves exist (created once)
-        if getattr(self, "hist_curve", None) is None:
-            self.hist_curve  = self.plot_widget.plot([], pen=pg.mkPen("b", width=1.5))
-        if getattr(self, "comp_curve", None) is None:
-            self.comp_curve  = self.plot_widget.plot([], pen=pg.mkPen("r", width=1.5))
-        if getattr(self, "gauss_curve", None) is None:
-            self.gauss_curve = self.plot_widget.plot([], pen=pg.mkPen("r", width=3))
 
         # Update plots (no clear)
         self.plot_widget.setLogMode(x=False, y=log_switch)
