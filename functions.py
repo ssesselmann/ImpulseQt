@@ -503,7 +503,7 @@ def start_pro_recording(mode):
         shared.recording = True
 
     if mode == 2 or mode == 4:
-        logger.info(f"[INFO] Start PRO 2D recording in mode {mode}")
+        logger.info(f"[INFO] Start recording in mode {mode}")
 
         try:
             thread = threading.Thread(target=pulsecatcher, args=(mode, run_flag, run_flag_lock))
@@ -515,7 +515,7 @@ def start_pro_recording(mode):
 
     elif mode == 3:
 
-        logger.info("[INFO] Starting PRO 3D recording...")
+        logger.info("[INFO] Start 3D recording...")
 
         write_blank_json_schema_hmp(filename_hmp, device)
 
