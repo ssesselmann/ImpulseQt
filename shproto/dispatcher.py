@@ -186,7 +186,7 @@ def start(sn=None):
 
     nano = shproto.port.connectdevice(sn)
     if not nano:
-        logger.error("[ERROR] Failed to connect to MAX ❌\n")
+        logger.error("[ERROR] Failed to connect to MAX ❌")
         return
 
     # ---- moved here (after connect) ----
@@ -195,7 +195,7 @@ def start(sn=None):
     nano.flushInput()
     nano.flushOutput()
 
-    logger.info("[INFO] MAX connected successfully ✅\n")
+    logger.info("[INFO] MAX connected successfully ✅")
     response = shproto.packet()
 
     # Track whether the CSV file has been initialized
