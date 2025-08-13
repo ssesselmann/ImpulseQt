@@ -104,10 +104,6 @@ class Tab2(QWidget):
         self._last_x_span   = None
         self._last_peaks_t  = 0
 
-        # snapshot histogram once for initial draw
-        with shared.write_lock:
-            histogram_data  = shared.histogram.copy()
-
         # --- Create the PlotWidget first --------------------------------------------
         self.plot_widget = pg.PlotWidget(title="2D Count Rate Histogram")
 
@@ -126,7 +122,7 @@ class Tab2(QWidget):
             self.plot_widget.setXRange(0, len(histogram_data) - 1, padding=0)
 
         # --- Curves (add main first, then others) -----------------------------------
-        self.hist_curve  = self.plot_widget.plot(histogram_data, pen=pg.mkPen("b", width=2))
+        self.hist_curve  = self.plot_widget.plot([], pen=pg.mkPen("b", width=2))
         self.comp_curve  = self.plot_widget.plot([],              pen=pg.mkPen("r", width=2))
         self.gauss_curve = self.plot_widget.plot([],              pen=pg.mkPen("r", width=2))
 
@@ -145,17 +141,9 @@ class Tab2(QWidget):
         self.plot_widget.addItem(self.hline, ignoreBounds=True)
         self.plot_widget.scene().sigMouseMoved.connect(self.on_mouse_moved)
 
-        # Optional: set Y range from initial data (prevents auto from fighting you)
-        if histogram_data:
-            ymin = min(histogram_data)
-            ymax = max(histogram_data)
-            if ymin == ymax:
-                ymin -= 1
-                ymax += 1
-            self.plot_widget.setYRange(ymin, ymax, padding=0)
-
         # Finally add to layout
         tab2_layout.addWidget(self.plot_widget)
+
 
         # ======================================================
 
