@@ -641,7 +641,7 @@ class Tab2(QWidget):
         with shared.write_lock:
             device_type = shared.device_type
 
-        logger.info(f"[INFO] Set device visibility: {device_type}\n")
+        logger.info(f"[INFO] Set device visibility: {device_type} ✅\n")
 
         for widget in getattr(self, "pro_only_widgets", []):
             widget.setVisible(device_type == "PRO")
@@ -700,7 +700,7 @@ class Tab2(QWidget):
             shared.compression = compression
             shared.bins = shared.bins_abs // compression
 
-        logger.info(f"[INFO] Compression set to {compression}, bins = {shared.bins}")
+        logger.info(f"[INFO] Compression set to {compression}, bins = {shared.bins} ✅")
         # If Tab needs an immediate redraw beyond update_bins_selector():
         self.update_graph()
 
@@ -732,7 +732,7 @@ class Tab2(QWidget):
             logger.warning("[WARNING] thread still running, attempting to stop\n")
             stop_recording()
             self.process_thread.join(timeout=2)
-            logger.info("[INFO] Previous thread joined\n")
+            logger.info("[INFO] Previous thread joined ✅\n")
        
         # self.clear_session()
         self.start_recording_2d(filename)
@@ -797,9 +797,9 @@ class Tab2(QWidget):
     def on_stop_clicked(self):
 
         if self.process_thread and self.process_thread.is_alive():
-            logger.info("[INFO] Waiting for recording thread to finish\n")
+            logger.info("[INFO] Waiting for recording thread to finish ✅\n")
             self.process_thread.join(timeout=2)
-            logger.info("[INFO] Recording thread stopped\new_note")
+            logger.info("[INFO] Recording thread stopped ✅\n ")
 
         self.process_thread = None
         #self.plot_timer.stop()
@@ -845,13 +845,47 @@ class Tab2(QWidget):
 
         with shared.write_lock:
             setattr(shared, name, value)
-            sigma = shared.sigma
+            sigma       = shared.sigma
+            iso_switch  = shared.iso_switch
+            cal_switch  = shared.cal_switch
+            peakfinder  = shared.peakfinder
+            comp_switch = shared.comp_switch
+            diff_switch = shared.diff_switch
+            epb_switch  = shared.epb_switch
+            coi_switch  = shared.coi_switch
+            log_switch  = shared.log_switch
 
-        if sigma > 0:
-            logger.info(f"[INFO] {name} set to {value}\n")
+
+        if sigma > 0 and peakfinder > 0 and cal_switch:
+            logger.info(f"[INFO] {name} set to {value} ✅\n")
+
+        elif iso_switch and not cal_switch:
+            logger.warning(f"[WARNING] {name} needs calibration on 👆\n")
+
+        elif iso_switch and sigma == 0:
+            logger.warning(f"[WARNING] {name} needs sigma on 👆\n")
+
+        elif iso_switch and peakfinder == 0:
+            logger.warning(f"[WARNING] {name} needs peakfinder on 👆\n")
+
+        elif comp_switch:
+            logger.info(f"[INFO] {name} turned {value} ✅\n")
+
+        elif diff_switch:
+            logger.info(f"[INFO] {name} turned on ✅\n")
+
+        elif coi_switch:
+            logger.info(f"[INFO] {name} turned on ✅\n")    
+
+        elif epb_switch:
+            logger.info(f"[INFO] {name} turned on ✅\n")
+
+        elif log_switch:
+            logger.info(f"[INFO] {name} turned on ✅\n")    
+
         else:
-            logger.warning(f"[WARNING] {name} needs sigma > 0\n")
-
+            logger.info(" ")
+        
         self.update_histogram()
 
     def on_text_changed(self, text, key):
@@ -872,7 +906,7 @@ class Tab2(QWidget):
             with shared.write_lock:
                 shared.compression = compression
                 shared.bins = shared.bins_abs // compression
-                logger.info(f"[INFO] Compression set to {compression}, bins = {shared.bins}\n")
+                logger.info(f"[INFO] Compression set to {compression}, bins = {shared.bins} ✅\n")
 
     def on_select_filename_changed(self, index):
 
@@ -909,9 +943,9 @@ class Tab2(QWidget):
             success = load_histogram_2(filename_2)
 
             if success:
-                logger.info(f"[INFO] Loaded comparison spectrum: {filename_2}\n")
+                logger.info(f"[INFO] Loaded comparison spectrum: {filename_2} ✅\n")
             else:
-                logger.error(f"[ERROR] Failed to load comparison spectrum: {filename_2}\n")
+                logger.error(f"[ERROR] Failed to load comparison spectrum: {filename_2} ❌\n")
 
         # Always trigger a redraw in case comp_switch is active
         self.update_histogram()
@@ -936,9 +970,9 @@ class Tab2(QWidget):
 
         # Log result
         if flags:
-            logger.info(f"[INFO] Loaded {len(flags)} isotope flags from {isotope_tbl}\n")
+            logger.info(f"[INFO] Loaded {len(flags)} isotope flags from {isotope_tbl} ✅\n")
         else:
-            logger.warning(f"[WARNING] No isotope flags loaded from {isotope_tbl}\n")
+            logger.warning(f"[WARNING] No isotope flags loaded from {isotope_tbl} 👆\n")
         
     def on_sigma_changed(self, val):
         sigma = val / 10.0
@@ -987,16 +1021,16 @@ class Tab2(QWidget):
             try:
                 data["data"][0]["sampleInfo"]["note"] = new_note
             except (IndexError, KeyError) as e:
-                logger.error(f"[ERROR] Failed to update note field: {e}\n")
+                logger.error(f"[ERROR] Failed to update note field: {e} ❌\n")
                 return
 
             with open(json_path, "w", encoding="utf-8") as f:
                 json.dump(data, f)  # no indent ➜ compact
 
-            logger.info(f"[INFO] Updated note in {filename}\n")
+            logger.info(f"[INFO] Updated note in {filename} ✅\n")
 
         except Exception as e:
-            logger.error(f"[ERROR] Exception during JSON update: {e}\n")
+            logger.error(f"[ERROR] Exception during JSON update: {e} ❌\n")
 
     def on_dld_csv_btn(self):
 
@@ -1042,7 +1076,7 @@ class Tab2(QWidget):
             QMessageBox.information(self, "Download Complete", f"CSV saved to:\n{csv_path}")
 
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to save CSV:\n{str(e)}")
+            QMessageBox.critical(self, "Error", f"Failed to save CSV:\n{str(e)} ❌")
 
     def apply_calibration(self, x_vals, coeffs):
         if any(coeffs):
@@ -1083,7 +1117,7 @@ class Tab2(QWidget):
         cmd = self.cmd_selector.currentData()
 
         if cmd:  # Ignore if default item
-            logger.info(f"[INFO] tab2 command selected: {cmd}\n")
+            logger.info(f"[INFO] tab2 command selected: {cmd} ✅\n")
 
             shproto.dispatcher.process_03(cmd)
 
@@ -1132,7 +1166,7 @@ class Tab2(QWidget):
                 smoothing_window=3
             )
         except Exception as e:
-            logger.error(f"[ERROR] peak_finder failed: {e}")
+            logger.error(f"[ERROR] peak_finder failed: {e} ❌")
             return
 
         coeffs = [coeff_1, coeff_2, coeff_3]
@@ -1252,7 +1286,7 @@ class Tab2(QWidget):
             slb_switch     = shared.slb_switch
 
         if not histogram:
-            logger.info("[INFO] update_histogram skipped: no histogram data\n")
+            logger.info("[INFO] update_histogram skipped: no histogram data ✅\n")
             return
 
         # ---- Base Spectrum ----
@@ -1280,21 +1314,27 @@ class Tab2(QWidget):
 
         # ---- Gaussian correlation (optional) ----
         if sigma > 0:
-            # Use the raw histogram for correlation as you had before
             corr = gaussian_correl(histogram, sigma)
             x_vals_corr = list(range(len(corr)))
-            # Optional: if you also want smoothing for peak-finding:
             try:
                 y_for_peaks = gaussian_correl(y_for_peaks, sigma)
             except TypeError:
                 pass
 
         # ---- Calibration ----
-        if cal_switch:
-            x_vals  = self.apply_calibration(x_vals,  coeff_abc)
-            x_vals2 = self.apply_calibration(x_vals2, comp_coeff_abc)
-            if x_vals_corr:                              # guard!
-                x_vals_corr = self.apply_calibration(x_vals_corr, coeff_abc)
+        did_calibrate = False
+        if cal_switch and any(coeff_abc):
+            # ensure float ndarray so we really change the axis
+            xv = np.asarray(x_vals, dtype=float)
+            x_vals = np.polyval(np.poly1d(coeff_abc), xv)
+            did_calibrate = True
+
+            if x_vals2:
+                xv2 = np.asarray(x_vals2, dtype=float)
+                x_vals2 = np.polyval(np.poly1d(comp_coeff_abc), xv2)
+            if x_vals_corr:
+                xvc = np.asarray(x_vals_corr, dtype=float)
+                x_vals_corr = np.polyval(np.poly1d(coeff_abc), xvc)
 
         # ---- Energy per bin (DISPLAY ONLY) ----
         if epb_switch:
@@ -1302,7 +1342,6 @@ class Tab2(QWidget):
             y_vals2 = [y * x for x, y in zip(x_vals2, y_vals2)]
             if len(x_vals_corr) and len(corr):
                 corr = [y * x for x, y in zip(x_vals_corr, corr)]
-
 
         # ---- Log scale (DISPLAY ONLY) ----
         if log_switch:
@@ -1316,17 +1355,8 @@ class Tab2(QWidget):
             if y_vals:  y_vals[-1]  = 0
             if y_vals2: y_vals2[-1] = 0
 
-        # Ensure X range is correct whenever data length or calibration changes
-        if x_vals:
-            x0 = x_vals[0]
-            x1 = x_vals[-1]
-            if self._last_x_span != (x0, x1):
-                self.plot_widget.setXRange(x0, x1, padding=0)
-                self._last_x_span = (x0, x1)
-
-
         # ---- Store arrays for peak-annotations ----
-        self.x_vals      = list(x_vals)
+        self.x_vals      = list(x_vals) if isinstance(x_vals, list) else x_vals.tolist()
         self.y_vals_raw  = list(y_for_peaks)   # pre-EPB/log for detection
         self.y_vals_plot = list(y_vals)        # post-EPB/log for label height
 
@@ -1335,7 +1365,7 @@ class Tab2(QWidget):
 
         main_pen = pg.mkPen("k" if (diff_switch and comp_switch) else "b", width=1.5)
         self.hist_curve.setPen(main_pen)
-        self.hist_curve.setData(x_vals, y_vals)
+        self.hist_curve.setData(x_vals, y_vals)   # x_vals may be ndarray (good)
 
         if comp_switch and not diff_switch:
             self.comp_curve.setData(x_vals2, y_vals2)
@@ -1347,13 +1377,27 @@ class Tab2(QWidget):
         else:
             self.gauss_curve.setData([], [])
 
+        # === X range: calibrated min/max when calibrated; else raw 0..len-1 ===
+        if len(y_vals):
+            if did_calibrate:
+                xv = np.asarray(x_vals, dtype=float)
+                xmin = float(np.nanmin(xv))
+                xmax = float(np.nanmax(xv))
+            else:
+                xmin = 0.0
+                xmax = float(len(histogram) - 1)
+
+            if not np.isfinite(xmin) or not np.isfinite(xmax):
+                xmin, xmax = 0.0, float(len(histogram) - 1)
+            if xmin == xmax:
+                xmin -= 1.0
+                xmax += 1.0
+
+            self.plot_widget.setXRange(xmin, xmax, padding=0)
+
+        # Peak markers rate-limit
         self._last_peaks_t = 0
-
-        # Update peak markers less often
         now = time.monotonic()
-
-        do_peaks = (now - self._last_peaks_t) > 1.0
-
-        if do_peaks:
+        if (now - self._last_peaks_t) > 1.0:
             self.update_peak_markers()
             self._last_peaks_t = now
