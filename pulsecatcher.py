@@ -312,8 +312,6 @@ def update_mode_3_data(mode, shared, full_histogram, last_histogram, hmp_buffer,
                 # clear buffer and retet counter
                 hmp_buffer.clear()
                 interval_counter = 0
-                # Log success
-                logger.debug(f"[INFO] 3d data added: {aggregated[:10]}")                
             else:
                 logger.debug("[ERROR] hmp_buffer was empty")
 

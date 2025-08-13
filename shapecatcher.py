@@ -22,7 +22,7 @@ def determine_pulse_sign(pulse):
 def encode_pulse_sign(left_sign, right_sign):
     left_digit = 1 if left_sign else 2
     right_digit = 1 if right_sign else 2
-    logger.info(f'[INFO] Saving pulse polarity')
+    logger.info(f'[INFO] Saving pulse polarity ✅')
     time.sleep(0.1)
     return left_digit * 10 + right_digit
 
@@ -83,7 +83,7 @@ def capture_pulse_polarity(device, stereo, sample_rate, chunk_size, sample_lengt
     try:
         while pulse_sign_left is None or (stereo and pulse_sign_right is None):
             if time.time() - start_time > timeout:
-                logger.info('[INFO] Polarity detection timeout.')
+                logger.warning('[WARNING] Polarity detection timed out 👆')
                 break
 
             # Read audio data
@@ -154,7 +154,7 @@ def shapecatcher():
 
     peak = int(((sample_length - 1) / 2) + peakshift)
 
-    logger.info(f"[INFO] Starting shape acquisition for file '{name}'")
+    logger.info(f"[INFO] Acquiring shape ✅")
 
     time.sleep(0.1)
 
@@ -164,13 +164,14 @@ def shapecatcher():
     )
 
     if stereo and pulse_sign_right is None:
-        logger.warning("[WARNING] No pulse detected on right channel. Aborting.")
+        logger.warning("[WARNING] No pulse detected on right channel 👆")
         return [], []
 
-    logger.info(f"[INFO] Pulse sign: Left={pulse_sign_left}, Right={pulse_sign_right}")
+    logger.info(f"[INFO] Pulse sign determined: Left={pulse_sign_left}, Right={pulse_sign_right} ✅")
 
     encoded_pulse_sign = encode_pulse_sign(pulse_sign_left, pulse_sign_right)
-    logger.info(f"[INFO] Encoded Pulse Sign: {encoded_pulse_sign}")
+    
+    logger.info(f"[INFO] Encoded Pulse Sign: {encoded_pulse_sign} ✅")
 
     with shared.write_lock:
         shared.flip = encoded_pulse_sign
@@ -182,10 +183,11 @@ def shapecatcher():
     channels = 2 if stereo else 1
     if channels > info['maxInputChannels']:
         msg = f"[Shapecatcher] ERROR: {info['maxInputChannels']} channels available, but {channels} requested."
-        logger.error(f"[ERROR] {msg}")
+        logger.error(f"[ERROR] {msg} ❌")
         raise RuntimeError(msg)
 
-    logger.info("[INFO] Opening audio stream...")
+    logger.info("[INFO] Opening audio stream... ✅")
+
     stream = p.open(format=pyaudio.paInt16,
                     channels=channels,
                     rate=sample_rate,
@@ -198,7 +200,7 @@ def shapecatcher():
     pulse_list_right = []
 
     try:
-        logger.info(f"[INFO] Listening for pulses... Target: {shapecatches} per channel")
+        logger.info(f"[INFO] Looking for {shapecatches} pulses per channel 🔎")
         while len(pulse_list_left) < shapecatches or (stereo and len(pulse_list_right) < shapecatches):
             data = stream.read(chunk_size, exception_on_overflow=False)
             values = list(wave.struct.unpack(f"{chunk_size * channels}h", data))
@@ -228,7 +230,8 @@ def shapecatcher():
                 if len(pulse_list_left) >= shapecatches and (not stereo or len(pulse_list_right) >= shapecatches):
                     break
 
-        logger.info("[INFO] Finished capturing pulse shapes")
+        logger.info("[INFO] Done capturing pulse shapes ✅")
+
         time.sleep(0.1)
 
         # Compute average shape
@@ -248,18 +251,17 @@ def shapecatcher():
             shared.mean_shape_left = mean_shape_left
             shared.mean_shape_right = mean_shape_right
 
-        logger.info("[INFO] Mean shapes computed and saved to shared")
+        logger.info("[INFO] Mean shapes computed and saved ✅")
 
     except Exception as e:
-        logger.error("[ERROR] Exception occurred during pulse capture:")
-        logger.error(traceback.format_exc())
+        logger.error(f"[ERROR] Exception {e} ❌")
         mean_shape_left, mean_shape_right = [], []
 
     finally:
         stream.stop_stream()
         stream.close()
         p.terminate()
-        logger.info("[INFO] Audio stream closed.")
+        logger.info("[INFO] Audio stream closed ✅")
 
     return mean_shape_left, mean_shape_right
 

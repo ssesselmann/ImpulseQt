@@ -30,6 +30,10 @@ from qt_compat import QHBoxLayout
 from qt_compat import QStatusBar
 from qt_compat import QTimer
 from qt_compat import QTime
+from qt_compat import QObject
+from qt_compat import Signal
+from qt_compat import Slot
+
 from status_bar_handler import StatusBarHandler
 from feedback_popup import FeedbackPopup
 from send_feedback import send_feedback_email
@@ -44,10 +48,10 @@ def copy_lib_if_needed():
 
         try:
             shutil.copytree(src, dest)
-            logger.info(f"[INFO] Copied lib to {dest}")
+            logger.info(f"[INFO] Copied lib to {dest} ✅\n")
 
         except Exception as e:
-            logger.error(f"[ERROR] Could not copy lib: {e}")
+            logger.error(f"[ERROR] Could not copy lib: {e} ❌\n")
 
 # --------------------------------------
 # One-time setup for user data folders
@@ -61,12 +65,31 @@ def initialize_user_data():
     if not target_lib.exists():
         try:
             shutil.copytree(source_lib, target_lib)
-            logger.info(f"Copied default lib directory to: {target_lib}")
+            logger.info(f"[INFO] Copied default lib directory to: {target_lib} ✅\n")
 
         except Exception as e:
-            logger.error(f"[ERROR] copying default lib directory: {e}")
+            logger.error(f"[ERROR] copying default lib directory: {e} ❌")
     else:
-        logger.info("User lib already exists, skipping initialization.")
+        logger.info("[INFO] lib already exists, skipping initialization ✅")
+
+
+# ==============================================
+# Status Bus - logger messages bottom of screen
+#===============================================
+
+# StatusBus / QtStatusHandler
+class StatusBus(QObject):
+
+    message = Signal(str, int)   # (msg, level)
+
+class QtStatusHandler(logging.Handler):
+    def __init__(self, bus, level=logging.INFO):
+        super().__init__(level); self.bus = bus
+    def emit(self, record: logging.LogRecord):
+        try:
+            self.bus.message.emit(self.format(record), record.levelno)
+        except Exception:
+            pass
 
 
 # --------------------------------------
@@ -77,9 +100,40 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Impulse QT")
 
+        # ---------- Window geometry ----------
         self.resize(shared.window_width or 960, shared.window_height or 600)
         self.move(shared.window_pos_x or 200, shared.window_pos_y or 100)
 
+        # ---------- Status bar UI (create FIRST) ----------
+        self.status = QStatusBar(self)
+        self.setStatusBar(self.status)
+
+        self.status_label = QLabel("")
+        self.status_label.setStyleSheet("padding-left: 10px; color: gray;")
+        self.status.addPermanentWidget(self.status_label, 1)
+
+        # throttling fields (init BEFORE connecting signals/handlers)
+        self._min_show_ms    = 500
+        self._last_commit_ms = 0
+
+        # ---------- Status bus + logging handler ----------
+        self.status_bus = StatusBus()
+        self.status_bus.message.connect(self.on_status_message)
+
+        qt_handler = QtStatusHandler(self.status_bus)
+        qt_handler.setFormatter(logging.Formatter("%(message)s"))
+
+        # attach to the logger you actually use
+        logger.setLevel(logging.DEBUG)
+        logger.propagate = False  # avoid duplicate messages via root
+        for h in list(logger.handlers):
+            if isinstance(h, QtStatusHandler):
+                logger.removeHandler(h)
+        logger.addHandler(qt_handler)
+
+        logger.info("Status bus wired ✅")
+
+        # ---------- Tabs / central widget ----------
         self.tab1 = Tab1()
         self.tab2 = Tab2()
         self.tab3 = Tab3()
@@ -87,13 +141,11 @@ class MainWindow(QMainWindow):
         self.tab5 = Tab5()
 
         self.tabs = QTabWidget()
-
         self.tabs.addTab(self.tab1, "Device Setup")
         self.tabs.addTab(self.tab2, "2D Histogram")
         self.tabs.addTab(self.tab3, "Waterfall")
         self.tabs.addTab(self.tab4, "Count Rate")
         self.tabs.addTab(self.tab5, "Manual")
-
         self.tabs.currentChanged.connect(self.on_tab_changed)
 
         container = QWidget()
@@ -103,97 +155,64 @@ class MainWindow(QMainWindow):
         container.setLayout(layout)
         self.setCentralWidget(container)
 
-        # --- Status bar ---
-        self.status = QStatusBar(self)
-        self.setStatusBar(self.status)
-
-        self.status_label = QLabel("")
-        self.status_label.setStyleSheet("padding-left: 10px; color: gray;")
-        self.status.addPermanentWidget(self.status_label, 1)
-
-        self._min_show_ms = 700
-        self._last_commit_ms = 0
-
-        # Attach to root so you see everything
-        root = logging.getLogger()
-        root.setLevel(logging.DEBUG)
-
-        # Avoid duplicate handler if MainWindow is recreated
-
-        if not any(isinstance(h, StatusBarHandler) for h in logger.handlers):
-            self._status_handler = StatusBarHandler(self._log_to_status)
-            self._status_handler.setLevel(logging.DEBUG)
-            self._status_handler.setFormatter(logging.Formatter('%(message)s'))
-            logger.addHandler(self._status_handler)
-
-        logger.setLevel(logging.DEBUG)
-        logger.propagate = True  # optional, keeps logs flowing up to root if you also want console handlers there
-            
-
-
-    def _log_to_status(self, msg: str, level: int):
-        """Called from logging handler; ensure update happens on UI thread."""
-        QTimer.singleShot(0, lambda m=msg, lv=level: self._commit_status(m, lv))
+    @Slot(str, int)
+    def on_status_message(self, msg: str, level: int):
+        self._commit_status(msg, level)
 
     def _commit_status(self, msg: str, level: int):
         now = QTime.currentTime().msecsSinceStartOfDay()
-        if now - self._last_commit_ms < self._min_show_ms:
-            delay = self._min_show_ms - (now - self._last_commit_ms)
+        last = getattr(self, "_last_commit_ms", 0)
+        min_gap = getattr(self, "_min_show_ms", 0)
+
+        if now - last < min_gap:
+            delay = min_gap - (now - last)
             QTimer.singleShot(delay, lambda m=msg, lv=level: self._commit_status(m, lv))
             return
 
-        # Color by severity
+        # severity color
         if level >= logging.ERROR:
-            color = "#d32f2f"   # red
+            color = "#d32f2f"
         elif level >= logging.WARNING:
-            color = "#f57c00"   # orange
+            color = "#f57c00"
         else:
-            color = "green"      # info/debug
+            color = "green"
 
         self.status_label.setStyleSheet(f"padding-left: 10px; color: {color};")
         self.status_label.setText(msg)
-        self._last_commit_ms = QTime.currentTime().msecsSinceStartOfDay()
+        self._last_commit_ms = now
 
-
-    def show_status_message(self, msg):
-        """Called by the StatusBarHandler when a log is emitted."""
-        from PySide6.QtCore import QTime
-        now = QTime.currentTime().msecsSinceStartOfDay()
-        if now - self._last_commit_ms >= self._min_show_ms:
-            self.status_label.setText(msg)
-            self._last_commit_ms = now
-
-
+    @Slot(int)
+    def on_tab_changed(self, index: int):
+        w = self.tabs.widget(index)
+        if hasattr(w, "load_on_show"):
+            w.load_on_show()
+        if hasattr(w, "update_bins_selector"):
+            w.update_bins_selector()
 
     def closeEvent(self, event):
-        # Save size/position
-        pos = self.pos()
-        size = self.size()
-        shared.window_pos_x = pos.x()
-        shared.window_pos_y = pos.y()
-        shared.window_width = size.width()
-        shared.window_height = size.height()
-        shared.session_end = datetime.datetime.now()
-        # save settings
+        # persist window geometry
+        p, s = self.pos(), self.size()
+        shared.window_pos_x, shared.window_pos_y = p.x(), p.y()
+        shared.window_width, shared.window_height = s.width(), s.height()
         shared.save_settings()
-        # Show feedback popup
-        popup = FeedbackPopup(self)
-        popup.exec()  # Modal
-        # Close app
+
+        # stop timers if they exist
+        for name in ("ui_timer", "refresh_timer"):
+            t = getattr(self, name, None)
+            if t:
+                t.stop()
+
+        # stop any tab workers if they expose stop()
+        for name in ("tab1", "tab2", "tab3", "tab4", "tab5"):
+            tab = getattr(self, name, None)
+            if hasattr(tab, "stop"):
+                tab.stop()
+
+        # detach our QtStatusHandler to avoid duplicates on reopen
+        root = logging.getLogger()
+        root.handlers[:] = [h for h in root.handlers if h.__class__.__name__ != "QtStatusHandler"]
+
         super().closeEvent(event)
-
-    def on_tab_changed(self, index):
-        current_widget = self.tabs.widget(index)
-
-        if index == 1:
-            self.tab2.load_on_show() 
-        elif index == 2:
-            self.tab3.load_on_show() 
-
-        # Check if current tab has update_bins_selector method
-        if hasattr(current_widget, "update_bins_selector"):
-            current_widget.update_bins_selector()
-        
 
 class FeedbackPopup(QDialog):
     def __init__(self, parent=None):

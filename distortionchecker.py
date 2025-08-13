@@ -33,7 +33,7 @@ def distortion_finder(stereo):
     flip_left   = 1
     flip_right  = 1
 
-    logger.info(f'[INFO] Distortionchecker says Stereo == {stereo}\n')
+    logger.info(f'[INFO] Distortionchecker says Stereo == {stereo} ✅')
 
     if flip     == 11:
         pass
@@ -63,14 +63,16 @@ def distortion_finder(stereo):
         while (not stereo and count_left < shapecatches) or (stereo and (count_left < shapecatches or count_right < shapecatches)):
 
             if time.time() - start_time > timeout:
-                logger.warning("[WARNING] Distortion finder timed out.")
+
+                logger.warning("[WARNING] Distortion finder timed out 👆")
+
                 break
 
             try:
                 data = stream.read(chunk_size, exception_on_overflow=False)
                 values = list(wave.struct.unpack("%dh" % (chunk_size * channels), data))
             except Exception as e:
-                logger.error(f"[ERROR] Audio read/unpack error: {e}")
+                logger.error(f"[ERROR] Audio read/unpack error: {e} ❌")
                 continue  # skip this chunk and try again
 
             left_channel = values[::2]
@@ -94,9 +96,7 @@ def distortion_finder(stereo):
                         count_right += 1
 
     except Exception as outer:
-        logger.error(f"[ERROR] Unexpected error in distortion_finder loop: {outer}")
-
-
+        logger.error(f"[ERROR] Unexpected error in distortion_finder loop: {outer} ❌")
 
     finally:
         stream.stop_stream()
@@ -108,12 +108,17 @@ def distortion_finder(stereo):
         distortion_right = []
 
     distortion_left.sort()
-    max_left = max(distortion_left, default=0)
-    logger.info(f'[INFO] Max distortion left {max_left}\n')
+
+    max_left = distortion_left[int(shapecatches*0.96)]
+
+    logger.info(f'[INFO] Left Distortion at 96% {max_left} ✅')
     
-    distortion_right.sort()
-    max_right = max(distortion_right, default=0)
-    logger.info(f'[INFO] Max distortion right {max_right}\n')
+    if stereo:
+        distortion_right.sort()
+
+        max_right = distortion_right[int(shapecatches*0.96)]
+
+        logger.info(f'[INFO] left/right distortion at 96% {max_left}/{max_right} ✅')
     
 
     with shared.write_lock:

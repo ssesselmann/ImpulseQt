@@ -82,26 +82,26 @@ class Tab1ProWidget(QWidget):
         self.sample_rate.addItems(["44100", "48000", "96000", "192000", "384000"])
         self.sample_rate.setMaximumWidth(120)
         self.sample_rate.setCurrentText(str(sample_rate))
-        self.sample_rate.currentTextChanged.connect(lambda val: setattr(shared, "sample_rate", int(val)))
+        self.sample_rate.currentTextChanged.connect(lambda val: (logger.info(f"[INFO] Sample rate changed to {val} ⚙️"), setattr(shared, "sample_rate", int(val))))
 
 
         self.sample_size = QComboBox()
         self.sample_size.addItems(["11", "16", "21", "31", "41", "51", "61"])
         self.sample_size.setMaximumWidth(100)
         self.sample_size.setCurrentText(str(sample_length))
-        self.sample_size.currentTextChanged.connect(lambda val: setattr(shared, "sample_length", int(val)))
+        self.sample_size.currentTextChanged.connect(lambda val: (logger.info(f"[INFO] Sample length changed to {val} ⚙️"),setattr(shared, "sample_length", int(val))))
 
         self.pulse_catcher = QComboBox()
         self.pulse_catcher.addItems(["10", "50", "100", "500", "1000"])
         self.pulse_catcher.setMaximumWidth(100)
         self.pulse_catcher.setCurrentText(str(shapecatches))
-        self.pulse_catcher.currentTextChanged.connect(lambda val: setattr(shared, "shapecatches", int(val)))
+        self.pulse_catcher.currentTextChanged.connect(lambda val: (logger.info(f"[INFO] Shape-catches changed to {val} ⚙️"),setattr(shared, "shapecatches", int(val))))
 
         self.buffer_size = QComboBox()
         self.buffer_size.addItems(["512", "1024", "2048", "4096", "8192", "16184"])
         self.buffer_size.setMaximumWidth(100)
         self.buffer_size.setCurrentText(str(chunk_size))
-        self.buffer_size.currentTextChanged.connect(lambda val: setattr(shared, "chunk_size", int(val)))
+        self.buffer_size.currentTextChanged.connect(lambda val: (logger.info(f"[INFO] Buffer changed to {val} ⚙️"),setattr(shared, "chunk_size", int(val))))
 
         top_controls = QHBoxLayout()
         top_controls.setSpacing(15)
@@ -184,12 +184,25 @@ class Tab1ProWidget(QWidget):
         left_column = QWidget()
         left_layout = QVBoxLayout()
         left_layout.setContentsMargins(0, 0, 0, 0)
+
+        # get initial value (adjust if you store it elsewhere)
+        with shared.write_lock:
+            stereo = bool(getattr(shared, "stereo", False))
+
         self.stereo_checkbox = QCheckBox("Stereo Mode")
+
+        # (optional) avoid firing the toggled signal while setting the initial state
+        self.stereo_checkbox.blockSignals(True)
         self.stereo_checkbox.setChecked(stereo)
-        self.stereo_checkbox.stateChanged.connect(lambda state: setattr(shared, "stereo", bool(state)))
+        self.stereo_checkbox.blockSignals(False)
+
+        # connect a proper handler that updates shared + refreshes UI
+        self.stereo_checkbox.toggled.connect(self.on_stereo_toggled)
+
         left_layout.addWidget(self.stereo_checkbox)
         left_column.setLayout(left_layout)
         left_column.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
 
         # Middle Column -----------------------------------------------------------------------
         middle_column = QWidget()
@@ -283,7 +296,20 @@ class Tab1ProWidget(QWidget):
         tab1_pro_layout.addLayout(controls_row_1)
 
         self.setLayout(tab1_pro_layout)
-        self.plot_saved_shapes()
+        self.plot_shape()
+
+    
+    def on_stereo_toggled(self, checked: bool):
+        with shared.write_lock:
+            shared.stereo = bool(checked)
+
+        if checked:
+            logger.info(f"[INFO] stereo set to {checked} ✅")
+        else:
+            logger.info(f" ")
+
+        self.plot_shape()  
+
 
     def update_device(self, index):
         selected_index = self.device_selector.itemData(index)
@@ -291,9 +317,8 @@ class Tab1ProWidget(QWidget):
             shared.device = selected_index  # OK
 
     def run_shapecatcher(self):
-
+        logger.info("[INFO] Looking for pulses 🔎")
         try:
-            logger.info("[INFO] Looking for pulses")
             pulses_left, pulses_right = shapecatcher()
 
             # Save to shared if needed elsewhere
@@ -326,7 +351,7 @@ class Tab1ProWidget(QWidget):
 
             self.pulse_plot.clear()
             self.pulse_plot.setBackground('w')
-            self.draw_shape_lld()
+            self.draw_mean_shape_plot()
 
             # Plot LEFT trace (blue line, blue dots)
             self.pulse_plot.plot(
@@ -357,15 +382,12 @@ class Tab1ProWidget(QWidget):
 
         except Exception as e:
             
-            logger.error(f"[ERROR] during shapecatcher: {e}")
+            logger.error(f"[ERROR] during shapecatcher: {e} ❌")
 
     def run_distortion_finder(self):
 
         with shared.write_lock:
             stereo = shared.stereo
-
-        if stereo: 
-            logger.info('[INFO] Impulse is in Stereo mode')
 
         left_distortion, right_distortion = distortion_finder(stereo)
 
@@ -397,7 +419,7 @@ class Tab1ProWidget(QWidget):
         self.curve_plot.setLabel("left", "Distortion")
         self.curve_plot.setLabel("bottom", "Sample Index")
 
-    def draw_shape_lld(self):
+    def draw_mean_shape_plot(self):
         with shared.write_lock:
             shape_lld = shared.shape_lld
 
@@ -407,7 +429,7 @@ class Tab1ProWidget(QWidget):
         )
 
 
-    def plot_saved_shapes(self):
+    def plot_shape(self):
         try:
             # Use shared.mean_shape_left and right
             with shared.write_lock:
@@ -456,7 +478,7 @@ class Tab1ProWidget(QWidget):
                 name="Right"
             )
 
-            self.draw_shape_lld()
+            self.draw_mean_shape_plot()
 
         except Exception as e:
-            logger.error(f"[ERROR] in plot_saved_shapes: {e}")
+            logger.error(f"[ERROR] in plot_shape: {e} ❌")

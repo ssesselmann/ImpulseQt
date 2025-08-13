@@ -641,7 +641,7 @@ class Tab2(QWidget):
         with shared.write_lock:
             device_type = shared.device_type
 
-        logger.info(f"[INFO] Set device visibility: {device_type} ✅\n")
+        logger.info(f"[INFO] Set device visibility: {device_type} ✅")
 
         for widget in getattr(self, "pro_only_widgets", []):
             widget.setVisible(device_type == "PRO")
@@ -679,8 +679,8 @@ class Tab2(QWidget):
         try:
             index = next(i for i, (_, value) in enumerate(BIN_OPTIONS) if int(value) == cur_comp)
         except StopIteration:
-            logger.warning(f"[WARNING] Compression {cur_comp} not found in BIN_OPTIONS.")
-            index = len(BIN_OPTIONS) - 1  # Default to last (usually 8192 bins)
+            logger.warning(f"[WARNING] Compression {cur_comp} not found in BIN_OPTIONS 👆")
+            index = len(BIN_OPTIONS) - 1 
 
         self.bins_selector.setCurrentIndex(index)
         self.update_histogram()
@@ -691,7 +691,7 @@ class Tab2(QWidget):
 
         data = self.bins_selector.itemData(index)
         if data is None:
-            logger.warning(f"[WARNING] No compression data found for index {index}")
+            logger.warning(f"[WARNING] No compression data for index {index} 👆")
             return
 
         compression = int(data)
@@ -717,6 +717,7 @@ class Tab2(QWidget):
 
         if filename.startswith("i/"):
             QMessageBox.warning(self, "Invalid filename", 'Cannot overwrite files in "i/" directory.')
+            logger.info(f"[WARNING] Invalid filename - can't write to i/ directory 👆")
             return
 
         if os.path.exists(file_path):
@@ -729,10 +730,10 @@ class Tab2(QWidget):
                 return
 
         if self.process_thread and self.process_thread.is_alive():
-            logger.warning("[WARNING] thread still running, attempting to stop\n")
+            logger.warning("[WARNING] thread still running, attempting to stop 👆")
             stop_recording()
             self.process_thread.join(timeout=2)
-            logger.info("[INFO] Previous thread joined ✅\n")
+            logger.info("[INFO] Previous thread joined ✅")
        
         # self.clear_session()
         self.start_recording_2d(filename)
@@ -792,14 +793,15 @@ class Tab2(QWidget):
 
         except Exception as e:
             QMessageBox.critical(self, "Start Error", f"Error starting: {str(e)}")
+            logger.info(f"[ERROR] {str(e)} ❌")
 
     @Slot()
     def on_stop_clicked(self):
 
         if self.process_thread and self.process_thread.is_alive():
-            logger.info("[INFO] Waiting for recording thread to finish ✅\n")
+            logger.info("[INFO] Waiting for recording thread to finish ✅")
             self.process_thread.join(timeout=2)
-            logger.info("[INFO] Recording thread stopped ✅\n ")
+            logger.info("[INFO] Recording thread stopped ✅ ")
 
         self.process_thread = None
         #self.plot_timer.stop()
@@ -832,13 +834,15 @@ class Tab2(QWidget):
         x = int(mouse_point.x())
 
         with shared.write_lock:
-            histogram = shared.histogram[:]  # safe shallow copy if needed
+            histogram = shared.histogram.copy()
 
         if 0 <= x < len(histogram):
-            bin_val = histogram[x]
+            y = histogram[x]
             self.vline.setPos(x)
-            self.hline.setPos(bin_val)
-            self.plot_widget.setToolTip(f"Bin: {x}, Counts: {bin_val}")
+            self.hline.setPos(y)
+            # optional tooltip: fine
+            self.plot_widget.setToolTip(f"Bin: {x}, Counts: {y}")
+
 
     def on_checkbox_toggle(self, state, name):
         value = bool(state)
@@ -857,31 +861,31 @@ class Tab2(QWidget):
 
 
         if sigma > 0 and peakfinder > 0 and cal_switch:
-            logger.info(f"[INFO] {name} set to {value} ✅\n")
+            logger.info(f"[INFO] {name} set to {value} ✅")
 
         elif iso_switch and not cal_switch:
-            logger.warning(f"[WARNING] {name} needs calibration on 👆\n")
+            logger.warning(f"[WARNING] {name} needs calibration on 👆")
 
         elif iso_switch and sigma == 0:
-            logger.warning(f"[WARNING] {name} needs sigma on 👆\n")
+            logger.warning(f"[WARNING] {name} needs sigma on 👆")
 
         elif iso_switch and peakfinder == 0:
-            logger.warning(f"[WARNING] {name} needs peakfinder on 👆\n")
+            logger.warning(f"[WARNING] {name} needs peakfinder on 👆")
 
         elif comp_switch:
-            logger.info(f"[INFO] {name} turned {value} ✅\n")
+            logger.info(f"[INFO] {name} turned {value} ✅")
 
         elif diff_switch:
-            logger.info(f"[INFO] {name} turned on ✅\n")
+            logger.info(f"[INFO] {name} turned on ✅")
 
         elif coi_switch:
-            logger.info(f"[INFO] {name} turned on ✅\n")    
+            logger.info(f"[INFO] {name} turned on ✅")    
 
         elif epb_switch:
-            logger.info(f"[INFO] {name} turned on ✅\n")
+            logger.info(f"[INFO] {name} turned on ✅")
 
         elif log_switch:
-            logger.info(f"[INFO] {name} turned on ✅\n")    
+            logger.info(f"[INFO] {name} turned on ✅")    
 
         else:
             logger.info(" ")
@@ -906,7 +910,7 @@ class Tab2(QWidget):
             with shared.write_lock:
                 shared.compression = compression
                 shared.bins = shared.bins_abs // compression
-                logger.info(f"[INFO] Compression set to {compression}, bins = {shared.bins} ✅\n")
+                logger.info(f"[INFO] Compression set to {compression}, bins = {shared.bins} ✅")
 
     def on_select_filename_changed(self, index):
 
@@ -943,9 +947,9 @@ class Tab2(QWidget):
             success = load_histogram_2(filename_2)
 
             if success:
-                logger.info(f"[INFO] Loaded comparison spectrum: {filename_2} ✅\n")
+                logger.info(f"[INFO] Loaded comparison spectrum: {filename_2} ✅")
             else:
-                logger.error(f"[ERROR] Failed to load comparison spectrum: {filename_2} ❌\n")
+                logger.error(f"[ERROR] Failed to load comparison spectrum: {filename_2} ❌")
 
         # Always trigger a redraw in case comp_switch is active
         self.update_histogram()
@@ -970,9 +974,9 @@ class Tab2(QWidget):
 
         # Log result
         if flags:
-            logger.info(f"[INFO] Loaded {len(flags)} isotope flags from {isotope_tbl} ✅\n")
+            logger.info(f"[INFO] Loaded {len(flags)} isotope flags from {isotope_tbl} ✅")
         else:
-            logger.warning(f"[WARNING] No isotope flags loaded from {isotope_tbl} 👆\n")
+            logger.warning(f"[WARNING] No isotope flags loaded from {isotope_tbl} 👆")
         
     def on_sigma_changed(self, val):
         sigma = val / 10.0
@@ -1004,13 +1008,13 @@ class Tab2(QWidget):
             filename = shared.filename
 
         if not filename:
-            logger.warning("[WARNING] No filename available\n")
+            logger.warning("[WARNING] No filename available 👆")
             return
 
         json_path = USER_DATA_DIR / f"{filename}.json" if not filename.endswith(".json") else filename
 
         if not json_path.exists():
-            logger.warning(f"[WARNING] JSON file not found: {json_path}\n")
+            logger.warning(f"[WARNING] JSON file not found: {json_path} 👆")
             return
 
         try:
@@ -1021,16 +1025,16 @@ class Tab2(QWidget):
             try:
                 data["data"][0]["sampleInfo"]["note"] = new_note
             except (IndexError, KeyError) as e:
-                logger.error(f"[ERROR] Failed to update note field: {e} ❌\n")
+                logger.error(f"[ERROR] Failed to update note field: {e} ❌")
                 return
 
             with open(json_path, "w", encoding="utf-8") as f:
                 json.dump(data, f)  # no indent ➜ compact
 
-            logger.info(f"[INFO] Updated note in {filename} ✅\n")
+            logger.info(f"[INFO] Updated note in {filename} ✅")
 
         except Exception as e:
-            logger.error(f"[ERROR] Exception during JSON update: {e} ❌\n")
+            logger.error(f"[ERROR] Exception during JSON update: {e} ❌")
 
     def on_dld_csv_btn(self):
 
@@ -1077,6 +1081,7 @@ class Tab2(QWidget):
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to save CSV:\n{str(e)} ❌")
+            logger.error(f"[ERROR] Save failed: {str(e)} ❌")
 
     def apply_calibration(self, x_vals, coeffs):
         if any(coeffs):
@@ -1109,7 +1114,7 @@ class Tab2(QWidget):
             with shared.write_lock:
                 shared.compression = value
                 shared.bins = int(shared.bins_abs/value)
-                logger.info(f"[INFO] Compression set to {value} (i.e., {shared.bins_abs // value} bins)\n")
+                logger.info(f"[INFO] Compression set to {value} (i.e., {shared.bins_abs // value} bins) ✅")
         return    
 
     def send_selected_command(self):
@@ -1117,7 +1122,7 @@ class Tab2(QWidget):
         cmd = self.cmd_selector.currentData()
 
         if cmd:  # Ignore if default item
-            logger.info(f"[INFO] tab2 command selected: {cmd} ✅\n")
+            logger.info(f"[INFO] tab2 command selected: {cmd} ✅")
 
             shproto.dispatcher.process_03(cmd)
 
@@ -1286,7 +1291,7 @@ class Tab2(QWidget):
             slb_switch     = shared.slb_switch
 
         if not histogram:
-            logger.info("[INFO] update_histogram skipped: no histogram data ✅\n")
+            logger.warning("[WARNING] No histogram data 👆")
             return
 
         # ---- Base Spectrum ----
