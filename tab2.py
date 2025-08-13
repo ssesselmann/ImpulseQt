@@ -102,51 +102,62 @@ class Tab2(QWidget):
         self.has_loaded     = False
         self._last_peaks_t  = 0
         self._last_x_span   = None
-
-        self.plot_widget    = pg.PlotWidget(title="2D Count Rate Histogram")
+        self._last_peaks_t  = 0
 
         # snapshot histogram once for initial draw
         with shared.write_lock:
             histogram_data  = shared.histogram.copy()
 
-        # ONE set of labels/background (you had these twice)
+        # --- Create the PlotWidget first --------------------------------------------
+        self.plot_widget = pg.PlotWidget(title="2D Count Rate Histogram")
+
+        # Appearance / labels
         self.plot_widget.setBackground('w')
         self.plot_widget.setLabel('left', 'Counts')
         self.plot_widget.setLabel('bottom', 'Bins')
         self.plot_widget.getPlotItem().showGrid(x=True, y=True, alpha=0.3)
-        self.plot_widget.setTitle("Histogram", color='k', size="14pt")
 
-        # crosshair lines
+        # Get its ViewBox *after* creating the widget
+        vb = self.plot_widget.getViewBox()
+        vb.enableAutoRange(x=False, y=False)
+
+        # Initial X range (optional; do before plotting if you like)
+        if histogram_data:
+            self.plot_widget.setXRange(0, len(histogram_data) - 1, padding=0)
+
+        # --- Curves (add main first, then others) -----------------------------------
+        self.hist_curve  = self.plot_widget.plot(histogram_data, pen=pg.mkPen("b", width=2))
+        self.comp_curve  = self.plot_widget.plot([],              pen=pg.mkPen("r", width=2))
+        self.gauss_curve = self.plot_widget.plot([],              pen=pg.mkPen("r", width=2))
+
+        # Z-order so crosshairs/markers sit above lines, backgrounds below lines
+        self.hist_curve.setZValue(10)
+        self.comp_curve.setZValue(9)
+        self.gauss_curve.setZValue(8)
+
+        # --- Crosshair lines (add after curves, make sure they’re on top) -----------
         self.vline = pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen('gray', width=1))
         self.hline = pg.InfiniteLine(angle=0,  movable=False, pen=pg.mkPen('gray', width=1))
+        self.vline.setZValue(30)
+        self.hline.setZValue(30)
+
         self.plot_widget.addItem(self.vline, ignoreBounds=True)
         self.plot_widget.addItem(self.hline, ignoreBounds=True)
         self.plot_widget.scene().sigMouseMoved.connect(self.on_mouse_moved)
 
-        # main histogram (blue)
-        self.hist_curve     = self.plot_widget.plot(histogram_data, pen=pg.mkPen("b", width=2))
-        # comparison (red)
-        self.comp_curve     = self.plot_widget.plot([], pen=pg.mkPen("r", width=2))
-        # gaussian correlation (red, thicker)
-        self.gauss_curve    = self.plot_widget.plot([], pen=pg.mkPen("r", width=2))
-
-        # viewbox policy: fix X (we’ll set the range) and auto-range Y
-        vb = self.plot_widget.getViewBox()
-        # Old/new pyqtgraph compatibility
-        try:
-            vb.setAutoVisible(y=True)          # works on your Windows error message
-        except AttributeError:
-            pass                                # harmless if not available
-
-        vb.enableAutoRange(x=False, y=True)     # keep X fixed, auto Y only
-
-        # set initial/follow-up X range to your current bin span
+        # Optional: set Y range from initial data (prevents auto from fighting you)
         if histogram_data:
-            self.plot_widget.setXRange(0, len(histogram_data) - 1, padding=0)
+            ymin = min(histogram_data)
+            ymax = max(histogram_data)
+            if ymin == ymax:
+                ymin -= 1
+                ymax += 1
+            self.plot_widget.setYRange(ymin, ymax, padding=0)
 
-
+        # Finally add to layout
         tab2_layout.addWidget(self.plot_widget)
 
+        # ======================================================
 
         # === 9x4 Grid ==========================================
         grid = QGridLayout()
@@ -1271,13 +1282,12 @@ class Tab2(QWidget):
             self.peak_markers.append(label)
 
     def update_histogram(self):
+        # 1) Snapshot shared state first (fast, no UI calls)
         with shared.write_lock:
             histogram      = shared.histogram
             elapsed        = shared.elapsed
             histogram_2    = shared.histogram_2 if shared.comp_switch else []
             elapsed_2      = shared.elapsed_2
-            filename       = shared.filename
-
             sigma          = shared.sigma
             peakfinder     = shared.peakfinder
             coeff_abc      = [shared.coeff_1, shared.coeff_2, shared.coeff_3]
@@ -1285,7 +1295,6 @@ class Tab2(QWidget):
             epb_switch     = shared.epb_switch
             log_switch     = shared.log_switch
             cal_switch     = shared.cal_switch
-
             comp_switch    = shared.comp_switch
             diff_switch    = shared.diff_switch
             slb_switch     = shared.slb_switch
@@ -1294,18 +1303,13 @@ class Tab2(QWidget):
             logger.warning("[WARNING] No histogram data 👆")
             return
 
-        # ---- Base Spectrum ----
+        # 2) Build series (math only; no pg calls yet)
         x_vals = list(range(len(histogram)))
         y_vals = histogram.copy()
 
         x_vals2 = list(range(len(histogram_2))) if comp_switch else []
         y_vals2 = histogram_2.copy() if comp_switch else []
 
-        # Ensure these exist no matter what
-        corr = []
-        x_vals_corr = []
-
-        # ---- Difference (if enabled) ----
         if diff_switch and comp_switch:
             max_len = max(len(histogram), len(histogram_2))
             hist1 = histogram   + [0] * (max_len - len(histogram))
@@ -1314,10 +1318,12 @@ class Tab2(QWidget):
             y_vals = [a - b * time_factor for a, b in zip(hist1, hist2)]
             x_vals = list(range(max_len))
 
-        # >>> Peak-finding series BEFORE EPB/log <<<
+        # Keep a pre-EPB/log copy for peak detection
         y_for_peaks = y_vals[:]
 
-        # ---- Gaussian correlation (optional) ----
+        # Gaussian correlation
+        corr = []
+        x_vals_corr = []
         if sigma > 0:
             corr = gaussian_correl(histogram, sigma)
             x_vals_corr = list(range(len(corr)))
@@ -1326,14 +1332,12 @@ class Tab2(QWidget):
             except TypeError:
                 pass
 
-        # ---- Calibration ----
+        # Calibration (change X only)
         did_calibrate = False
         if cal_switch and any(coeff_abc):
-            # ensure float ndarray so we really change the axis
             xv = np.asarray(x_vals, dtype=float)
             x_vals = np.polyval(np.poly1d(coeff_abc), xv)
             did_calibrate = True
-
             if x_vals2:
                 xv2 = np.asarray(x_vals2, dtype=float)
                 x_vals2 = np.polyval(np.poly1d(comp_coeff_abc), xv2)
@@ -1341,36 +1345,37 @@ class Tab2(QWidget):
                 xvc = np.asarray(x_vals_corr, dtype=float)
                 x_vals_corr = np.polyval(np.poly1d(coeff_abc), xvc)
 
-        # ---- Energy per bin (DISPLAY ONLY) ----
+        # EPB (display only)
         if epb_switch:
             y_vals  = [y * x for x, y in zip(x_vals,  y_vals)]
             y_vals2 = [y * x for x, y in zip(x_vals2, y_vals2)]
             if len(x_vals_corr) and len(corr):
                 corr = [y * x for x, y in zip(x_vals_corr, corr)]
 
-        # ---- Log scale (DISPLAY ONLY) ----
+        # Log (display only) — sanitize before plotting
         if log_switch:
             y_vals  = sanitize_for_log(y_vals)
             y_vals2 = sanitize_for_log(y_vals2)
-            if corr:                                     # guard!
+            if corr:
                 corr = sanitize_for_log(corr)
 
-        # ---- Suppress last bin ----
+        # Suppress last bin if requested
         if slb_switch:
             if y_vals:  y_vals[-1]  = 0
             if y_vals2: y_vals2[-1] = 0
 
-        # ---- Store arrays for peak-annotations ----
+        # Save arrays used by peak labels
         self.x_vals      = list(x_vals) if isinstance(x_vals, list) else x_vals.tolist()
-        self.y_vals_raw  = list(y_for_peaks)   # pre-EPB/log for detection
-        self.y_vals_plot = list(y_vals)        # post-EPB/log for label height
+        self.y_vals_raw  = list(y_for_peaks)   # for detection
+        self.y_vals_plot = list(y_vals)        # for label height
 
-        # Update plots (no clear)
+        # 3) Now do UI calls in a tight block (order matters)
+        #    - set log mode first (affects ranges)
+        #    - set pens only if they change (optional micro-opt)
         self.plot_widget.setLogMode(x=False, y=log_switch)
 
-        main_pen = pg.mkPen("k" if (diff_switch and comp_switch) else "b", width=1.5)
-        self.hist_curve.setPen(main_pen)
-        self.hist_curve.setData(x_vals, y_vals)   # x_vals may be ndarray (good)
+        # update data (do not recreate/add items here)
+        self.hist_curve.setData(x_vals, y_vals)
 
         if comp_switch and not diff_switch:
             self.comp_curve.setData(x_vals2, y_vals2)
@@ -1382,27 +1387,26 @@ class Tab2(QWidget):
         else:
             self.gauss_curve.setData([], [])
 
-        # === X range: calibrated min/max when calibrated; else raw 0..len-1 ===
+        # 4) Ranges after setData (so autoscale calc has actual data if used)
         if len(y_vals):
             if did_calibrate:
                 xv = np.asarray(x_vals, dtype=float)
-                xmin = float(np.nanmin(xv))
-                xmax = float(np.nanmax(xv))
+                xmin = float(np.nanmin(xv)); xmax = float(np.nanmax(xv))
             else:
-                xmin = 0.0
-                xmax = float(len(histogram) - 1)
+                xmin = 0.0; xmax = float(len(histogram) - 1)
 
-            if not np.isfinite(xmin) or not np.isfinite(xmax):
-                xmin, xmax = 0.0, float(len(histogram) - 1)
-            if xmin == xmax:
-                xmin -= 1.0
-                xmax += 1.0
+            if not np.isfinite(xmin) or not np.isfinite(xmax) or xmin == xmax:
+                xmin, xmax = 0.0, max(1.0, float(len(histogram) - 1))
 
             self.plot_widget.setXRange(xmin, xmax, padding=0)
 
-        # Peak markers rate-limit
-        self._last_peaks_t = 0
+            ymin = min(y_vals); ymax = max(y_vals)
+            if not np.isfinite(ymin) or not np.isfinite(ymax) or ymin == ymax:
+                ymin -= 1.0; ymax += 1.0
+            self.plot_widget.setYRange(ymin, ymax, padding=0)
+
+        # 5) Peak markers — rate-limited (don’t reset timer each call)
         now = time.monotonic()
-        if (now - self._last_peaks_t) > 1.0:
+        if getattr(self, "_last_peaks_t", 0.0) == 0.0 or (now - self._last_peaks_t) > 1.0:
             self.update_peak_markers()
             self._last_peaks_t = now
