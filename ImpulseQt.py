@@ -91,7 +91,6 @@ class QtStatusHandler(logging.Handler):
         except Exception:
             pass
 
-
 # --------------------------------------
 # Main Window Class
 # --------------------------------------
@@ -190,29 +189,39 @@ class MainWindow(QMainWindow):
             w.update_bins_selector()
 
     def closeEvent(self, event):
-        # persist window geometry
-        p, s = self.pos(), self.size()
-        shared.window_pos_x, shared.window_pos_y = p.x(), p.y()
-        shared.window_width, shared.window_height = s.width(), s.height()
+        # Save size/position
+        pos = self.pos()
+        size = self.size()
+        shared.window_pos_x = pos.x()
+        shared.window_pos_y = pos.y()
+        shared.window_width = size.width()
+        shared.window_height = size.height()
+        shared.session_end = datetime.datetime.now()
         shared.save_settings()
 
-        # stop timers if they exist
+        # Show feedback popup
+        popup = FeedbackPopup(self)
+        popup.exec()  # Modal — waits until user responds
+
+        # Extra cleanup from the new version
         for name in ("ui_timer", "refresh_timer"):
             t = getattr(self, name, None)
             if t:
                 t.stop()
-
-        # stop any tab workers if they expose stop()
         for name in ("tab1", "tab2", "tab3", "tab4", "tab5"):
             tab = getattr(self, name, None)
             if hasattr(tab, "stop"):
-                tab.stop()
+                try:
+                    tab.stop()
+                except Exception:
+                    pass
+        for h in list(logger.handlers):
+            if h.__class__.__name__ == "QtStatusHandler":
+                logger.removeHandler(h)
 
-        # detach our QtStatusHandler to avoid duplicates on reopen
-        root = logging.getLogger()
-        root.handlers[:] = [h for h in root.handlers if h.__class__.__name__ != "QtStatusHandler"]
-
+        # Now close
         super().closeEvent(event)
+
 
 class FeedbackPopup(QDialog):
     def __init__(self, parent=None):
