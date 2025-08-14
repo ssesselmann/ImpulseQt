@@ -31,234 +31,90 @@ class Tab1MaxWidget(QWidget):
     def __init__(self):
         super().__init__()
         
-        # --- Main Layout ---
+
         tab1_max_layout = QVBoxLayout(self)
 
-        # --- Content Layout: Three Columns ---
+        # =============================
+        # Three column page layout
+        # =============================
         content_layout = QHBoxLayout()
 
-        # --- Left Column ---------------------------------------------------------------
-        left_layout = QVBoxLayout()
+        # =============================
+        # Left Column 
+        # =============================
+        left_column = QWidget(); left_layout = QVBoxLayout(left_column)
 
-        # --- Port Selector Group ---
-        port_group = QGroupBox("Select serial device")
-
-        port_group_layout = QVBoxLayout()
-
-        self.port_selector = QComboBox()
-
-        self.port_selector.setFixedWidth(200)
-
-        self.port_selector.setPlaceholderText("Select serial device")
-
-        # Get serial devices
-        sdl = fn.get_serial_device_list()
-
-        options = [{'label': filename, 'value': index} for filename, index in sdl]
-
-        options = [{k: str(v) for k, v in option.items()} for option in options]
-
-        options = fn.cleanup_serial_options(options)
-
-        valid_devices = [option['value'] for option in options]
-
-        default_device = valid_devices[0] if valid_devices else ""
-
-        # Populate the combo box
-        self.port_selector.clear()
-        for opt in options:
-            self.port_selector.addItem(opt['label'], userData=opt['value'])
-
-        if default_device:
-            index = self.port_selector.findData(default_device)
-            if index != -1:
-                self.port_selector.setCurrentIndex(index)
-
-        # Assemble group
-        port_group_layout.addWidget(self.port_selector)
-
-        port_group_layout.addStretch()
-
-        port_group.setLayout(port_group_layout)
-
-        left_layout.addWidget(port_group, alignment=Qt.AlignTop)
-
+        # Port selector
+        port_group = QGroupBox("Select serial device"); pg = QVBoxLayout(port_group)
+        self.port_selector = QComboBox(); self.port_selector.setPlaceholderText("Select serial device")
+        opts = fn.cleanup_serial_options([{"label": l, "value": str(v)} for l, v in fn.get_serial_device_list()])
+        for o in opts: self.port_selector.addItem(o["label"], o["value"])
+        if opts:
+            i = self.port_selector.findData(opts[0]["value"])
+            if i != -1: self.port_selector.setCurrentIndex(i)
         self.port_selector.currentIndexChanged.connect(self.on_port_selection)
+        pg.addWidget(self.port_selector)
+        left_layout.addWidget(port_group)
 
-        # ---------------------
         # Serial command input
-        # ---------------------
         serial_cmd_box = QGroupBox("Serial Command input (click button to retrieve table)")
-
-        serial_cmd_layout = QVBoxLayout(serial_cmd_box)
-
-        # Row layout for input + button
-        input_row_layout = QHBoxLayout()
-
-        self.serial_command_input = QLineEdit()
-
-        self.serial_command_input.setPlaceholderText("Enter serial command")
-
-        self.serial_command_input.setFixedWidth(150)
-
-        self.send_button = QPushButton("Send command")
-
-        self.send_button.setStyleSheet(BTN)
-
-        self.send_button.setFixedWidth(150)
-
-        input_row_layout.addWidget(self.serial_command_input)
-
-        input_row_layout.addWidget(self.send_button)
-
+        v = QVBoxLayout(serial_cmd_box); row = QHBoxLayout()
+        self.serial_command_input = QLineEdit(placeholderText="Enter serial command")
+        self.send_button = QPushButton("Send command"); self.send_button.setStyleSheet(BTN)
+        row.addWidget(self.serial_command_input); row.addWidget(self.send_button)
+        self.serial_text = QLabel("Use the serial command input with caution… sending the wrong command might upset calibration.")
+        self.serial_text.setWordWrap(True); self.serial_text.setStyleSheet(P1)
+        v.addLayout(row); v.addWidget(self.serial_text)
         self.serial_command_input.returnPressed.connect(self.send_button.click)
-
         self.send_button.clicked.connect(self.on_send_command)
-
-        input_row_layout.setAlignment(Qt.AlignLeft)
-
-        serial_cmd_layout.addLayout(input_row_layout)
-
-        self.serial_text = QLabel("Use the serial command input with caution, please refer to the manual for common commands. sending the wrong command might upset the calibration of your device.")  # Empty initially
-
-        self.serial_text.setWordWrap(True)
-
-        self.serial_text.setStyleSheet(P1)
-
-        serial_cmd_layout.addWidget(self.serial_text)
-
         left_layout.addWidget(serial_cmd_box)
 
-        left_widget = QWidget()
-
-        left_widget.setLayout(left_layout)
-
-        content_layout.addWidget(left_widget, alignment=Qt.AlignTop)
-
-        #--------------------------------------------------
-
-
-
-        self.temp_calibration_box = QTextEdit()
-
-        self.temp_calibration_box.setPlaceholderText("Temperature calibration settings")
-
-        self.temp_calibration_box.setFixedHeight(300)
-
+        # Temperature calibration data
         left_layout.addWidget(QLabel("Temperature Calibration Data:"))
+        self.temp_calibration_box = QTextEdit(placeholderText="Temperature calibration settings")
+        self.temp_calibration_box.setStyleSheet("font-family: monospace;")
+        left_layout.addWidget(self.temp_calibration_box, 1)  # fills remaining vertical space
 
+        # Impulse Logo
+        logo = QLabel(alignment=Qt.AlignCenter); logo.setStyleSheet("padding:10px;")
+        logo.setPixmap(QPixmap(fn.resource_path("assets/impulse.gif")).scaledToHeight(80, Qt.SmoothTransformation))
+        left_layout.addWidget(logo)
 
+        content_layout.addWidget(left_column, 1)
 
-        left_layout.addWidget(self.temp_calibration_box)
-
-        left_layout.addStretch()
-
-        # -------------------------
-        # Logo
-        # -------------------------
-        
-        logo_label = QLabel()
-
-        logo_label.setAlignment(Qt.AlignCenter)
-
-        logo_label.setStyleSheet("padding: 10px;")
-
-        logo_path = fn.resource_path("assets/impulse.gif")
-
-        pixmap = QPixmap(logo_path)
-
-        scaled_pixmap = pixmap.scaledToHeight(80, Qt.SmoothTransformation)
-
-        logo_label.setPixmap(scaled_pixmap)
-
-        left_layout.addWidget(logo_label)
-
-        # -------------------------
+        # =============================
         # Middle Column 
-        # -------------------------
-        middle_layout = QVBoxLayout()
-
-        # Wrap everything in a top-aligned container
-        middle_wrapper = QWidget()
-        middle_wrapper_layout = QVBoxLayout(middle_wrapper)
-        middle_wrapper_layout.setContentsMargins(0, 0, 0, 0)
-        middle_wrapper_layout.setSpacing(6)
-
-        # Device info table
+        # =============================
+        middle_column = QWidget(); middle_layout = QVBoxLayout(middle_column)
         self.device_info_table = QTableWidget(16, 3)
         self.device_info_table.setHorizontalHeaderLabels(["Parameter", "Value", "Units"])
         self.device_info_table.verticalHeader().setVisible(False)
-        self.device_info_table.horizontalHeader().setStretchLastSection(True)
         self.device_info_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.device_info_table.setStyleSheet(P2)
+        middle_layout.addWidget(self.device_info_table, 1)
+        content_layout.addWidget(middle_column, 1)
 
-        self.device_info_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        self.device_info_table.setMinimumHeight(550)
-
-        middle_wrapper_layout.addWidget(self.device_info_table)
-
-        self.update_device_info_table()
-
-        # Add wrapped middle content aligned to top
-        middle_layout.addWidget(middle_wrapper, alignment=Qt.AlignTop)
-
-        # Command output label
-        self.serial_command_sent = QLabel("")
-        self.serial_command_sent.setStyleSheet("padding: 4px; color: green;")
-        middle_wrapper_layout.addWidget(self.serial_command_sent) 
-
-        # --------------------------------------------------------------
+        # =============================
         # Right Column 
-        # -------------------------------------------------------------
-        right_layout = QVBoxLayout()
-        # --- Timer for pulse updates ---
-        self.pulse_timer = QTimer()
+        # =============================
+        right_column = QWidget(); right_layout = QVBoxLayout(right_column)
 
-        self.pulse_timer.setInterval(1000)  # update every 1 sec
-
+        self.pulse_timer = QTimer(self)
+        self.pulse_timer.setInterval(1000)
         self.pulse_timer.timeout.connect(self.update_pulse_plot)
 
-        # --- Plot setup ---
-        self.figure = Figure(figsize=(3, 5))
+        from matplotlib.figure import Figure
+        from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+        self.figure = Figure(); self.ax = self.figure.add_subplot(111); self.canvas = FigureCanvas(self.figure)
+        right_layout.addWidget(self.canvas, 1)
 
-        self.canvas = FigureCanvas(self.figure)
+        row = QHBoxLayout()
+        self.pulse_button = QPushButton("Pulse View");     self.pulse_button.setStyleSheet(START); self.pulse_button.clicked.connect(self.start_max_pulse_check)
+        self.scope_button = QPushButton("Oscilloscope");   self.scope_button.setStyleSheet(START); self.scope_button.clicked.connect(self.start_max_oscilloscope_check)
+        self.stop_button  = QPushButton("Stop Max Pulse"); self.stop_button.setStyleSheet(STOP);   self.stop_button.clicked.connect(self.stop_max_pulse_check)
+        row.addWidget(self.pulse_button); row.addWidget(self.scope_button); row.addWidget(self.stop_button)
+        right_layout.addLayout(row)
 
-        self.ax = self.figure.add_subplot(111)
-
-        right_layout.insertWidget(0, self.canvas)  
-
-        button_row = QHBoxLayout()
-
-        self.pulse_button = QPushButton("Pulse View")
-
-        self.pulse_button.setStyleSheet(START)
-
-        self.pulse_button.clicked.connect(self.start_max_pulse_check)
-
-        
-        self.scope_button = QPushButton("Oscilloscope")
-
-        self.scope_button.setStyleSheet(START)
-
-        self.scope_button.clicked.connect(self.start_max_oscilloscope_check)
-
-
-        self.stop_button = QPushButton("Stop Max Pulse")
-
-        self.stop_button.setStyleSheet(STOP)
-
-        self.stop_button.clicked.connect(self.stop_max_pulse_check)
-
-        button_row.addWidget(self.pulse_button)
-
-        button_row.addWidget(self.scope_button)
-
-        button_row.addWidget(self.stop_button)
-
-        right_layout.addLayout(button_row)
-
-        # Ensure alignment at the top
-        right_layout.addStretch()
+        content_layout.addWidget(right_column, 1)
 
     #---------------------------------------------------------------------------
     # tab1_max layout
@@ -340,17 +196,18 @@ class Tab1MaxWidget(QWidget):
             self.temp_calibration_box.setText(tco_text)
 
         
-
     def format_tco_pairs_as_table(tco_pairs):
         if not tco_pairs:
             return "No temperature compensation data found."
 
-        lines = ["Temp (°C)\tCorrection"]
-        for temp, val in tco_pairs:
-            lines.append(f"{temp:+d}\t{val}")
-        return "\n".join(lines)
-        
+        header = f"{'Temp (°C)':>10}  {'Correction':>12}"
+        sep = "-" * len(header)
 
+        rows = [f"{temp:+10d}  {val:+12.4f}" for temp, val in tco_pairs]
+        return "\n".join([header, sep] + rows)
+
+
+        
     def start_max_oscilloscope_check(self):
         fn.stop_max_pulse_check()
         time.sleep(0.2)

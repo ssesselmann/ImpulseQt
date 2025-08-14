@@ -372,8 +372,8 @@ SETTINGS_SCHEMA = {
     "iso_switch": {"type": "bool", "default": False},
     "window_pos_x": {"type": "int", "default": 50},
     "window_pos_y": {"type": "int", "default": 50},
-    "window_width": {"type": "int", "default": 1400},
-    "window_height": {"type": "int", "default": 850}
+    "window_width": {"type": "int", "default": 1280},
+    "window_height": {"type": "int", "default": 720}
 }
 
 def read_flag_data(path):

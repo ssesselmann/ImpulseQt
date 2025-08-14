@@ -29,6 +29,7 @@ from qt_compat import QIntValidator
 from qt_compat import QPixmap
 from qt_compat import QCheckBox
 from qt_compat import QSlider
+from qt_compat import QSizePolicy
 
 from shapecatcher import shapecatcher
 from distortionchecker import distortion_finder
@@ -216,7 +217,9 @@ class Tab1ProWidget(QWidget):
         middle_column.setLayout(middle_layout)
         middle_column.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
-
+        # ===================================
+        # Peak Shifter slider
+        # ===================================
         slider_label = QLabel("Peak Shifter")
         slider_label.setAlignment(Qt.AlignCenter)
 
@@ -240,21 +243,20 @@ class Tab1ProWidget(QWidget):
         for val in range(-20, 21, 5):
             label = QLabel(str(val))
             label.setAlignment(Qt.AlignCenter)
-            label.setFixedWidth(40)  # Adjust spacing as needed
             label_row.addWidget(label)
 
         slider_layout.addLayout(label_row)
-
         slider_container = QHBoxLayout()
+
         slider_widget = QWidget()
         slider_widget.setLayout(slider_layout)
-        slider_container.addStretch()
-        slider_widget.setFixedWidth(400)
-        
-        slider_container.addStretch()
+        slider_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+
+        slider_container = QHBoxLayout()
         slider_container.addWidget(slider_widget)
-        slider_container.addStretch()
+
         middle_layout.addLayout(slider_container)
+
 
         # Right column ---------------------------------------------------------------
         

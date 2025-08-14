@@ -368,7 +368,6 @@ def start(sn=None):
 
                 if pulse_data:
                     pulse_data = pulse_data[:-1]  # Remove last item if needed
-                    logger.info(f"[INFO] Processed Pulse Data: {pulse_data} ✅\n")
 
                     with shared.write_lock:
                         shared.max_pulse_shape = pulse_data

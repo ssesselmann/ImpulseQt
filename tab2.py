@@ -118,13 +118,13 @@ class Tab2(QWidget):
         vb.enableAutoRange(x=False, y=False)
 
         # Initial X range (optional; do before plotting if you like)
-        if histogram_data:
-            self.plot_widget.setXRange(0, len(histogram_data) - 1, padding=0)
+        # if histogram_data:
+        #     self.plot_widget.setXRange(0, len(histogram_data) - 1, padding=0)
 
         # --- Curves (add main first, then others) -----------------------------------
-        self.hist_curve  = self.plot_widget.plot([], pen=pg.mkPen("b", width=2))
-        self.comp_curve  = self.plot_widget.plot([],              pen=pg.mkPen("r", width=2))
-        self.gauss_curve = self.plot_widget.plot([],              pen=pg.mkPen("r", width=2))
+        self.hist_curve  = self.plot_widget.plot([], pen=pg.mkPen("b", width=1.5))
+        self.comp_curve  = self.plot_widget.plot([], pen=pg.mkPen("k", width=1.5))
+        self.gauss_curve = self.plot_widget.plot([], pen=pg.mkPen("r", width=1.5))
 
         # Z-order so crosshairs/markers sit above lines, backgrounds below lines
         self.hist_curve.setZValue(10)

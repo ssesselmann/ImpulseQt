@@ -95,6 +95,6 @@ DEFAULT_SETTINGS = {
 	"val_flag": False,
 	"window_pos_x": 100,
 	"window_pos_y": 100,
-	"window_width": 1400,
-	"window_height": 850
+	"window_width": 1280,
+	"window_height": 720
 }
