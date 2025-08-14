@@ -48,10 +48,10 @@ def copy_lib_if_needed():
 
         try:
             shutil.copytree(src, dest)
-            logger.info(f"[INFO] Copied lib to {dest} ✅\n")
+            logger.info(f"[INFO] Copied lib to {dest} ✅")
 
         except Exception as e:
-            logger.error(f"[ERROR] Could not copy lib: {e} ❌\n")
+            logger.error(f"[ERROR] Could not copy lib: {e} ❌")
 
 # --------------------------------------
 # One-time setup for user data folders
@@ -65,7 +65,7 @@ def initialize_user_data():
     if not target_lib.exists():
         try:
             shutil.copytree(source_lib, target_lib)
-            logger.info(f"[INFO] Copied default lib directory to: {target_lib} ✅\n")
+            logger.info(f"[INFO] Copied default lib directory to: {target_lib} ✅")
 
         except Exception as e:
             logger.error(f"[ERROR] copying default lib directory: {e} ❌")

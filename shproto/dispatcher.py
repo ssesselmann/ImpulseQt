@@ -219,7 +219,7 @@ def start(sn=None):
                 local_cmd = shproto.dispatcher.command
                 shproto.dispatcher.command = ""
 
-            logger.info(f"[INFO] Dispatched command: {local_cmd!r} ✅\n")
+            logger.info(f"[INFO] Dispatched command: {local_cmd!r} ✅")
 
             # Elapsed control (host-based)
             if   local_cmd == "-sta":
@@ -252,7 +252,7 @@ def start(sn=None):
 
         except serial.SerialException as e:
 
-            logger.error(f"[ERROR] shproto.dispatcher.start: {e} ❌\n")
+            logger.error(f"[ERROR] shproto.dispatcher.start: {e} ❌")
 
             break
 
@@ -279,14 +279,14 @@ def start(sn=None):
                     resp_lines = resp_decoded.splitlines()
                     if re.search('^VERSION', resp_decoded):
                         shproto.dispatcher.inf_str = resp_decoded
-                        logger.info(f"[INFO] Got MAX settings ✅\n")
+                        logger.info(f"[INFO] Got MAX settings ✅")
 
                 except UnicodeDecodeError:
-                    logger.warning("[WARNING] Unknown response from dispatcher 👆\n")
+                    logger.warning("[WARNING] Unknown response from dispatcher 👆")
 
                 if len(resp_lines) == 40:
                     serial_number = "{}".format(resp_lines[39])
-                    logger.info("[INFO] Found MAX serial # {} ✅\n".format(serial_number))
+                    logger.info("[INFO] Found MAX serial # {} ✅".format(serial_number))
 
 
                     b_str = ''
@@ -301,9 +301,9 @@ def start(sn=None):
                             shproto.dispatcher.calibration[3] = unpack('d', int((resp_lines[6] + resp_lines[7]), 16).to_bytes(8, 'little'))[0]
                             shproto.dispatcher.calibration[4] = unpack('d', int((resp_lines[8] + resp_lines[9]), 16).to_bytes(8, 'little'))[0]
                             shproto.dispatcher.calibration_updated = 1
-                        logger.info("[INFO] Got calibration: {} ✅\n".format(shproto.dispatcher.calibration))
+                        logger.info("[INFO] Got calibration: {} ✅".format(shproto.dispatcher.calibration))
                     else:
-                        logger.error("[ERROR] Wrong crc for calibration values got: {:08x} expected: {:08x} ❌\n".format(int(resp_lines[10], 16), crc))
+                        logger.error("[ERROR] Wrong crc for calibration values got: {:08x} expected: {:08x} ❌".format(int(resp_lines[10], 16), crc))
 
                 response.clear()
 
@@ -435,7 +435,7 @@ def start(sn=None):
 # ========================================================
 def process_01(filename, compression, device, t_interval):
 
-    logger.info(f'[INFO] process_01({filename}) ✅\n')
+    logger.info(f'[INFO] process_01({filename}) ✅')
 
     global counts, last_counts
     # Initialize variables
@@ -538,7 +538,7 @@ def process_01(filename, compression, device, t_interval):
         # ================================================================
         if spec_stopflag or stopflag:
             
-            logger.info("[INFO] dispatcher received stop signal ✅\n")
+            logger.info("[INFO] dispatcher received stop signal ✅")
 
             # Final compression step
             comp_hst = [sum(hst[i:i + compression]) for i in range(0, max_bins, compression)]
@@ -574,7 +574,7 @@ def process_01(filename, compression, device, t_interval):
         # ===============================================
         if counts >= max_counts or elapsed > max_seconds:
 
-            logger.info("[INFO] process_01 stop condition (counts or time) ✅\n")
+            logger.info("[INFO] process_01 stop condition (counts or time) ✅")
 
             counts      = sum(comp_hst)
 
@@ -607,7 +607,7 @@ def process_01(filename, compression, device, t_interval):
 # ========================================================
 def process_02(filename_hmp, compression3d, device, t_interval):
 
-    logger.info(f'[INFO] received command ({filename_hmp}) ✅\n')
+    logger.info(f'[INFO] received command ({filename_hmp}) ✅')
 
     global counts, last_counts, histogram_hmp
 
@@ -631,11 +631,11 @@ def process_02(filename_hmp, compression3d, device, t_interval):
 
     while True:
         if shproto.dispatcher.spec_stopflag or shproto.dispatcher.stopflag:
-            logger.info("[INFO] MAX process_03 received stop signal ✅\n")
+            logger.info("[INFO] MAX process_03 received stop signal ✅")
             break
 
         if counts >= max_counts or elapsed > max_seconds:
-            logger.info("[INFO] Stop condition met (counts or time) ✅\n")
+            logger.info("[INFO] Stop condition met (counts or time) ✅")
             break
 
         time.sleep(t_interval)
@@ -688,13 +688,13 @@ def process_03(cmd):
 
         shproto.dispatcher.command = cmd
 
-    logger.info(f'[INFO] dispatcher process_03 ("{cmd}") ✅\n')
+    logger.info(f'[INFO] dispatcher process_03 ("{cmd}") ✅')
 
 
 
 def clear():
 
-    logger.info("[INFO] dispatcher.clear() ✅\n")
+    logger.info("[INFO] dispatcher.clear() ✅")
 
     with shproto.dispatcher.histogram_lock:
         shproto.dispatcher.stat_prev_tt             = None
@@ -759,7 +759,7 @@ def save_spectrum_json(filename, device, comp_hst, counts, elapsed, coeffs, spec
 
             json.dump(data, f, separators=(",", ":"))
 
-        logger.info(f"[INFO] Spectrum saved to {json_path} ✅\n")
+        logger.info(f"[INFO] Spectrum saved to {json_path} ✅")
 
         cps_data = {
             "filename": filename,
@@ -773,13 +773,13 @@ def save_spectrum_json(filename, device, comp_hst, counts, elapsed, coeffs, spec
         with open(cps_path, "w") as f:
             json.dump(cps_data, f, indent=2)
 
-        logger.info(f"[INFO] CPS saved to {cps_path} ✅\n")
+        logger.info(f"[INFO] CPS saved to {cps_path} ✅")
 
     except Exception as e:
         logger.error(f"[ERROR] Failed to save spectrum: {e} ❌")
 
 def load_json_data(file_path):
-    logger.info(f'[INFO] dispatcher.load_json_data({file_path}) ✅\n')
+    logger.info(f'[INFO] dispatcher.load_json_data({file_path}) ✅')
 
     if os.path.exists(file_path):
         with open(file_path, "r") as rjf:
@@ -842,7 +842,7 @@ def save_spectrum_hmp_json(filename_hmp, hst3d, counts, dt_start, dt_now, coeffs
     json_data = json.dumps(data, separators=(",", ":"))
     file_path = os.path.join(USER_DATA_DIR, f'{filename_hmp}_hmp.json')
 
-    logger.info(f'[INFO] Saving HMP JSON: {file_path} ✅\n')
+    logger.info(f'[INFO] Saving HMP JSON: {file_path} ✅')
     with open(file_path, "w") as wjf:
         wjf.write(json_data)
 
@@ -856,6 +856,6 @@ def stop():
             spec_stopflag = 1
 
         except Exception as e:
-            logger.error(f"[ERROR] dispatcher.stop(): {e} ❌\n")
+            logger.error(f"[ERROR] dispatcher.stop(): {e} ❌")
 
 
