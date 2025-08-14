@@ -1253,47 +1253,6 @@ def generate_device_settings_table_data():
     return rows, tco
 
 
-
-# def generate_device_settings_table_data():
-
-#     process_03('-cal')
-#     time.sleep(0.2)
-
-#     serial_number = shproto.dispatcher.serial_number
-#     time.sleep(0.2)
-
-#     dev_info = get_serial_device_information()
-#     time.sleep(0.2)
-
-#     info        = parse_device_info(dev_info)
-#     tco_pairs   = extract_tco_pairs(dev_info)
-
-#     # 5) Use cached values if the new parse is empty
-#     with shared.write_lock:
-#         shared.device_info   = info
-#         shared.serial_number = serial_number
-#         shared.tco_pairs     = tco_pairs  
-
-#     rows = [
-#         ("Version",           "-ver",  info.get("VERSION")),
-#         ("Serial number",     "-cal",  serial_number),
-#         ("Rise samples",      "-ris",  info.get("RISE")),
-#         ("Fall samples",      "-fall", info.get("FALL")),
-#         ("Noise LLD",         "-nos",  info.get("NOISE")),
-#         ("ADC freq (Hz)",     "-frq",  info.get("F")),
-#         ("Max integral",      "-max",  info.get("MAX")),
-#         ("Hysteresis",        "-hyst", info.get("HYST")),
-#         ("Mode [0–2]",        "-mode", info.get("MODE")),
-#         ("Discriminator step","-step", info.get("STEP")),
-#         ("High voltage",      "-U",    info.get("POT")),
-#         ("Baseline trim",     "-V",    info.get("POT2")),
-#         ("Temp sensor 1 (°C)","status",info.get("T1")),
-#         ("Energy window",     "-win",  info.get("OUT")),
-#         ("Temp-comp enabled", "-tc",   info.get("TC")),
-#     ]
-
-#     return rows, tco_pairs
-
 def parse_device_info(info_string):
 
     tokens = info_string.split()
@@ -1348,10 +1307,6 @@ def parse_device_info(info_string):
 
 
 def sanitize_for_log(y_values, floor=0.1):
-    """
-    Make data safe for log plotting without actually taking the log10.
-    PyQtGraph will do the log scaling when setLogMode(y=True).
-    """
     arr = np.asarray(y_values, dtype=float)
     mask_bad = ~np.isfinite(arr) | (arr <= 0)
     if mask_bad.any():

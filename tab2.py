@@ -114,9 +114,15 @@ class Tab2(QWidget):
         self.plot_widget.setLabel('bottom', 'Bins')
         self.plot_widget.getPlotItem().showGrid(x=True, y=True, alpha=0.3)
 
-        # Get its ViewBox *after* creating the widget
-        vb = self.plot_widget.getViewBox()
-        vb.enableAutoRange(x=False, y=False)
+        # # Get its ViewBox *after* creating the widget
+        # vb = self.plot_widget.getViewBox()
+        # vb.enableAutoRange(x=False, y=False)
+
+
+        # in __init__ after creating self.plot_widget
+        self.plot_widget.enableAutoRange('y', False)
+        self.plot_widget.enableAutoRange('x', False)   # optional, since you set XRange too
+
 
         # --- Curves (add main first, then others) -----------------------------------
         self.hist_curve  = self.plot_widget.plot([], pen=pg.mkPen("darkblue", width=1.5))
@@ -992,9 +998,12 @@ class Tab2(QWidget):
         self.update_histogram()
 
     def open_calibration_popup(self):
-        self.calibration_popup = CalibrationPopup(self.poly_label)
-
+        self.calibration_popup = CalibrationPopup(
+            poly_label=self.poly_label,
+            filename=shared.filename  # or self.filename if you store it locally
+        )
         self.calibration_popup.show()
+
 
     def on_notes_changed(self):  # WL Compliant
         new_note = self.notes_input.toPlainText().strip()
@@ -1267,7 +1276,7 @@ class Tab2(QWidget):
             self.peak_markers.append(label)
 
     def update_histogram(self):
-        # 1) Snapshot shared state first (fast, no UI calls)
+        # 1) Snapshot shared state
         with shared.write_lock:
             histogram      = shared.histogram
             elapsed        = shared.elapsed
@@ -1288,13 +1297,13 @@ class Tab2(QWidget):
             logger.warning("[WARNING] No histogram data 👆")
             return
 
-        # 2) Build series (math only; no pg calls yet)
-        x_vals = list(range(len(histogram)))
-        y_vals = histogram.copy()
-
+        # 2) Build series in linear space
+        x_vals  = list(range(len(histogram)))
+        y_vals  = histogram.copy()
         x_vals2 = list(range(len(histogram_2))) if comp_switch else []
         y_vals2 = histogram_2.copy() if comp_switch else []
 
+        # Diff (uses raw histograms)
         if diff_switch and comp_switch:
             max_len = max(len(histogram), len(histogram_2))
             hist1 = histogram   + [0] * (max_len - len(histogram))
@@ -1302,98 +1311,93 @@ class Tab2(QWidget):
             time_factor = (elapsed / elapsed_2) if elapsed_2 else 1.0
             y_vals = [a - b * time_factor for a, b in zip(hist1, hist2)]
             x_vals = list(range(max_len))
-            self.hist_curve.setPen(pg.mkPen("black", width=1.5))
-        else:
-            self.hist_curve.setPen(pg.mkPen("blue", width=1.5))    
 
         # Keep a pre-EPB/log copy for peak detection
         y_for_peaks = y_vals[:]
 
-        # Gaussian correlation
+        # Gaussian correlation (from original histogram as before)
         corr = []
         x_vals_corr = []
         if sigma > 0:
-            corr = gaussian_correl(histogram, sigma)
-            x_vals_corr = list(range(len(corr)))
             try:
+                corr = gaussian_correl(histogram, sigma)
+                x_vals_corr = list(range(len(corr)))
                 y_for_peaks = gaussian_correl(y_for_peaks, sigma)
-            except TypeError:
-                pass
+            except Exception as e:
+                logger.error(f"[ERROR] Gaussian correlation failed: {e} ❌")
 
-        # Calibration (change X only)
-        did_calibrate = False
+        # Calibration (X only)
         if cal_switch and any(coeff_abc):
             xv = np.asarray(x_vals, dtype=float)
-            x_vals = np.polyval(np.poly1d(coeff_abc), xv)
-            did_calibrate = True
+            x_vals = np.polyval(np.poly1d(coeff_abc), xv).tolist()
             if x_vals2:
                 xv2 = np.asarray(x_vals2, dtype=float)
-                x_vals2 = np.polyval(np.poly1d(comp_coeff_abc), xv2)
+                x_vals2 = np.polyval(np.poly1d(comp_coeff_abc), xv2).tolist()
             if x_vals_corr:
                 xvc = np.asarray(x_vals_corr, dtype=float)
-                x_vals_corr = np.polyval(np.poly1d(coeff_abc), xvc)
+                x_vals_corr = np.polyval(np.poly1d(coeff_abc), xvc).tolist()
 
-        # EPB (display only)
+        # EPB (display only) — linear space
         if epb_switch:
             y_vals  = [y * x for x, y in zip(x_vals,  y_vals)]
-            y_vals2 = [y * x for x, y in zip(x_vals2, y_vals2)]
-            if len(x_vals_corr) and len(corr):
+            y_vals2 = [y * x for x, y in zip(x_vals2, y_vals2)] if x_vals2 else []
+            if x_vals_corr and corr:
                 corr = [y * x for x, y in zip(x_vals_corr, corr)]
 
-        # Log (display only) — sanitize before plotting
-        if log_switch:
-            y_vals  = sanitize_for_log(y_vals)
-            y_vals2 = sanitize_for_log(y_vals2)
-            if corr:
-                corr = sanitize_for_log(corr)
-
-        # Suppress last bin if requested
+        # Suppress last bin (may introduce zeros)
         if slb_switch:
             if y_vals:  y_vals[-1]  = 0
             if y_vals2: y_vals2[-1] = 0
+            if corr:    corr[-1]    = 0
+
+        # Sanitize non-finite (keep linear, no log taken here)
+        def _finite(a): 
+            return [float(v) for v in a if np.isfinite(v)]
+        y_vals      = _finite(y_vals)
+        y_vals2     = _finite(y_vals2) if y_vals2 else []
+        corr        = _finite(corr)     if corr     else []
+        y_for_peaks = _finite(y_for_peaks)
+
+        # In log mode, floor ≤0 to a small positive (let pyqtgraph do the log)
+        if log_switch:
+            floor = 0.5
+            y_vals  = sanitize_for_log(y_vals,  floor=floor)
+            y_vals2 = sanitize_for_log(y_vals2, floor=floor)
+            corr    = sanitize_for_log(corr,    floor=floor)
+            # y_for_peaks is only for labels/detection; floor as well to stay consistent
+            y_for_peaks = sanitize_for_log(y_for_peaks, floor=floor)
 
         # Save arrays used by peak labels
-        self.x_vals      = list(x_vals) if isinstance(x_vals, list) else x_vals.tolist()
-        self.y_vals_raw  = list(y_for_peaks)   # for detection
-        self.y_vals_plot = list(y_vals)        # for label height
+        self.x_vals      = list(x_vals)
+        self.y_vals_raw  = list(y_for_peaks)
+        self.y_vals_plot = list(y_vals)
 
-        # 3) Now do UI calls in a tight block (order matters)
-        #    - set log mode first (affects ranges)
-        #    - set pens only if they change (optional micro-opt)
-        self.plot_widget.setLogMode(x=False, y=log_switch)
+        # Pens (diff → black, otherwise blue)
+        self.hist_curve.setPen(pg.mkPen("black" if (diff_switch and comp_switch) else "blue", width=1.5))
 
-        # update data (do not recreate/add items here)
+        # 3) Push data to pyqtgraph (no manual ranges — let it autorange)
+        # Ensure autorange is enabled (in case anything disabled it earlier)
+        self.plot_widget.enableAutoRange('x', True)
+        self.plot_widget.enableAutoRange('y', True)
+
         self.hist_curve.setData(x_vals, y_vals)
-
         if comp_switch and not diff_switch:
             self.comp_curve.setData(x_vals2, y_vals2)
         else:
             self.comp_curve.setData([], [])
-
         if corr and not diff_switch:
             self.gauss_curve.setData(x_vals_corr, corr)
         else:
             self.gauss_curve.setData([], [])
 
-        # 4) Ranges after setData (so autoscale calc has actual data if used)
-        if len(y_vals):
-            if did_calibrate:
-                xv = np.asarray(x_vals, dtype=float)
-                xmin = float(np.nanmin(xv)); xmax = float(np.nanmax(xv))
-            else:
-                xmin = 0.0; xmax = float(len(histogram) - 1)
+        # 4) Toggle log transform LAST so it picks up the just-set data
+        # (No manual log10; let pyqtgraph handle it)
+        self.plot_widget.setLogMode(x=False, y=log_switch)
 
-            if not np.isfinite(xmin) or not np.isfinite(xmax) or xmin == xmax:
-                xmin, xmax = 0.0, max(1.0, float(len(histogram) - 1))
+        # Optional: nudge autorange to recompute with the new transform
+        self.plot_widget.autoRange()
 
-            self.plot_widget.setXRange(xmin, xmax, padding=0)
-
-            ymin = min(y_vals); ymax = max(y_vals)
-            if not np.isfinite(ymin) or not np.isfinite(ymax) or ymin == ymax:
-                ymin -= 1.0; ymax += 1.0
-            self.plot_widget.setYRange(ymin, ymax, padding=0)
-
-        # 5) Peak markers — rate-limited (don’t reset timer each call)
+        # 5) Peak markers — rate-limited (safe to call; avoid y<=0 in log in that method)
         now = time.monotonic()
         if getattr(self, "_last_peaks_t", 0.0) == 0.0 or (now - self._last_peaks_t) > 1.0:
             self.update_peak_markers()

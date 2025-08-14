@@ -9,17 +9,24 @@ from qt_compat import QGridLayout
 from qt_compat import QLabel
 from qt_compat import QLineEdit
 from qt_compat import QPushButton
+from pathlib import Path
+from shared import logger, USER_DATA_DIR
 
-from shared import logger
+from pathlib import Path
 
 class CalibrationPopup(QDialog):
-    def __init__(self, poly_label=None):
+    def __init__(self, poly_label=None, filename=None):
         super().__init__()
         self.poly_label = poly_label
+        self.filename = filename or shared.filename  # fallback ok
+
         self.setWindowTitle("Calibration Settings")
         self.setFixedSize(400, 300)
 
         layout = QVBoxLayout()
+        if self.filename:
+            layout.addWidget(QLabel(f"File: {Path(self.filename).with_suffix('.json').name}"))
+
         grid = QGridLayout()
         self.bin_inputs = []
         self.energy_inputs = []
@@ -30,7 +37,6 @@ class CalibrationPopup(QDialog):
             self.bin_inputs.append(bin_input)
             self.energy_inputs.append(energy_input)
 
-            # === Prepopulate from shared ===
             bin_val = getattr(shared, f"calib_bin_{i+1}", "")
             bin_input.setText(str(int(bin_val)) if isinstance(bin_val, (int, float)) else "")
             energy_input.setText(str(getattr(shared, f"calib_e_{i+1}", "")))
@@ -49,78 +55,73 @@ class CalibrationPopup(QDialog):
         self.setLayout(layout)
 
     def update_calibration(self):
-        bins = []
-        energies = []
+        bins, energies = [], []
 
-        # Collect input values
         for i in range(5):
             try:
                 b = int(self.bin_inputs[i].text())
                 e = float(self.energy_inputs[i].text())
-
-                # Always save inputs to shared (even if zero)
                 setattr(shared, f"calib_bin_{i+1}", b)
                 setattr(shared, f"calib_e_{i+1}", e)
-
-                # Only use valid (>0) points for polynomial fitting
                 if b > 0 and e > 0:
-                    bins.append(b)
-                    energies.append(e)
-
+                    bins.append(b); energies.append(e)
             except ValueError:
                 continue
 
-
-        # Default coeffs: [a, b, c]
+        # --- build coeffs as pure Python floats ---
         coeffs = [0.0, 0.0, 0.0]
-
         if len(bins) == 1:
-            coeffs[2] = energies[0]  # Just an offset
+            coeffs = [0.0, 0.0, float(energies[0])]
         elif len(bins) == 2:
-            linear = np.polyfit(bins, energies, 1)
-            coeffs[1], coeffs[2] = linear  # [b, c]
+            m, c = np.polyfit(bins, energies, 1)
+            coeffs = [0.0, float(m), float(c)]
         elif len(bins) >= 3:
-            coeffs = np.polyfit(bins, energies, 2).tolist()  # [a, b, c]
+            a, b_, c_ = np.polyfit(bins, energies, 2).tolist()
+            coeffs = [float(a), float(b_), float(c_)]
 
-        poly = np.poly1d(coeffs)
+        shared.coeff_1, shared.coeff_2, shared.coeff_3 = coeffs
 
-        shared.coeff_1 = coeffs[0]
-        shared.coeff_2 = coeffs[1]
-        shared.coeff_3 = coeffs[2]
-
-        # Save to file if filename is available
-        if shared.filename:
-            file_path = shared.USER_DATA_DIR / shared.filename
+        # --- save to file (robust path + structure) ---
+        if self.filename:
             try:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
+                file_path = USER_DATA_DIR / Path(self.filename).with_suffix(".json")
+                file_path.parent.mkdir(parents=True, exist_ok=True)
 
-                # Store poly in NPESv2 format (coeffs reversed)
-                data["resultData"]["energySpectrum"]["energyCalibration"] = {
+                # Load or start a minimal NPESv2-like skeleton
+                if file_path.exists():
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                else:
+                    data = {}
+
+                # Ensure nested dicts exist
+                rd = data.setdefault("resultData", {})
+                es = rd.setdefault("energySpectrum", {})
+
+                # NPESv2 stores coefficients reversed (c, b, a)
+                es["energyCalibration"] = {
                     "polynomialOrder": 2,
-                    "coefficients": coeffs[::-1]
+                    "coefficients": [coeffs[2], coeffs[1], coeffs[0]],
                 }
 
-                # Store calibration points
-                data["calibration"] = {
-                    f"calib_bin_{i+1}": getattr(shared, f"calib_bin_{i+1}", 0)
-                    for i in range(5)
-                }
-                data["calibration"].update({
-                    f"calib_e_{i+1}": getattr(shared, f"calib_e_{i+1}", 0.0)
-                    for i in range(5)
-                })
+                # Keep the raw points you entered as well
+                calib = data.setdefault("calibration", {})
+                for i in range(5):
+                    calib[f"calib_bin_{i+1}"] = int(getattr(shared, f"calib_bin_{i+1}", 0) or 0)
+                    calib[f"calib_e_{i+1}"]   = float(getattr(shared, f"calib_e_{i+1}", 0.0) or 0.0)
 
                 with open(file_path, "w", encoding="utf-8") as f:
                     json.dump(data, f, indent=2)
 
-            except Exception as e:
-                logger.error(f"[Calibration] Failed to save coefficients: {e}")
+                logger.info(f"Calibration succeeded for {file_path} ✅")    
 
-        # === Update label if one was provided ===
+            except Exception as e:
+                # Include more context for debug
+                logger.exception(f"[ERROR] Failed to save coefficients into {file_path}: {e} ❌")
+
         if self.poly_label:
-            poly_str = f"Polynomial function\n{shared.coeff_1:.4f}x² + {shared.coeff_2:.4f}x + {shared.coeff_3:.4f}"
-            self.poly_label.setText(poly_str)
+            self.poly_label.setText(
+                f"Polynomial function\n{shared.coeff_1:.4f}x² + {shared.coeff_2:.4f}x + {shared.coeff_3:.4f}"
+            )
 
         self.accept()
-
