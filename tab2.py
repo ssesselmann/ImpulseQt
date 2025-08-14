@@ -103,6 +103,7 @@ class Tab2(QWidget):
         self._last_peaks_t  = 0
         self._last_x_span   = None
         self._last_peaks_t  = 0
+        self.diff_switch    = False
 
         # --- Create the PlotWidget first --------------------------------------------
         self.plot_widget = pg.PlotWidget(title="2D Count Rate Histogram")
@@ -117,13 +118,9 @@ class Tab2(QWidget):
         vb = self.plot_widget.getViewBox()
         vb.enableAutoRange(x=False, y=False)
 
-        # Initial X range (optional; do before plotting if you like)
-        # if histogram_data:
-        #     self.plot_widget.setXRange(0, len(histogram_data) - 1, padding=0)
-
         # --- Curves (add main first, then others) -----------------------------------
-        self.hist_curve  = self.plot_widget.plot([], pen=pg.mkPen("b", width=1.5))
-        self.comp_curve  = self.plot_widget.plot([], pen=pg.mkPen("k", width=1.5))
+        self.hist_curve  = self.plot_widget.plot([], pen=pg.mkPen("darkblue", width=1.5))
+        self.comp_curve  = self.plot_widget.plot([], pen=pg.mkPen("darkgreen", width=1.5))
         self.gauss_curve = self.plot_widget.plot([], pen=pg.mkPen("r", width=1.5))
 
         # Z-order so crosshairs/markers sit above lines, backgrounds below lines
@@ -1305,6 +1302,9 @@ class Tab2(QWidget):
             time_factor = (elapsed / elapsed_2) if elapsed_2 else 1.0
             y_vals = [a - b * time_factor for a, b in zip(hist1, hist2)]
             x_vals = list(range(max_len))
+            self.hist_curve.setPen(pg.mkPen("black", width=1.5))
+        else:
+            self.hist_curve.setPen(pg.mkPen("blue", width=1.5))    
 
         # Keep a pre-EPB/log copy for peak detection
         y_for_peaks = y_vals[:]
