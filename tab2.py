@@ -114,10 +114,6 @@ class Tab2(QWidget):
         self.plot_widget.setLabel('bottom', 'Bins')
         self.plot_widget.getPlotItem().showGrid(x=True, y=True, alpha=0.3)
 
-        # # Get its ViewBox *after* creating the widget
-        # vb = self.plot_widget.getViewBox()
-        # vb.enableAutoRange(x=False, y=False)
-
 
         # in __init__ after creating self.plot_widget
         self.plot_widget.enableAutoRange('y', False)
@@ -125,7 +121,6 @@ class Tab2(QWidget):
 
 
         # --- Curves (add main first, then others) -----------------------------------
-        #self.hist_curve  = self.plot_widget.plot([], pen=pg.mkPen("darkblue", width=1.5))
         self.hist_curve = self.plot_widget.plot([], pen=pg.mkPen("darkblue", width=2), fillLevel=0, brush=(0, 0, 0, 40))
 
         self.comp_curve  = self.plot_widget.plot([], pen=pg.mkPen("darkgreen", width=2))
@@ -148,8 +143,6 @@ class Tab2(QWidget):
 
         # Finally add to layout
         tab2_layout.addWidget(self.plot_widget)
-
-
         # ======================================================
 
         # === 9x4 Grid ==========================================
@@ -233,7 +226,6 @@ class Tab2(QWidget):
         self.cps_label.setAlignment(Qt.AlignCenter)
         grid.addWidget(self.labeled_input("cps", self.cps_label), 3, 1)
 
-
         # Col 3 Row 1 -------------------------------------------------------------------------
         clean_filename = filename.removesuffix(".json") if filename else ""
         self.filename_input = QLineEdit(clean_filename)
@@ -245,7 +237,9 @@ class Tab2(QWidget):
         self.pro_only_widgets = []
         self.max_only_widgets = []
         
-        # PRO wrapper=====================================================
+        # =====================================================
+        # PRO wrapper
+        # =====================================================
         # Col 3 Row 2: PRO-only Pitch (bin-size) input
         self.bin_size_container = QWidget()
         self.bin_size_container.setObjectName("bin_size_container")  # For debugging
@@ -259,9 +253,9 @@ class Tab2(QWidget):
         bin_size_layout.addWidget(self.labeled_input("Pitch (bin size)", self.bin_size))
         grid.addWidget(self.bin_size_container, 1, 2)
         self.pro_only_widgets.append(self.bin_size_container)
-        # PRO CLOSE WRAPPER ===============================================
+        # PRO CLOSE WRAPPER ===================================
 
-        # UNIFIED BIN Selector ============================================
+        # UNIFIED BIN Selector ================================
         self.bins_container = QWidget(objectName="bins_container_unified")
         bins_layout = QVBoxLayout(self.bins_container)
         bins_layout.setContentsMargins(0, 0, 0, 0)
@@ -295,7 +289,7 @@ class Tab2(QWidget):
         self.update_bins_selector()
 
         #================================================================
-        # MAX OPEN WRAPPER 
+        # OPEN MAX WRAPPER 
         # ===============================================================
         self.slb_container_max = self.make_checkbox_container(
             label="Suppress last bin",
@@ -305,35 +299,33 @@ class Tab2(QWidget):
         )
         grid.addWidget(self.slb_container_max, 2, 2)
         self.max_only_widgets.append(self.slb_container_max)
-        # MAX CLOSE WRAPPER =============================================
+        # CLOSE MAX WRAPPER =============================================
 
         # ===================================================
-        # MAX OPEN WRAPPER 
+        # OPEN MAX WRAPPER
         # ===================================================
-        self.cmd_container = QWidget()
-        cmd_layout = QVBoxLayout(self.cmd_container)
-        cmd_layout.setContentsMargins(0, 0, 0, 0)
-        self.cmd_selector_label = QLabel("Serial Command:")
-        self.cmd_selector_label.setStyleSheet(P1)        
+        self.interval_input = QLineEdit(str(t_interval))
+        self.interval_input.setAlignment(Qt.AlignCenter)
+        self.interval_input.setToolTip("Interval (s)")
+        self.interval_input.setValidator(QIntValidator(1, 86400, self))
+        self.interval_input.textChanged.connect(lambda text: self.on_text_changed(text, "t_interval"))
+
+        interval_field = self.labeled_input("Interval (s)", self.interval_input)
+        grid.addWidget(interval_field, 0, 3)
+        self.max_only_widgets.append(interval_field)
+
+        # --- Serial Command (MAX-only) at (3,3)
         self.cmd_selector = QComboBox()
-
-        # Default prompt item (no value)
         self.cmd_selector.addItem("- Select Command -", None)
-
-        # Actual commands
-        self.cmd_selector.addItem("Pause MCA", "-sto")
+        self.cmd_selector.addItem("Pause MCA",   "-sto")
         self.cmd_selector.addItem("Restart MCA", "-sta")
         self.cmd_selector.addItem("Reset Histogram", "-rst")
-
-        cmd_layout.addWidget(self.cmd_selector_label)
-        cmd_layout.addWidget(self.cmd_selector)
-
-        grid.addWidget(self.cmd_container, 1, 3)
-        self.max_only_widgets.append(self.cmd_container)
-
-        # Connect signal
         self.cmd_selector.currentIndexChanged.connect(self.send_selected_command)
-        # MAX CLOSE WRAPPER =============================================
+        cmd_field = self.labeled_input("Serial Command:", self.cmd_selector)
+        grid.addWidget(cmd_field, 1, 3)
+        self.max_only_widgets.append(cmd_field)
+        # CLOSE MAX WRAPPER ======================================================
+
 
         # Col 3 Row 3
         self.select_file = QComboBox()
@@ -345,23 +337,39 @@ class Tab2(QWidget):
         grid.addWidget(self.labeled_input("Open spectrum file", self.select_file), 3, 2)
 
         # Col 4 Row 1 ==================================================================
-        # PRO wrapper for threshold field 
+        # OPEN PRO wrapper for LLD + Interval
         # ==============================================================================
         self.threshold_container = QWidget()
-        self.threshold_container.setObjectName("threshold_container")  # For debugging
-        threshold_layout = QVBoxLayout(self.threshold_container)
-        threshold_layout.setContentsMargins(0, 0, 0, 0)
+        self.threshold_container.setObjectName("threshold_container")
 
+        row = QHBoxLayout(self.threshold_container)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(8)
+
+        # --- LLD (left) ---
         self.threshold = QLineEdit(str(threshold))
         self.threshold.setAlignment(Qt.AlignCenter)
-        self.threshold.setToolTip("LLD threshold (bins)")
-        self.threshold.setValidator(positive_int_validator)  # Optional if you use a validator
+        self.threshold.setToolTip("LLD (bins)")
+        self.threshold.setValidator(positive_int_validator)
         self.threshold.textChanged.connect(lambda text: self.on_text_changed(text, "threshold"))
+        lld_widget = self.labeled_input("LLD (bins)", self.threshold)
 
-        threshold_layout.addWidget(self.labeled_input("LLD Threshold (bins)", self.threshold))
+        # --- Interval (right) ---
+        self.interval_input = QLineEdit(str(t_interval))  # replace "1" with your interval value if you have one
+        self.interval_input.setAlignment(Qt.AlignCenter)
+        self.interval_input.setToolTip("Interval (s)")
+        self.interval_input.setValidator(positive_int_validator)
+        self.interval_input.textChanged.connect(lambda text: self.on_text_changed(text, "t_interval"))
+        interval_widget = self.labeled_input("Interval (s)", self.interval_input)
+
+        # Side-by-side, 50/50 split
+        row.addWidget(lld_widget, 1)
+        row.addWidget(interval_widget, 1)
+
         grid.addWidget(self.threshold_container, 0, 3)
         self.pro_only_widgets.append(self.threshold_container)
-        # PRO CLOSE wrapper =======================================================
+        # PRO CLOSE wrapper =============================================================
+
 
         # Col 4 Row 2 - blank
 
@@ -672,10 +680,9 @@ class Tab2(QWidget):
                 shared.tolerance = float(self.tolerance_input.text())
 
         except ValueError:
-            pass  # skip if input is invalid    
+            pass 
 
     def update_bins_selector(self):
-        """Select combo index to match shared.compression, then refresh the graph."""
         # Read shared.compression under lock
         with shared.write_lock:
             cur_comp = int(shared.compression)
@@ -752,10 +759,6 @@ class Tab2(QWidget):
             shared.elapsed     = 0.0
             shared.elapsed_2   = 0.0
 
-        # DO NOT: self.plot_widget.clear()
-        # DO NOT set self.hist_curve/self.comp_curve/self.gauss_curve = None
-
-        # Just clear existing curve data (reusing the same items)
         if hasattr(self, "hist_curve") and self.hist_curve:
             self.hist_curve.setData([], [])
         if hasattr(self, "comp_curve") and self.comp_curve:
@@ -767,10 +770,6 @@ class Tab2(QWidget):
         for item in getattr(self, "peak_markers", []):
             self.plot_widget.removeItem(item)
         self.peak_markers = []
-
-        # Keep the crosshair lines; don’t re-add them elsewhere
-
-        
 
 
     def start_recording_2d(self, filename):
@@ -784,9 +783,7 @@ class Tab2(QWidget):
         mode = 4 if coi else 2
 
         # --- Reset plotting ---
-       # self.plot_timer.stop()
         self.clear_session()
-       # self.plot_timer.start(100)
 
         try:
             # Call the centralized recording logic
@@ -898,14 +895,18 @@ class Tab2(QWidget):
 
     def on_text_changed(self, text, key):
         try:
-            if key in {"bin_size", "tolerance", "threshold"}:
+            if key in {"bin_size", "tolerance"}:
                 setattr(shared, key, float(text))
-            elif key in {"max_counts", "max_seconds"}:
-                setattr(shared, key, int(text))
+            elif key in {"threshold", "max_counts", "max_seconds", "t_interval"}:
+                if text.strip():
+                    setattr(shared, key, int(text))
             else:
                 setattr(shared, key, text)
+
+            logger.info(f"{key} changed to {text} ✅")
+
         except ValueError:
-            pass  # optionally handle conversion error
+            pass
 
     @Slot(int)
     def on_select_bins_changed(self, index):
@@ -1155,7 +1156,6 @@ class Tab2(QWidget):
             log_switch  = shared.log_switch
             isotope_flags = shared.isotope_flags
 
-
         # Always clear old markers first
         for item in getattr(self, "peak_markers", []):
             self.plot_widget.removeItem(item)
@@ -1262,7 +1262,6 @@ class Tab2(QWidget):
                         )
                     isotope_lines = lines
 
-
             if isotope_lines:
                 label_text = "\n".join(isotope_lines)
             elif use_cal:
@@ -1321,8 +1320,6 @@ class Tab2(QWidget):
             y_vals  = [a - s for a, s in zip(y1, y2_scaled)]  
             y_vals2 = y2_scaled                              
             x_vals  = list(range(max_len))
-
-
 
         # Keep a pre-EPB/log copy for peak detection
         y_for_peaks = y_vals[:]
@@ -1389,7 +1386,6 @@ class Tab2(QWidget):
         self.hist_curve.setPen(pg.mkPen("black" if (diff_switch and comp_switch) else "blue", width=1.5))
 
         # 3) Push data to pyqtgraph (no manual ranges — let it autorange)
-        # Ensure autorange is enabled (in case anything disabled it earlier)
         self.plot_widget.enableAutoRange('x', True)
         self.plot_widget.enableAutoRange('y', True)
 
@@ -1404,7 +1400,6 @@ class Tab2(QWidget):
             self.gauss_curve.setData([], [])
 
         # 4) Toggle log transform LAST so it picks up the just-set data
-        # (No manual log10; let pyqtgraph handle it)
         self.plot_widget.setLogMode(x=False, y=log_switch)
 
         # Optional: nudge autorange to recompute with the new transform
