@@ -125,9 +125,11 @@ class Tab2(QWidget):
 
 
         # --- Curves (add main first, then others) -----------------------------------
-        self.hist_curve  = self.plot_widget.plot([], pen=pg.mkPen("darkblue", width=1.5))
-        self.comp_curve  = self.plot_widget.plot([], pen=pg.mkPen("darkgreen", width=1.5))
-        self.gauss_curve = self.plot_widget.plot([], pen=pg.mkPen("r", width=1.5))
+        #self.hist_curve  = self.plot_widget.plot([], pen=pg.mkPen("darkblue", width=1.5))
+        self.hist_curve = self.plot_widget.plot([], pen=pg.mkPen("darkblue", width=2), fillLevel=0, brush=(0, 0, 0, 40))
+
+        self.comp_curve  = self.plot_widget.plot([], pen=pg.mkPen("darkgreen", width=2))
+        self.gauss_curve = self.plot_widget.plot([], pen=pg.mkPen("r", width=2), fillLevel=0, brush=(255, 0, 0, 125))
 
         # Z-order so crosshairs/markers sit above lines, backgrounds below lines
         self.hist_curve.setZValue(10)
@@ -1164,8 +1166,8 @@ class Tab2(QWidget):
         if not hasattr(self, "x_vals") or not hasattr(self, "y_vals_raw") or not hasattr(self, "y_vals_plot"):
             return
 
-        x_vals = self.x_vals
-        y_vals_raw = self.y_vals_raw     # for peak finding
+        x_vals      = self.x_vals
+        y_vals_raw  = self.y_vals_raw     # for peak finding
         y_vals_plot = self.y_vals_plot   # for vertical label position
 
         try:
@@ -1205,7 +1207,7 @@ class Tab2(QWidget):
             if log_switch:
                 y_pos = np.log10(y_val * 1.05)
             else:
-                y_pos = y_val * 1.05
+                y_pos = y_val * 1.1
 
             energy = float(np.polyval(coeffs, p)) if use_cal else p
             resolution = (width / p) * 100 if p else 0
@@ -1303,21 +1305,32 @@ class Tab2(QWidget):
         x_vals2 = list(range(len(histogram_2))) if comp_switch else []
         y_vals2 = histogram_2.copy() if comp_switch else []
 
-        # Diff (uses raw histograms)
+
         if diff_switch and comp_switch:
-            max_len = max(len(histogram), len(histogram_2))
-            hist1 = histogram   + [0] * (max_len - len(histogram))
-            hist2 = histogram_2 + [0] * (max_len - len(histogram_2))
-            time_factor = (elapsed / elapsed_2) if elapsed_2 else 1.0
-            y_vals = [a - b * time_factor for a, b in zip(hist1, hist2)]
-            x_vals = list(range(max_len))
+            eps = 1e-9
+            # pad to same length without mutating the originals mid-calc
+            max_len = max(len(y_vals), len(y_vals2))
+            y1 = y_vals  + [0]   * (max_len - len(y_vals))
+            y2 = y_vals2 + [0.0] * (max_len - len(y_vals2))
+
+            # scale background totals to match the *current* live elapsed window
+            scale = float(elapsed) / max(float(elapsed_2), eps)
+            y2_scaled = [b * scale for b in y2]
+
+            # update protocol variables for downstream plotting
+            y_vals  = [a - s for a, s in zip(y1, y2_scaled)]  
+            y_vals2 = y2_scaled                              
+            x_vals  = list(range(max_len))
+
+
 
         # Keep a pre-EPB/log copy for peak detection
         y_for_peaks = y_vals[:]
 
         # Gaussian correlation (from original histogram as before)
-        corr = []
+        corr        = []
         x_vals_corr = []
+
         if sigma > 0:
             try:
                 corr = gaussian_correl(histogram, sigma)
