@@ -1,13 +1,14 @@
 # qt_compat.py
-
 try:
     from PySide6 import QtCore, QtGui, QtWidgets
     IS_QT6 = True
-except ImportError:
-    from PySide2 import QtCore, QtGui, QtWidgets
+except ModuleNotFoundError as e:
+    # Only fallback if PySide6 truly isn't installed
+    if e.name != "PySide6":
+        raise  # It's a real load error (keep the traceback!)
+    from PySide2 import QtCore, QtGui, QtWidgets  # only if you actually support it
     IS_QT6 = False
 
-Qt = QtCore.Qt
 
 # QtWidget Classes
 # ==========================================
