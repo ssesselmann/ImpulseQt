@@ -3,23 +3,34 @@
 
 from pathlib import Path
 from glob import glob
+from PyInstaller.utils.hooks import (
+    collect_submodules,
+    collect_data_files,
+    collect_dynamic_libs,
+)
 
 project_root = Path(".").resolve()
-app_name = "ImpulseQt"
+app_name     = "ImpulseQt"
+
+# --- Collect PySide6 runtime (modules, plugins, translations, etc.) ---
+hiddenimports    = collect_submodules("PySide6")
+pyside6_datas    = collect_data_files("PySide6")            # Qt plugins, translations, qml (if present)
+pyside6_binaries = collect_dynamic_libs("PySide6")          # Qt *.dlls and shims
+
+# --- Your app assets ---
+asset_files = [(f, "assets") for f in glob("assets/*")]
 
 a = Analysis(
-    ['ImpulseQt.py'],
+    ["ImpulseQt.py"],
     pathex=[str(project_root)],
-    binaries=[],
-    datas=[
-        (f, "assets") for f in glob("assets/*")
-    ],
-    hiddenimports=[],
+    binaries=pyside6_binaries,                # <— include PySide6 DLLs
+    datas=pyside6_datas + asset_files,        # <— include PySide6 data + your assets
+    hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[],
-    noarchive=False,  # Keep archive for onefile
+    noarchive=False,  # keep archive inside the onefile bundle
 )
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=None)
@@ -34,9 +45,8 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,                                 # UPX can break Qt DLLs on Windows
     console=False,
     icon=str(project_root / "assets" / "favicon.ico"),
-    # This builds ONE FILE
-    singlefile=True
+    singlefile=True,
 )
