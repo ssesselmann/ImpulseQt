@@ -185,6 +185,7 @@ def start(sn=None):
         globals()['stopflag'] = 0
 
     nano = shproto.port.connectdevice(sn)
+    
     if not nano:
         logger.error("[ERROR] Failed to connect to MAX ❌")
         return
