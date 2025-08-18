@@ -23,7 +23,7 @@ from qt_compat import QPixmap
 
 from tab1_pro import Tab1ProWidget 
 from tab1_max import Tab1MaxWidget
-from shared import logger, P1, P2, H1, H2, MONO, FOOTER
+from shared import logger, MONO, FOOTER
 
 class Tab1(QWidget):
     def __init__(self):
@@ -35,13 +35,13 @@ class Tab1(QWidget):
         # === Top controls ===
         
         header_label = QLabel("Select device and restart:")
-        header_label.setStyleSheet(P2)
+        header_label.setProperty("typo", "p2")
         header_label.setAlignment(Qt.AlignLeft)
 
         self.selector = QComboBox()
         self.selector.addItems(["PRO", "MAX"])
         self.selector.setCurrentText(device_type)
-        self.selector.setMaximumWidth(200)
+        self.selector.setMinimumWidth(150)
         self.selector.setSizeAdjustPolicy(QComboBox.AdjustToContents)
         self.selector.currentTextChanged.connect(self.switch_device_type)
 
@@ -64,7 +64,7 @@ class Tab1(QWidget):
         footer = QLabel(FOOTER)
         footer.setFixedHeight(30)
         footer.setAlignment(Qt.AlignCenter)
-        footer.setStyleSheet(H1)
+        footer.setProperty("typo", "h2")
 
         # === Full layout ===
         device_tab_layout = QVBoxLayout()

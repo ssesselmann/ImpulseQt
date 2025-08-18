@@ -187,7 +187,6 @@ def update_json_hmp_file(t0, t1, bins, counts, elapsed, filename_hmp, last_histo
     
     # Check if the file exists
     if os.path.isfile(jsonfile):
-        logger.info(f"[INFO] updating file: {jsonfile} ✅")
         try:
             with open(jsonfile, "r") as f:
                 data = json.load(f)
@@ -244,7 +243,7 @@ def update_json_hmp_file(t0, t1, bins, counts, elapsed, filename_hmp, last_histo
     try:
         with open(jsonfile, "w") as f:
             json.dump(data, f, separators=(',', ':'))
-        logger.info(f"[INFO] 3D json file updated: {jsonfile} ✅")
+        logger.info(f"[INFO] 3D file created: {filename_hmp}_hmp.json ✅")
 
     except Exception as e:
         logger.error(f"[ERROR] writing json file: {e} ❌")

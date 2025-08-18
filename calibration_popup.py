@@ -49,6 +49,7 @@ class CalibrationPopup(QDialog):
         layout.addLayout(grid)
 
         apply_btn = QPushButton("Apply")
+        apply_btn.setProperty("btn", "primary")
         apply_btn.clicked.connect(self.update_calibration)
         layout.addWidget(apply_btn)
 

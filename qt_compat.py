@@ -37,7 +37,7 @@ QTextEdit           = QtWidgets.QTextEdit
 QTextBrowser        = QtWidgets.QTextBrowser
 QVBoxLayout         = QtWidgets.QVBoxLayout
 QWidget             = QtWidgets.QWidget
-
+QGridLayout         = QtWidgets.QGridLayout
 
 # QtGui Classes
 # =========================================

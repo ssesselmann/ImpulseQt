@@ -21,7 +21,7 @@ run_flag_lock = Lock()
 
 # --------------------
 # Versioning
-__version__ = "v3.0.3b"
+__version__ = "v3.0.5"
 # --------------------
 
 SETTINGS = {}  
@@ -33,13 +33,13 @@ session_end = None
 # FONTS
 # --------------
 # Paragraphs
-P1      = "font-family: Verdana, sans-serif; font-size: 10pt; color: #666;"   # Small, light text
+# P1      = "font-family: Verdana, sans-serif; font-size: 10pt; color: #aaa;"   # Small, light text
 
-P2      = "font-family: Verdana, sans-serif; font-size: 12pt; color: #444;"  # Medium paragraph
-# Headings
-H1      = "font-family: Helvetica, sans-serif; font-size: 18pt; font-weight: bold; color: #027BFF;"
+# P2      = "font-family: Verdana, sans-serif; font-size: 12pt; color: #444;"  # Medium paragraph
+# # Headings
+# H1      = "font-family: Helvetica, sans-serif; font-size: 18pt; font-weight: bold; color: #027BFF;"
 
-H2      = "font-family: Helvetica, sans-serif; font-size: 12pt; font-weight: bold; color: #333;"
+# H2      = "font-family: Helvetica, sans-serif; font-size: 12pt; font-weight: bold; color: #333;"
 # Monospace 
 MONO    = "font-family: Menlo, Courier New; font-size: 10pt; color: #555;"
 # Buttons
@@ -51,7 +51,18 @@ BTN     = "background-color: #E0751C; color: white; font-weight: bold;"
 
 BUD     = "background-color: #7C7C7C; color: white; font-weight: bold;"
 
-FOOTER  = f"ImpulseQt {__version__}"
+DARK_BLUE   = "#112365"
+
+LIGHT_GREEN = "#9AFF7B"
+
+WHITE       = "#FFFFFF"
+
+PINK        = "#FF7B9C"
+
+RED         = "#FF0000"
+
+
+FOOTER  = f"ImpulseQt ({__version__}) by GammaSpectacular.com"
 
 # At class level (e.g., Tab3Heatmap or similar)
 BIN_OPTIONS = [("128 Bins", 64),("256 Bins", 32), ("512 Bins", 16), ("1024 Bins", 8), ("2048 Bins", 4), ("4096 Bins", 2), ("8192 Bins", 1)]

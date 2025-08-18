@@ -21,10 +21,12 @@ from qt_compat import Qt
 from qt_compat import Slot
 from qt_compat import QTimer
 from qt_compat import QPixmap
+from qt_compat import QGroupBox
+from qt_compat import QGridLayout
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-from shared import logger, START, STOP, BTN, FOOTER, H1, P1, P2, DLD_DIR
+from shared import logger, START, STOP, BTN, FOOTER, DLD_DIR
 from functions import start_recording, stop_recording, get_filename_options, load_cps_file, resource_path
 from pathlib import Path
 
@@ -46,137 +48,105 @@ class Tab4(QWidget):
         self.ui_timer.start()
 
         # constants
-        self.sum_n = 1
-        self.last_loaded_filename = None
+        self.tab4_layout = QVBoxLayout(self)
+
+        # === Outer container to align plot and control box ===
+        aligned_container = QWidget()
+        aligned_layout = QVBoxLayout(aligned_container)
+        aligned_layout.setContentsMargins(100, 10, 100, 10)  # for outer padding around the entire section
+        aligned_layout.setSpacing(10)
+
 
         self.setWindowTitle("Count Rate Plot")
+        self.sum_n = 1
+        self.last_loaded_filename = None
         
-        self.layout = QVBoxLayout(self)
-
         # === Plot ===
         self.figure = Figure()
         self.canvas = FigureCanvas(self.figure)
+        self.figure.set_facecolor(shared.DARK_BLUE)
+
         self.ax = self.figure.add_subplot(111)
-        self.layout.addWidget(self.canvas)
+        self.tab4_layout.addWidget(self.canvas)
 
-        # === Checkbox: Show All ===
-        self.checkbox_show_all = QCheckBox("Show All")
-        self.checkbox_show_all.setChecked(False)
-        self.checkbox_show_all.stateChanged.connect(self.update_plot)
-        self.layout.addWidget(self.checkbox_show_all)
+        # === Unified Control Section (under the plot) ===
+        control_box = QGroupBox()
+        control_layout = QGridLayout(control_box)
+        control_layout.setSpacing(10)
+        control_layout.setContentsMargins(10, 10, 10, 10)
 
-        # === Smoothing Slider Section: Label above slider ===
+        # --- Slider label (centered across 3 columns) ---
         self.slider = QSlider(Qt.Horizontal)
-        self.slider.setRange(1, 300)
+        self.slider_label = QLabel(f"Smoothing sec: {self.slider.value()}")
+        self.slider_label.setProperty("typo", "p2")
+        self.slider_label.setAlignment(Qt.AlignCenter)
+        control_layout.addWidget(self.slider_label, 0, 0, 1, 3)
+
+        # --- Slider with margins, white tick marks ---
+        self.slider.setMinimum(0)
+        self.slider.setMaximum(300)
         self.slider.setValue(1)
-        self.slider.setTickInterval(10)
+        self.slider.setTickInterval(50)
         self.slider.setTickPosition(QSlider.TicksBelow)
         self.slider.setFixedHeight(30)
         self.slider.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-
-        # === Label appears above the slider
-        self.slider_label = QLabel(f"Smoothing sec: {self.slider.value()}")
-        self.slider_label.setStyleSheet(P2)
-        self.slider_label.setAlignment(Qt.AlignLeft)
-
-        # === Connect the slider to update the label
         self.slider.valueChanged.connect(self.update_slider_label)
         self.slider.valueChanged.connect(self.set_sum_n)
 
-        # === Layout to group the label and the slider
-        slider_section = QVBoxLayout()
-        slider_section.setSpacing(0)
-        slider_section.setAlignment(Qt.AlignTop)
-        slider_section.addWidget(self.slider_label)
-        slider_section.addWidget(self.slider)
+        slider_container = QWidget()
+        slider_layout = QHBoxLayout(slider_container)
+        slider_layout.setContentsMargins(20, 0, 20, 0)
+        slider_layout.addWidget(self.slider)
+        control_layout.addWidget(slider_container, 1, 0, 1, 3)
 
-        # === Add the slider section to your main layout or controls row
-        self.layout.addLayout(slider_section)
+        # --- Left column: Checkbox + CPS ---
+        self.checkbox_show_all = QCheckBox("Show All")
+        self.checkbox_show_all.setChecked(False)
+        self.checkbox_show_all.stateChanged.connect(self.update_plot)
+        control_layout.addWidget(self.checkbox_show_all, 4, 0, 4, 1)
 
-        # === CPS Display Label (bold, updates every second) ===
         self.cps_label = QLabel("cps")
-        self.cps_label.setStyleSheet(P1)
-        self.cps_label.setAlignment(Qt.AlignLeft)
-        self.layout.addWidget(self.cps_label)
+        self.cps_label.setProperty("typo", "p1")
+        control_layout.addWidget(self.cps_label, 3, 1)
 
         self.cps_live = QLabel("0")
-        self.cps_live.setStyleSheet(H1)
-        self.cps_live.setAlignment(Qt.AlignLeft)
-        self.layout.addWidget(self.cps_live)
+        self.cps_live.setProperty("typo", "h1")
+        control_layout.addWidget(self.cps_live, 4, 1)
 
-        # === Horizontal layout to align CPS left under the slider
-        cps_row = QHBoxLayout()
-        cps_row.addWidget(self.cps_live)
-        cps_row.addStretch()
-        self.layout.addLayout(cps_row)
+        # --- Right column: Select file + Download ---
+        self.select_file_label = QLabel("Select File")
+        self.select_file_label.setProperty("typo", "p2")
+        self.select_file_label.setAlignment(Qt.AlignRight)
+        control_layout.addWidget(self.select_file_label, 2, 2)
 
-        # === Controls Row: Start/Stop/Download ===
-        controls_layout = QHBoxLayout()
-        controls_layout.addStretch()
-
-        # === Dropdown file select
         self.select_file = QComboBox()
         self.select_file.setEditable(False)
         self.select_file.setInsertPolicy(QComboBox.NoInsert)
-        self.select_file.setStyleSheet(P2)
+        self.select_file.setProperty("typo", "p2")
+        self.select_file.setMaximumWidth(200)
         self.select_file.addItem("— Select file —", "")
-        options = []
-        options = get_filename_options("cps")
-        for opt in options:
+        for opt in get_filename_options("cps"):
             self.select_file.addItem(opt['label'], opt['value'])
         self.select_file.currentIndexChanged.connect(self.on_select_filename_changed)
-        self.select_file
+        control_layout.addWidget(self.select_file, 3, 2)
 
-        # === Download button
         self.download_button = QPushButton("Download CSV")
-        self.download_button.setStyleSheet(BTN)
+        self.download_button.setProperty("btn", "primary")
         self.download_button.clicked.connect(self.on_download_clicked)
-
-        # === Label 
-        self.selected_label = QLabel("No file loaded")
-        self.selected_label.setStyleSheet(P2)
-        self.selected_label.setAlignment(Qt.AlignLeft)
-
-        # === 
-        controls_layout.addWidget(self.selected_label)
-        controls_layout.addWidget(self.select_file)
-        controls_layout.setAlignment(self.select_file, Qt.AlignTop)
-        controls_layout.addWidget(self.download_button)
-        controls_layout.setAlignment(self.download_button, Qt.AlignTop)
+        control_layout.addWidget(self.download_button, 4, 2)
 
 
-        self.layout.addLayout(controls_layout)
-        
-        # === Footer with logo ===
-        footer_layout = QHBoxLayout()
+        # === Add to aligned layout
+        self.tab4_layout.addWidget(self.canvas)
+        aligned_layout.addWidget(control_box)
+        self.tab4_layout.addWidget(aligned_container)
 
-        # === Logo box (separate, above footer) ===
-        logo_layout = QHBoxLayout()
-        self.logo_label = QLabel()
-        
-        logo_path = resource_path("assets/impulse.gif")
-
-        pixmap = QPixmap(logo_path)
-
-        if not pixmap.isNull():
-            self.logo_label.setPixmap(pixmap.scaledToHeight(80, Qt.SmoothTransformation))
-        else:
-            self.logo_label.setText("[Logo]")  # fallback if image is missing
-
-        logo_layout.addWidget(self.logo_label)
-        logo_layout.setAlignment(Qt.AlignLeft)
-        self.layout.addLayout(logo_layout)
-
-
-        # Existing footer text (center/expand)
+        # --- Footer ---
         self.footer = QLabel(FOOTER)
-        self.footer.setStyleSheet(H1)
+        self.footer.setProperty("typo", "h2")
         self.footer.setAlignment(Qt.AlignCenter)
         self.footer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        footer_layout.addWidget(self.footer)
-
-        # === Add footer
-        self.layout.addLayout(footer_layout)
+        self.tab4_layout.addWidget(self.footer)
 
         # === Finally update plot
         self.update_plot()
@@ -273,31 +243,43 @@ class Tab4(QWidget):
                 counts = counts[-300:]
 
             self.ax.clear()
+            self.ax.set_facecolor(shared.DARK_BLUE)
 
-            self.ax.grid(True, which='both', linestyle='--', linewidth=0.5, color='gray')
+            # Grid lines and ticks in white
+            self.ax.grid(True, which='both', linestyle='--', linewidth=0.5, color='white')
+            self.ax.tick_params(axis='x', colors='white')
+            self.ax.tick_params(axis='y', colors='white')
+
+            for spine in self.ax.spines.values():
+                spine.set_color('white')
 
             self.ax.set_xticks(range(0, max(300, len(counts)) + 1, 10))
 
             # --- Base trace (Left or Mono) ---
-            self.ax.plot(counts, label="Counts/sec", color="darkblue", linewidth=1.0)
+            self.ax.plot(counts, label="Counts/sec", color=shared.LIGHT_GREEN, linewidth=1.0)
 
-            # --- Green sum trace (averaged over n seconds) ---
+            # --- Rolling average trace ---
             n = self.sum_n
             if n > 1 and len(counts) >= n:
                 rolling_avg = [
                     sum(counts[i:i+n]) / n for i in range(len(counts) - n + 1)
                 ]
                 self.ax.plot(
-                    range(n-1, len(counts)), rolling_avg, label=f"Avg {n}s", color="green"
+                    range(n-1, len(counts)),
+                    rolling_avg,
+                    label=f"Avg {n}s",
+                    color=shared.PINK,
+                    linewidth=1.0
                 )
 
-            self.ax.set_title(f"Count Rate - ({filename})")
-            self.ax.set_xlabel("Seconds")
-            self.ax.set_ylabel("Counts per second")
+            self.ax.set_title(f"Count Rate - ({filename})", color='white')
+            self.ax.set_xlabel("Seconds", color='white')
+            self.ax.set_ylabel("Counts per second", color='white')
             self.ax.set_xlim(left=0, right=max(300, len(counts)))
             self.ax.set_ylim(bottom=0)
-            self.ax.legend()
+            self.ax.legend(facecolor=shared.DARK_BLUE, edgecolor="white", labelcolor="white")
+
             self.canvas.draw()
 
         except Exception as e:
-            logger.error(f"[ERROR] update_plot error: {e} ❌\n")   
+            logger.error(f"[ERROR] update_plot error: {e} ❌\n")

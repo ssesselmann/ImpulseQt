@@ -271,7 +271,6 @@ def save_data(save_queue):
             last_minute  = [data['last_minute']]
             fn.update_json_hmp_file(t0, t1, bins, local_counts, local_elapsed, filename_hmp, last_minute, coeff_1, coeff_2, coeff_3, device)
             fn.write_cps_json(filename_hmp, local_count_history, local_elapsed, local_counts, dropped_counts)
-            logger.info(f'[INFO] heatmap and cps saved {t1}')
 
 
 # Appends 1-second slices to shared.histogram_hmp

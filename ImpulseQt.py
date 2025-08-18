@@ -34,6 +34,7 @@ from qt_compat import QObject
 from qt_compat import Signal
 from qt_compat import Slot
 
+from qss import GLOBAL_QSS
 from status_bar_handler import StatusBarHandler
 from feedback_popup import FeedbackPopup
 from send_feedback import send_feedback_email
@@ -170,11 +171,13 @@ class MainWindow(QMainWindow):
 
         # severity color
         if level >= logging.ERROR:
-            color = "#d32f2f"
+            color = "#FF0000" 
+
         elif level >= logging.WARNING:
-            color = "#f57c00"
+            color = "#E0751C"
+
         else:
-            color = "green"
+            color = "#9AFF7B"
 
         self.status_label.setStyleSheet(f"padding-left: 10px; color: {color};")
         self.status_label.setText(msg)
@@ -235,20 +238,32 @@ class FeedbackPopup(QDialog):
         label.setAlignment(Qt.AlignCenter)
         layout.addWidget(label)
 
-        btn_layout  = QHBoxLayout()
-        btn_ignore  = QPushButton("ignore")
-        btn_bad     = QPushButton("👎 Bad")
-        btn_good    = QPushButton("👍 Good")
-        
-        btn_ignore.clicked.connect(self.reject)
-        btn_bad.clicked.connect(lambda: self.handle_feedback("Bad"))
-        btn_good.clicked.connect(lambda: self.handle_feedback("Good"))
+        # --- Buttons ---
+        btn_layout = QHBoxLayout()
 
-        for btn in (btn_ignore, btn_bad, btn_good ):
+        self.btn_ignore = QPushButton("😑 Ignore")  # <-- needs self. if you're referencing it later
+        self.btn_ignore.setProperty("btn", "muted")
+
+        self.btn_bad = QPushButton("👎 Bad")
+        self.btn_bad.setProperty("btn", "muted")
+
+        self.btn_good = QPushButton("👍 Good")
+        self.btn_good.setProperty("btn", "muted")
+
+        self.btn_ignore.clicked.connect(self.reject)
+        self.btn_bad.clicked.connect(lambda: self.handle_feedback("Bad"))
+        self.btn_good.clicked.connect(lambda: self.handle_feedback("Good"))
+
+        for btn in (self.btn_ignore, self.btn_bad, self.btn_good):
             btn_layout.addWidget(btn)
 
         layout.addLayout(btn_layout)
         self.setLayout(layout)
+
+    def handle_feedback(self, response):
+        print(f"User feedback: {response}")
+        self.accept()
+
 
     def handle_feedback(self, sentiment):
         send_feedback_email(sentiment)
@@ -264,6 +279,7 @@ if __name__ == "__main__":
     initialize_user_data()
 
     app = QApplication(sys.argv)
+    app.setStyleSheet(GLOBAL_QSS)   
     win = MainWindow()
     win.show()
 

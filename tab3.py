@@ -32,7 +32,6 @@ from qt_compat import QWidget
 from qt_compat import Signal
 from qt_compat import QGroupBox
 
-
 from pathlib import Path
 from mpl_toolkits.mplot3d import Axes3D 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -40,7 +39,7 @@ from matplotlib.figure import Figure
 from matplotlib import cm
 from datetime import datetime, timedelta
 from collections import deque 
-from shared import logger, P1, P2, H1, H2, MONO, START, STOP, BTN, BUD, FOOTER, DLD_DIR, USER_DATA_DIR, BIN_OPTIONS
+from shared import logger, MONO, START, STOP, BTN, BUD, FOOTER, DLD_DIR, USER_DATA_DIR, BIN_OPTIONS, DARK_BLUE
 from functions import (
     load_histogram_hmp, 
     get_options_hmp, 
@@ -100,7 +99,6 @@ class Tab3(QWidget):
         self.time_buf     = deque(maxlen=self.plot_window_size)
         self.last_plot_ts = -1      
 
-
         # START button
         self.start_button = QPushButton("START")
         self.start_button.setStyleSheet(START)
@@ -109,7 +107,7 @@ class Tab3(QWidget):
 
         # select file dropdown label
         self.select_filename_label = QLabel("Select existing file")
-        self.select_filename_label.setStyleSheet(P1)
+        self.select_filename_label.setProperty("typo", "p1")
         top_left_col.addWidget(self.select_filename_label)
 
         # Filename dropdown selector
@@ -122,7 +120,7 @@ class Tab3(QWidget):
 
         # Label for bin selector
         self.bins_label = QLabel("Bin Selection")
-        self.bins_label.setStyleSheet(P1)
+        self.bins_label.setProperty("typo", "p1")
         top_left_col.addWidget(self.bins_label)
         
 
@@ -160,22 +158,22 @@ class Tab3(QWidget):
 
         # Live counts
         self.live_counts_label = QLabel("Live counts")
-        self.live_counts_label.setStyleSheet(P1)
+        self.live_counts_label.setProperty("typo", "p1")
         info_layout.addWidget(self.live_counts_label, 0, 0)
 
         self.counts_display = QLabel()
         self.counts_display.setAlignment(Qt.AlignCenter)
-        self.counts_display.setStyleSheet(H1)
+        self.counts_display.setProperty("typo", "h1")
         info_layout.addWidget(self.counts_display,     1, 0)
 
         # Elapsed time
         self.elapsed_label = QLabel("Elapsed secs.")
-        self.elapsed_label.setStyleSheet(P1)
+        self.elapsed_label.setProperty("typo", "p1")
         info_layout.addWidget(self.elapsed_label,      0, 1)
 
         self.elapsed_display = QLabel()
         self.elapsed_display.setAlignment(Qt.AlignCenter)
-        self.elapsed_display.setStyleSheet(H1)
+        self.elapsed_display.setProperty("typo", "h1")
         info_layout.addWidget(self.elapsed_display,    1, 1)
 
         # Add the group box to the left column
@@ -224,7 +222,7 @@ class Tab3(QWidget):
 
         # Label for filename
         self.filename_input_label = QLabel("Set new filename")
-        self.filename_input_label.setStyleSheet(P1)
+        self.filename_input_label.setProperty("typo", "p1")
         top_right_col.addWidget(self.filename_input_label)
 
         # Filename input
@@ -235,7 +233,7 @@ class Tab3(QWidget):
 
         # Label for max_seconds
         self.max_seconds_label = QLabel("Max Seconds (Stop Condition)")
-        self.max_seconds_label.setStyleSheet(P1)
+        self.max_seconds_label.setProperty("typo","p1")
         top_right_col.addWidget(self.max_seconds_label)
 
         # Max seconds input
@@ -245,7 +243,7 @@ class Tab3(QWidget):
 
         # Label for max_counts
         self.max_counts_label = QLabel("Max Counts (Stop Condition)")
-        self.max_counts_label.setStyleSheet(P1)
+        self.max_counts_label.setProperty("typo","p1")
         top_right_col.addWidget(self.max_counts_label)  
 
         # Input for max_counts
@@ -255,7 +253,7 @@ class Tab3(QWidget):
 
         # Interval input label
         label = QLabel("Time Interval (sec)")
-        label.setStyleSheet(P1)
+        label.setProperty("typo","p1")
         top_right_col.addWidget(label)
 
         # Input for time interval
@@ -282,7 +280,7 @@ class Tab3(QWidget):
         text =  """This 3D spectrum gets it's calibration ssettings from the 2D spectrum on tab2. 3D spectra quickly become large arrays, for this reason the number of channels have been restricted to less than 1024 channels. Calibration is automatically adjusted accordingly. The plot shows the last 60 seconds, to see the entire file download the csv and open the array in a third party application."""
         text2 = "\n\nMore detailed arrays can be achieved by increasing the interval time."
         self.instructions_label = QLabel(text+text2)
-        self.instructions_label.setStyleSheet(P1)
+        self.instructions_label.setProperty("typo","p1")
         self.instructions_label.setWordWrap(True)
         middle_layout.addWidget(self.instructions_label)
 
@@ -306,20 +304,36 @@ class Tab3(QWidget):
         left_panel_layout.addWidget(middle_section, stretch=1)
         left_panel_layout.addWidget(bottom_section, stretch=1)
 
-        # RIGHT SIDE — Matplotlib canvas
-        self.figure = Figure()
+
+
+
+        # Create the figure with dark background
+        self.figure = Figure(facecolor=DARK_BLUE)  # DARK_BLUE
         self.canvas = FigureCanvas(self.figure)
+        self.ax     = self.figure.add_subplot(111)
 
-        # Use 2D subplot
-        self.ax = self.figure.add_subplot(111)
+        # Initial dummy plot
+        self.ax.set_title("Waterfall Plot", color="white")
+        self.ax.set_xlabel("Bin #", color="white")
+        self.ax.set_ylabel("Time (s)", color="white")
 
-        # Optional: Clean up visual style
-        self.ax.spines['top'].set_visible(False)
-        self.ax.spines['right'].set_visible(False)
-        self.ax.grid(False)
+        # Set white tick marks and grid
+        self.ax.tick_params(axis='x', colors='white')
+        self.ax.tick_params(axis='y', colors='white')
+        self.ax.grid(True, color="white", alpha=0.2)
 
-        self.ax.set_xlabel('Channel #')
-        self.ax.set_ylabel('Time (s)')
+        # Optional: darken spines
+        for spine in self.ax.spines.values():
+            spine.set_color("white")
+
+        # Optional: empty dummy image so canvas shows something
+        dummy = np.zeros((10, 10))
+        self.ax.imshow(dummy, aspect='auto', origin='lower', cmap='turbo')
+
+
+
+
+
 
         self.canvas.draw()
         tab3_layout.addWidget(self.canvas, stretch=2)
@@ -328,10 +342,10 @@ class Tab3(QWidget):
         # FOOTER
         #=================
         footer = QLabel(FOOTER)
-        footer.setStyleSheet("padding: 6px; background: #eee;")
+        footer.setStyleSheet("padding: 6px;")
         footer.setAlignment(Qt.AlignCenter)
         footer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        footer.setStyleSheet(H1)
+        footer.setProperty("typo","h2")
         main_layout.addWidget(footer)  # Add the footer to the bottom
 
     # ======================================================================
@@ -657,7 +671,7 @@ class Tab3(QWidget):
 
             # ── Create fresh 2D plot ────────────────────────────────────────
             self.figure.clf()
-            self.ax = self.figure.add_subplot(111)
+            self.ax = self.figure.add_subplot(111, facecolor="#0b1d38")  # DARK_BLUE
 
             # ── Compute color limits safely ─────────────────────────────────────
             z_min = np.nanmin(Z)
@@ -682,12 +696,24 @@ class Tab3(QWidget):
                 vmax=z_max
             )
 
-            self.ax.set_xlabel("Energy (keV)" if cal_switch else "Bin #")
-            self.ax.set_ylabel("Time (s)")
             self.hmp_plot_title = f"Waterfall - {filename}"
+            self.ax.set_title(self.hmp_plot_title, color="white")
+            self.ax.set_xlabel("Energy (keV)" if cal_switch else "Bin #", color="white")
+            self.ax.set_ylabel("Time (s)", color="white")
+            self.ax.tick_params(axis='x', colors='white')
+            self.ax.tick_params(axis='y', colors='white')
+            self.ax.grid(True, color="white", alpha=0.2)
 
-            self.ax.set_title(self.hmp_plot_title)
-            self.figure.colorbar(img, ax=self.ax, label="log₁₀(Counts)" if log_switch else "Counts")
+            for spine in self.ax.spines.values():
+                spine.set_color("white")
+
+            cbar = self.figure.colorbar(img, ax=self.ax, label="log₁₀(Counts)" if log_switch else "Counts")
+
+            # Make ticks and label white
+            cbar.ax.yaxis.set_tick_params(color='white')
+            plt.setp(cbar.ax.yaxis.get_ticklabels(), color='white')
+            cbar.set_label(cbar.ax.get_ylabel(), color='white')
+
 
             # Optional: scrolls upward like a spectrogram
             self.ax.invert_yaxis()

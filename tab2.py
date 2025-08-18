@@ -49,7 +49,7 @@ from functions import (
     sanitize_for_log
     )
 from audio_spectrum import play_wav_file
-from shared import logger, device_type, P1, P2, H1, H2, MONO, START, STOP, BTN, FOOTER, DLD_DIR, USER_DATA_DIR, BIN_OPTIONS
+from shared import logger, device_type, MONO, FOOTER, DLD_DIR, USER_DATA_DIR, BIN_OPTIONS, LIGHT_GREEN, PINK, RED, WHITE, DARK_BLUE
 from pathlib import Path
 from calibration_popup import CalibrationPopup
 
@@ -58,7 +58,7 @@ class Tab2(QWidget):
 
     def labeled_input(self, label_text, widget):
         label = QLabel(label_text)
-        label.setStyleSheet("font-size: 10pt; color: #555; margin-bottom: 0px;")
+        label.setProperty("typo", "p2")
         label.setAlignment(Qt.AlignCenter)
         input_layout = QVBoxLayout()
         input_layout.setSpacing(0)
@@ -105,15 +105,29 @@ class Tab2(QWidget):
         self._last_peaks_t  = 0
         self.diff_switch    = False
 
+       
+
+        # ---- Title Setup ----
+        self.plot_title = QLabel("Histogram")  
+        self.plot_title.setProperty("typo", "h2")   # your H1 format from qss
+        self.plot_title.setAlignment(Qt.AlignRight)
         # --- Create the PlotWidget first --------------------------------------------
-        self.plot_widget = pg.PlotWidget(title="2D Count Rate Histogram")
+        self.plot_widget = pg.PlotWidget()
+
+        plot_layout = QVBoxLayout()
+        plot_layout.addWidget(self.plot_title)
+        plot_layout.addWidget(self.plot_widget)
+
+        plot_container = QWidget()
+        plot_container.setLayout(plot_layout)
+
+        tab2_layout.addWidget(plot_container)
+
 
         # Appearance / labels
-        self.plot_widget.setBackground('w')
         self.plot_widget.setLabel('left', 'Counts')
         self.plot_widget.setLabel('bottom', 'Bins')
         self.plot_widget.getPlotItem().showGrid(x=True, y=True, alpha=0.3)
-
 
         # in __init__ after creating self.plot_widget
         self.plot_widget.enableAutoRange('y', False)
@@ -121,10 +135,14 @@ class Tab2(QWidget):
 
 
         # --- Curves (add main first, then others) -----------------------------------
-        self.hist_curve = self.plot_widget.plot([], pen=pg.mkPen("darkblue", width=2), fillLevel=0, brush=(0, 0, 0, 40))
+        self.style_plot_canvas(self.plot_widget)
+        self.plot_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
-        self.comp_curve  = self.plot_widget.plot([], pen=pg.mkPen("darkgreen", width=2))
-        self.gauss_curve = self.plot_widget.plot([], pen=pg.mkPen("r", width=2), fillLevel=0, brush=(255, 0, 0, 125))
+        # curves — use your color constants
+        self.hist_curve  = self.plot_widget.plot([], pen=pg.mkPen(LIGHT_GREEN, width=2), fillLevel=0, brush=(0, 0, 0, 40))
+        self.comp_curve  = self.plot_widget.plot([], pen=pg.mkPen(PINK,        width=2))
+        self.gauss_curve = self.plot_widget.plot([], pen=pg.mkPen(RED,         width=2), fillLevel=0, brush=(255, 0, 0, 125))
+
 
         # Z-order so crosshairs/markers sit above lines, backgrounds below lines
         self.hist_curve.setZValue(10)
@@ -181,13 +199,13 @@ class Tab2(QWidget):
 
         # Col 1 Row 1 --------------------------------------------------------------------------
         self.start_button = QPushButton("START")
-        self.start_button.setStyleSheet(START)
+        self.start_button.setProperty("btn", "start")
         self.start_button.clicked.connect(self.on_start_clicked)
         grid.addWidget(self.labeled_input("Start", self.start_button), 0, 0)
 
         # Col 1 Row 2
         self.counts_label = QLabel("0")
-        self.counts_label.setStyleSheet(H1)
+        self.counts_label.setProperty("typo", "h1")
         self.counts_label.setAlignment(Qt.AlignCenter)
         grid.addWidget(self.labeled_input("Total counts", self.counts_label), 1, 0)
 
@@ -205,13 +223,13 @@ class Tab2(QWidget):
 
         # Col 2 Row 1 ------------------------------------------------------------------------
         self.stop_button = QPushButton("STOP")
-        self.stop_button.setStyleSheet(STOP)
+        self.stop_button.setProperty("btn", "stop")
         self.stop_button.clicked.connect(self.on_stop_clicked)
         grid.addWidget(self.labeled_input("Stop", self.stop_button), 0, 1)
 
         # Col 2 Row 1
         self.elapsed_label = QLabel("0")
-        self.elapsed_label.setStyleSheet(H1)
+        self.elapsed_label.setProperty("typo", "h1")
         self.elapsed_label.setAlignment(Qt.AlignCenter)
         grid.addWidget(self.labeled_input("Elapsed time", self.elapsed_label), 1, 1)
 
@@ -261,7 +279,7 @@ class Tab2(QWidget):
         bins_layout.setContentsMargins(0, 0, 0, 0)
 
         self.bins_label = QLabel("Select number of bins")
-        self.bins_label.setStyleSheet(P1)
+        self.bins_label.setProperty("typo", "p2")
 
         self.bins_selector = QComboBox()
         self.bins_selector.setToolTip("Select number of channels (lower = more compression)")
@@ -331,7 +349,7 @@ class Tab2(QWidget):
         self.select_file = QComboBox()
         self.select_file.setEditable(False)
         self.select_file.setInsertPolicy(QComboBox.NoInsert)
-        self.select_file.setStyleSheet(P2)
+        self.select_file.setProperty("typo", "p2")
         self.select_file.addItem("— Select file —", "")  # default entry
         self.select_file.currentIndexChanged.connect(self.on_select_filename_changed)
         grid.addWidget(self.labeled_input("Open spectrum file", self.select_file), 3, 2)
@@ -394,7 +412,7 @@ class Tab2(QWidget):
 
         # Col 4 Row 3 - Download csv button
         self.dld_csv_btn = QPushButton("Download csv")
-        self.dld_csv_btn.setStyleSheet(BTN)
+        self.dld_csv_btn.setProperty("btn", "primary")
         self.dld_csv_btn.clicked.connect(self.on_dld_csv_btn)
         grid.addWidget(self.labeled_input("Download csv File", self.dld_csv_btn), 0, 4)
 
@@ -402,7 +420,7 @@ class Tab2(QWidget):
         self.select_comparison = QComboBox()
         self.select_comparison.setEditable(False)
         self.select_comparison.setInsertPolicy(QComboBox.NoInsert)
-        self.select_comparison.setStyleSheet(P2)
+        self.select_comparison.setProperty("typo", "p2")
         self.select_comparison.addItem("— Select file —", "")
         self.select_comparison.currentIndexChanged.connect(self.on_select_filename_2_changed)    
         grid.addWidget(self.labeled_input("Comparison spectrum", self.select_comparison), 3, 3)
@@ -442,7 +460,7 @@ class Tab2(QWidget):
         self.select_flag_table = QComboBox()
         self.select_flag_table.setEditable(False)
         self.select_flag_table.setInsertPolicy(QComboBox.NoInsert)
-        self.select_flag_table.setStyleSheet(P2)
+        self.select_flag_table.setProperty("typo", "p2")
         options = get_flag_options()
         for opt in options:
             self.select_flag_table.addItem(opt['label'], opt['value'])
@@ -504,7 +522,7 @@ class Tab2(QWidget):
         self.sigma_slider.setFocus()
         self.sigma_label = QLabel(f"Sigma: {sigma:.1f}")
         self.sigma_label.setAlignment(Qt.AlignCenter)
-        self.sigma_label.setStyleSheet(P1)
+        self.sigma_label.setProperty("typo", "p1")
         sigma_layout = QVBoxLayout()
         sigma_layout.addWidget(self.sigma_label)
         sigma_layout.addWidget(self.sigma_slider)
@@ -526,7 +544,7 @@ class Tab2(QWidget):
         font = QFont("Courier New")
         font.setPointSize(9)
         self.peakfinder_label.setFont(font)
-        self.peakfinder_label.setStyleSheet(P1)
+        self.peakfinder_label.setProperty("typo", "p1")
         peakfinder_layout = QVBoxLayout()
         peakfinder_layout.addWidget(self.peakfinder_label)
         peakfinder_layout.addWidget(self.peakfinder_slider)
@@ -543,7 +561,7 @@ class Tab2(QWidget):
         font = QFont("Courier New")
         font.setPointSize(9)
         self.poly_label.setFont(font)
-        self.poly_label.setStyleSheet("color: #444; font-style: italic;")
+        self.poly_label.setProperty("typo", "p1")
         poly_layout = QVBoxLayout()
         poly_layout.addWidget(self.poly_label)
         poly_widget = QWidget()
@@ -553,8 +571,8 @@ class Tab2(QWidget):
         # Col 7 Row 4
         self.open_calib_btn = QPushButton("Calibrate")
         self.open_calib_btn.clicked.connect(self.open_calibration_popup)
-        self.open_calib_btn.setStyleSheet(BTN)
-        self.poly_label.setStyleSheet("color: #333; font-style: italic;")
+        self.open_calib_btn.setProperty("btn", "primary")
+        self.poly_label.setProperty("typo", "p1")
         grid.addWidget(self.open_calib_btn, 3, 6)
 
         # Col 8: Notes input (spanning rows 0–3)
@@ -604,10 +622,10 @@ class Tab2(QWidget):
         # FOOTER
         #=================
         footer = QLabel(FOOTER)
-        footer.setStyleSheet("padding: 6px; background: #eee;")
+        footer.setStyleSheet("padding: 6px;")
         footer.setAlignment(Qt.AlignCenter)
         footer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        footer.setStyleSheet(H1)
+        footer.setProperty("typo", "h2")
         tab2_layout.addWidget(footer)
 
         self.refresh_file_dropdowns()
@@ -1143,6 +1161,17 @@ class Tab2(QWidget):
         self.update_histogram()
         self.update_peak_markers()
 
+    
+    def style_plot_canvas(self, pw: pg.PlotWidget):
+        pw.setBackground(DARK_BLUE)
+        pi = pw.getPlotItem()
+        pi.getAxis("left").setPen(WHITE)
+        pi.getAxis("left").setTextPen(WHITE)
+        pi.getAxis("bottom").setPen(WHITE)
+        pi.getAxis("bottom").setTextPen(WHITE)
+        pi.showGrid(x=True, y=True, alpha=0.18)
+
+
     def update_peak_markers(self):
 
         with shared.write_lock:
@@ -1269,9 +1298,13 @@ class Tab2(QWidget):
             else:
                 label_text = f"\u2B60 Bin {p} ({resolution:.1f} %)"
 
-            label = pg.TextItem(label_text, anchor=(0, 0), color="k")
-            label = pg.TextItem(label_text, anchor=(0, 0), color="k", fill=pg.mkBrush(230, 230, 230, 100))
-            label.setFont(QFont("Courier New", 10))
+            from PySide6.QtGui import QFont
+
+            label = pg.TextItem(label_text, anchor=(0, 0), color="w")
+            font  = QFont("Courier", 10)
+            font.setBold(True)
+            label.setFont(font)
+
             label.setPos(x_pos, y_pos)
             self.plot_widget.addItem(label)
             self.peak_markers.append(label)
@@ -1293,10 +1326,13 @@ class Tab2(QWidget):
             comp_switch    = shared.comp_switch
             diff_switch    = shared.diff_switch
             slb_switch     = shared.slb_switch
+            filename       = shared.filename
 
         if not histogram:
             logger.warning("[WARNING] No histogram data 👆")
             return
+
+        
 
         # 2) Build series in linear space
         x_vals  = list(range(len(histogram)))
@@ -1383,27 +1419,34 @@ class Tab2(QWidget):
         self.y_vals_plot = list(y_vals)
 
         # Pens (diff → black, otherwise blue)
-        self.hist_curve.setPen(pg.mkPen("black" if (diff_switch and comp_switch) else "blue", width=1.5))
+        self.hist_curve.setPen(pg.mkPen("white" if (diff_switch and comp_switch) else LIGHT_GREEN, width=1.5))
 
         # 3) Push data to pyqtgraph (no manual ranges — let it autorange)
         self.plot_widget.enableAutoRange('x', True)
         self.plot_widget.enableAutoRange('y', True)
-
+        # main histogram
         self.hist_curve.setData(x_vals, y_vals)
+
+        # comparison histogram
         if comp_switch and not diff_switch:
             self.comp_curve.setData(x_vals2, y_vals2)
         else:
             self.comp_curve.setData([], [])
+
+        # gaussian curve
         if corr and not diff_switch:
             self.gauss_curve.setData(x_vals_corr, corr)
         else:
             self.gauss_curve.setData([], [])
+
 
         # 4) Toggle log transform LAST so it picks up the just-set data
         self.plot_widget.setLogMode(x=False, y=log_switch)
 
         # Optional: nudge autorange to recompute with the new transform
         self.plot_widget.autoRange()
+
+        self.plot_title.setText(f"Histogram \n {filename}")
 
         # 5) Peak markers — rate-limited (safe to call; avoid y<=0 in log in that method)
         now = time.monotonic()
