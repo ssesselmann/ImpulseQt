@@ -49,6 +49,7 @@ QFont           = QtGui.QFont
 QIntValidator   = QtGui.QIntValidator
 QMovie          = QtGui.QMovie
 QPixmap         = QtGui.QPixmap
+QIcon           = QtGui.QIcon
 
 # QtCore Classes
 # =========================================

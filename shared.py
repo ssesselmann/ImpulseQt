@@ -5,6 +5,7 @@ import platform
 import sys
 import json
 import datetime
+import os
 
 from os import getenv
 from pathlib import Path
@@ -91,7 +92,7 @@ TBL_DIR = LIB_DIR / "tbl"
 
 SETTINGS_FILE = DATA_DIR / "settings.json"
 
-
+ICON_PATH = os.path.join("assets", "favicon.png")
 # -------------------------------
 # Logging Setup
 # -------------------------------

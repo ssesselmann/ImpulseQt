@@ -33,6 +33,7 @@ from qt_compat import QTime
 from qt_compat import QObject
 from qt_compat import Signal
 from qt_compat import Slot
+from qt_compat import QIcon
 
 from qss import GLOBAL_QSS
 from status_bar_handler import StatusBarHandler
@@ -40,7 +41,7 @@ from feedback_popup import FeedbackPopup
 from send_feedback import send_feedback_email
 from functions import resource_path
 
-from shared import logger, USER_DATA_DIR, BASE_DIR
+from shared import logger, USER_DATA_DIR, BASE_DIR, ICON_PATH
 
 def copy_lib_if_needed():
     dest = Path(USER_DATA_DIR) / "lib"
@@ -277,7 +278,6 @@ if __name__ == "__main__":
     shared.ensure_settings_exists()
     shared.load_settings()
     initialize_user_data()
-
     app = QApplication(sys.argv)
     app.setStyleSheet(GLOBAL_QSS)   
     win = MainWindow()

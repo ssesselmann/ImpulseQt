@@ -32,6 +32,7 @@ from qt_compat import QBrush
 from qt_compat import QColor
 from qt_compat import QIntValidator
 from qt_compat import QPixmap
+from qt_compat import QIcon
 from qt_compat import QDoubleValidator
 
 from functions import (
@@ -49,7 +50,7 @@ from functions import (
     sanitize_for_log
     )
 from audio_spectrum import play_wav_file
-from shared import logger, device_type, MONO, FOOTER, DLD_DIR, USER_DATA_DIR, BIN_OPTIONS, LIGHT_GREEN, PINK, RED, WHITE, DARK_BLUE
+from shared import logger, device_type, MONO, FOOTER, DLD_DIR, USER_DATA_DIR, BIN_OPTIONS, LIGHT_GREEN, PINK, RED, WHITE, DARK_BLUE, ICON_PATH
 from pathlib import Path
 from calibration_popup import CalibrationPopup
 
@@ -751,13 +752,20 @@ class Tab2(QWidget):
             return
 
         if os.path.exists(file_path):
-            reply = QMessageBox.question(
-                self, "Confirm Overwrite",
-                f'"{filename}.json" already exists. Overwrite?',
-                QMessageBox.Yes | QMessageBox.No
-            )
+
+            msg_box = QMessageBox(self)
+            msg_box.setIcon(QMessageBox.Question)
+            msg_box.setWindowTitle("Confirm Overwrite")
+            msg_box.setText(f'"{filename}.json" already exists. Overwrite?')
+            msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+            icon = QPixmap(ICON_PATH).scaled(48, 48)
+            msg_box.setIconPixmap(icon)
+
+            reply = msg_box.exec()
+
             if reply != QMessageBox.Yes:
                 return
+
 
         if self.process_thread and self.process_thread.is_alive():
             logger.warning("[WARNING] thread still running, attempting to stop 👆")
