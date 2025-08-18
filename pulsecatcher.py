@@ -93,7 +93,8 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
             input_device_index=device,
         )
     except Exception as e:
-        with shared.write_lock: shared.doing = f"[ERROR] {e}"
+        
+        with shared.write_lock: shared.doing = f"[ERROR] Device not selected: {e}"
 
     save_queue = queue.Queue()
     save_thread = threading.Thread(target=save_data, args=(save_queue,))

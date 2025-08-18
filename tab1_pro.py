@@ -30,16 +30,11 @@ from qt_compat import QPixmap
 from qt_compat import QCheckBox
 from qt_compat import QSlider
 from qt_compat import QSizePolicy
-
 from shapecatcher import shapecatcher
 from distortionchecker import distortion_finder
-
 from shared import logger, WHITE, LIGHT_GREEN, PINK, DARK_BLUE
 
-
-
 class Tab1ProWidget(QWidget):
-
 
     def __init__(self):
         super().__init__()
@@ -105,10 +100,7 @@ class Tab1ProWidget(QWidget):
         top_bar = QWidget()
         top_bar.setProperty("typo", "p1")     # <-- key line
         top_bar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        #top_bar.setStyleSheet("background-color: DARK_BLUE")
 
-
-        
         top_controls = QHBoxLayout(top_bar)
         top_controls.setSpacing(15)
         top_controls.addWidget(QLabel("Device"))
@@ -124,8 +116,6 @@ class Tab1ProWidget(QWidget):
         top_controls.addStretch()
 
         tab1_pro_layout.addWidget(top_bar, 0, Qt.AlignTop)
-
-
 
         # Left Column --------------------------------------------
 
@@ -161,18 +151,17 @@ class Tab1ProWidget(QWidget):
         # --- Pulse shape plot ---
         self.pulse_plot = pg.PlotWidget()
         self.style_plot_canvas(self.pulse_plot)
-        self.pulse_plot.setTitle("Mean Pulse Shape")  # Moved AFTER styling
+        self.pulse_plot.setTitle("Mean Pulse Shape") 
         self.pulse_plot.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         # --- Distortion curve plot ---
         self.curve_plot = pg.PlotWidget()
         self.style_plot_canvas(self.curve_plot)
-        self.curve_plot.setTitle("Distortion Curve")  # Moved AFTER styling
+        self.curve_plot.setTitle("Distortion Curve")  
         self.curve_plot.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
 
-                # --- 3-column layout under controls ---
-        # Ensure all widgets expand equally
+        # --- 3-column layout under controls ---
         for widget in [self.help_text, self.pulse_plot, self.curve_plot]:
             widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
@@ -263,7 +252,6 @@ class Tab1ProWidget(QWidget):
 
         middle_layout.addLayout(slider_container)
 
-
         # Right column ---------------------------------------------------------------
         
         right_column = QWidget()
@@ -299,10 +287,8 @@ class Tab1ProWidget(QWidget):
         controls_row_1.addWidget(middle_column, alignment=Qt.AlignTop)
         controls_row_1.addWidget(right_column, alignment=Qt.AlignTop)
 
-
         # === Add both rows to main layout ===
         tab1_pro_layout.addLayout(controls_row_1)
-
 
         self.setLayout(tab1_pro_layout)
         self.plot_shape()
@@ -328,8 +314,6 @@ class Tab1ProWidget(QWidget):
         pi.showGrid(x=True, y=True, alpha=0.18)
         pi.setTitle("")  # Optional: blank by default
         pi.clear()
-
-
 
     def update_device(self, index):
         selected_index = self.device_selector.itemData(index)
@@ -378,8 +362,7 @@ class Tab1ProWidget(QWidget):
         self.curve_plot.plot(
             x_vals_left, left,
             pen=pg.mkPen(LIGHT_GREEN, width=2),
-            symbol='o',
-            symbolSize=5,
+            symbol=None,
             symbolBrush=LIGHT_GREEN,
             name="Left"
         )
@@ -387,16 +370,10 @@ class Tab1ProWidget(QWidget):
         self.curve_plot.plot(
             x_vals_right, right,
             pen=pg.mkPen(PINK, width=2),
-            symbol='x',
-            symbolSize=5,
+            symbol=None,
             symbolBrush=PINK,
             name="Right"
         )
-
-        #self.curve_plot.setTitle("Distortion Curve", color=WHITE)
-        # self.curve_plot.setLabel("left", "Distortion", **{'color': 'white'})
-        # self.curve_plot.setLabel("bottom", "Sample Index", **{'color': 'white'})
-
 
     def draw_mean_shape_plot(self):
         with shared.write_lock:
@@ -440,11 +417,11 @@ class Tab1ProWidget(QWidget):
             y_min, y_max = -y_margin, y_peak + y_margin
 
             # --- canvas / axes styling ---
-            pw = self.pulse_plot                  # PlotWidget
+            pw = self.pulse_plot               
             pw.clear()
             pw.setBackground(DARK_BLUE)
 
-            pi = pw.getPlotItem()                 # PlotItem (axes/ticks/grid live here)
+            pi = pw.getPlotItem()                
             # axes: lines + tick labels in white
             pi.getAxis("left").setPen(WHITE)
             pi.getAxis("left").setTextPen(WHITE)
@@ -480,8 +457,6 @@ class Tab1ProWidget(QWidget):
                 name="Right"
                 )
 
-
-            # any follow-up render
             self.draw_mean_shape_plot()
 
         except Exception as e:

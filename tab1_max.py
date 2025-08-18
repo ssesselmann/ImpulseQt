@@ -27,8 +27,6 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from shproto.dispatcher import process_03
 
-# Put these near the top of your module
-
 
 class Tab1MaxWidget(QWidget):
     def __init__(self):
@@ -123,9 +121,9 @@ class Tab1MaxWidget(QWidget):
 
         content_layout.addWidget(right_column, 1)
 
-    #---------------------------------------------------------------------------
-    # tab1_max layout
-    #---------------------------------------------------------------------------
+        #---------------------------------------------------------------------------
+        # tab1_max layout
+        #---------------------------------------------------------------------------
 
         content_layout.addLayout(left_layout, 1)
 
@@ -137,8 +135,6 @@ class Tab1MaxWidget(QWidget):
 
 
     #-------------------------------------------------------------------------
-    # End Init
-    #-------------------------------------------------------------------------    
 
     def on_port_selection(self, index):
         device_value = self.port_selector.itemData(index)
@@ -213,7 +209,6 @@ class Tab1MaxWidget(QWidget):
         rows = [f"{temp:+10d}  {val:+12.4f}" for temp, val in tco_pairs]
         return "\n".join([header, sep] + rows)
 
-
     def start_max_oscilloscope_check(self):
         fn.stop_max_pulse_check()
         time.sleep(0.2)
@@ -247,10 +242,7 @@ class Tab1MaxWidget(QWidget):
         self.ax.set_axisbelow(True)
         self.ax.grid(True, which="major", color=WHITE, alpha=0.25, linewidth=0.8)
 
-        # Force one paint so it’s not white before data arrives
         self.canvas.draw()
-
-
 
     def update_pulse_plot(self):
         mode = getattr(self, "current_max_mode", 2)
@@ -275,8 +267,8 @@ class Tab1MaxWidget(QWidget):
 
         # --- Canvas / axes styling ---
         fig = self.ax.figure
-        fig.set_facecolor(DARK_BLUE)           # figure (outside axes)
-        self.ax.set_facecolor(DARK_BLUE)       # axes (plot area)
+        fig.set_facecolor(DARK_BLUE)       
+        self.ax.set_facecolor(DARK_BLUE)       
         for spine in self.ax.spines.values():
             spine.set_color(WHITE)
         self.ax.tick_params(axis="both", which="both", colors=WHITE)
@@ -322,47 +314,3 @@ class Tab1MaxWidget(QWidget):
         self.ax.yaxis.label.set_color(WHITE)
 
         self.canvas.draw()
-
-
-    # def update_pulse_plot(self):
-    #     mode = getattr(self, "current_max_mode", 2)
-
-    #     with shared.write_lock:
-    #         pulse_data = shared.max_pulse_shape[-4096:]
-    #         max_x = len(pulse_data) if pulse_data else 100
-    #         max_y = max(pulse_data) if pulse_data else 1
-    #         min_y = min(pulse_data) if pulse_data else 0
-
-    #     # Fallback if empty or all zeros
-    #     if not pulse_data or all(v == 0 for v in pulse_data):
-    #         pulse_data = [0] * 100
-    #         max_x = 100
-    #         max_y = 1
-    #         min_y = 0
-
-    #     x_values = list(range(len(pulse_data)))
-    #     y_values = pulse_data
-
-    #     self.ax.clear()
-
-    #     # === Plot style by mode ===
-    #     if mode == 2:
-    #         self.ax.plot(x_values, y_values, color="black", linewidth=0.5, marker="o")
-    #         self.ax.set_title("Max Pulse Plot")
-    #     elif mode == 1:
-    #         self.ax.plot(x_values, y_values, color="black", linewidth=0.5)
-    #         self.ax.set_title("Oscilloscope Trace")
-
-    #     # === Axis by mode ===
-    #     if mode == 2:
-    #         y_margin = 0.1 * max_y
-    #         self.ax.set_ylim(0, max_y + y_margin)
-    #     else:
-    #         y_range = max_y - min_y
-    #         y_margin = 0.1 * y_range if y_range else 1
-    #         self.ax.set_ylim(min_y - y_margin, max_y + y_margin)
-
-    #     self.ax.set_xlim(0, max_x)
-    #     self.ax.set_xlabel("Sample Index")
-    #     self.ax.set_ylabel("Amplitude")
-    #     self.canvas.draw()

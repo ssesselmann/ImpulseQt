@@ -67,6 +67,7 @@ def capture_pulse_polarity(device, stereo, sample_rate, chunk_size, sample_lengt
     if channels > info['maxInputChannels']:
         raise RuntimeError(f"❌ Device {device} only supports {info['maxInputChannels']} channels, but {channels} were requested.")
 
+
     stream = p.open(format=pyaudio.paInt16,
                     channels=channels,
                     rate=sample_rate,
@@ -74,6 +75,7 @@ def capture_pulse_polarity(device, stereo, sample_rate, chunk_size, sample_lengt
                     output=False,
                     frames_per_buffer=chunk_size * channels,
                     input_device_index=device)
+
 
     pulse_sign_left = None
     pulse_sign_right = None

@@ -109,9 +109,10 @@ class Tab2(QWidget):
 
         # ---- Title Setup ----
         self.plot_title = QLabel("Histogram")  
-        self.plot_title.setProperty("typo", "h2")   # your H1 format from qss
+        self.plot_title.setProperty("typo", "h2")  
         self.plot_title.setAlignment(Qt.AlignRight)
-        # --- Create the PlotWidget first --------------------------------------------
+
+        # --- Create the PlotWidget first ----------
         self.plot_widget = pg.PlotWidget()
 
         plot_layout = QVBoxLayout()
@@ -131,10 +132,10 @@ class Tab2(QWidget):
 
         # in __init__ after creating self.plot_widget
         self.plot_widget.enableAutoRange('y', False)
-        self.plot_widget.enableAutoRange('x', False)   # optional, since you set XRange too
+        self.plot_widget.enableAutoRange('x', False)  
 
 
-        # --- Curves (add main first, then others) -----------------------------------
+        # --- Curves (add main first, then others) -----------------
         self.style_plot_canvas(self.plot_widget)
         self.plot_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
@@ -633,12 +634,12 @@ class Tab2(QWidget):
 
     # === Timer to update live data ===
         self.ui_timer = QTimer()
-        self.ui_timer.timeout.connect(self.update_ui)  # <- new combined method
+        self.ui_timer.timeout.connect(self.update_ui)  
         self.ui_timer.start(int(max(50, t_interval * 1000)))
 
     def update_ui(self):
-        if not self.isVisible():      # <- add this line
-            return                    # <- and this
+        if not self.isVisible():      
+            return                 
         self.update_labels()
         self.update_histogram()
 
@@ -1196,8 +1197,8 @@ class Tab2(QWidget):
             return
 
         x_vals      = self.x_vals
-        y_vals_raw  = self.y_vals_raw     # for peak finding
-        y_vals_plot = self.y_vals_plot   # for vertical label position
+        y_vals_raw  = self.y_vals_raw   
+        y_vals_plot = self.y_vals_plot   
 
         try:
             peaks, fwhm = peak_finder(
@@ -1257,10 +1258,10 @@ class Tab2(QWidget):
                 fwhm_bins = float(width) if width else 0.0
                 fwhm_keV = abs(dEdx) * fwhm_bins
 
-                # tunables (could promote to shared.* if you want UI control)
-                base_tol_keV = 2.0                 # minimum absolute window
-                fwhm_mult    = 0.6                 # ~60% of FWHM is a good ID window
-                rel_frac     = 0.002               # 0.2% of energy
+                # tunable parameters
+                base_tol_keV = 2.0                 
+                fwhm_mult    = 0.6                 
+                rel_frac     = 0.002              
 
                 tol_keV = max(base_tol_keV, fwhm_mult * fwhm_keV, rel_frac * energy)
 
@@ -1360,7 +1361,7 @@ class Tab2(QWidget):
         # Keep a pre-EPB/log copy for peak detection
         y_for_peaks = y_vals[:]
 
-        # Gaussian correlation (from original histogram as before)
+        # Gaussian correlation 
         corr        = []
         x_vals_corr = []
 
@@ -1438,7 +1439,6 @@ class Tab2(QWidget):
             self.gauss_curve.setData(x_vals_corr, corr)
         else:
             self.gauss_curve.setData([], [])
-
 
         # 4) Toggle log transform LAST so it picks up the just-set data
         self.plot_widget.setLogMode(x=False, y=log_switch)

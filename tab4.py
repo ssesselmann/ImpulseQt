@@ -44,7 +44,7 @@ class Tab4(QWidget):
         self.ui_timer.setInterval(1000)
         self.ui_timer.timeout.connect(self.update_plot)
         self.ui_timer.timeout.connect(self.update_cps_label)
-        self.ui_timer.setTimerType(Qt.VeryCoarseTimer)  # fewer wakeups at 1s cadence
+        self.ui_timer.setTimerType(Qt.VeryCoarseTimer)  
         self.ui_timer.start()
 
         # constants
@@ -53,7 +53,7 @@ class Tab4(QWidget):
         # === Outer container to align plot and control box ===
         aligned_container = QWidget()
         aligned_layout = QVBoxLayout(aligned_container)
-        aligned_layout.setContentsMargins(100, 10, 100, 10)  # for outer padding around the entire section
+        aligned_layout.setContentsMargins(100, 10, 100, 10)  
         aligned_layout.setSpacing(10)
 
 

@@ -416,8 +416,8 @@ class Tab3(QWidget):
         files = sorted(folder.glob(pattern), reverse=True)
 
         # Save original filenames and display names without extension
-        self.file_options = [f.stem.replace("_hmp", "") for f in files]  # just the base names
-        self.filename_dropdown.blockSignals(True)  # prevent accidental signal firing
+        self.file_options = [f.stem.replace("_hmp", "") for f in files] 
+        self.filename_dropdown.blockSignals(True)  
         self.filename_dropdown.clear()
         self.filename_dropdown.addItem("Select file to load")
         self.filename_dropdown.addItems(self.file_options)
@@ -432,7 +432,7 @@ class Tab3(QWidget):
         full_filename = f"{selected_name}_hmp.json"
         self.load_selected_file(full_filename)
 
-        self.refresh_bin_selector()  # <- must happen before setCurrentIndex()
+        self.refresh_bin_selector()  
 
         index = self.bins_selector.findData(shared.compression)
         if index != -1:
@@ -514,7 +514,7 @@ class Tab3(QWidget):
             self.bins_selector.setCurrentIndex(index)
         except StopIteration:
             logger.warning(f"[WARNING] Compression {compression} not found in BIN_OPTIONS 👆\n")
-            self.bins_selector.setCurrentIndex(len(BIN_OPTIONS) - 1)  # Default to last (8192 bins)
+            self.bins_selector.setCurrentIndex(len(BIN_OPTIONS) - 1) 
 
         self.update_graph()
 
@@ -656,8 +656,8 @@ class Tab3(QWidget):
 
             if epb_switch:
                 # Normalize x_axis to a multiplier (e.g. 1.0 to 10.0 range)
-                weights = x_axis / np.mean(x_axis)  # Simple scaling, avoid overflow
-                Z *= weights[np.newaxis, :]  # Broadcast across rows    
+                weights = x_axis / np.mean(x_axis) 
+                Z *= weights[np.newaxis, :]   
 
             num_rows = Z.shape[0]
             y_axis = np.arange(offset, offset + Z.shape[0]) * t_interval
@@ -679,7 +679,7 @@ class Tab3(QWidget):
 
             # Avoid vmin == vmax which causes color scale bugs
             if np.isclose(z_max, z_min):
-                z_max = z_min + 1e-3  # Small fixed delta
+                z_max = z_min + 1e-3  
 
             # Optional: Always anchor 0 to blue in turbo colormap
             if not log_switch:

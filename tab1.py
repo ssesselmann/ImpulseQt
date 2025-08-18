@@ -76,7 +76,6 @@ class Tab1(QWidget):
 
         self.setLayout(device_tab_layout) 
 
-
     def switch_device_type(self, value):
         if value == shared.device_type:
             return  # No change needed
@@ -95,7 +94,6 @@ class Tab1(QWidget):
             QApplication.quit()
         else:
             self.selector.setCurrentText(shared.device_type)  # Revert selection
-
 
     def set_main_content(self, device_type):
         # Clear current content

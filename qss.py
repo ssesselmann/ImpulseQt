@@ -186,7 +186,7 @@ QPushButton[btn="primary"]:pressed{ background: #B85E17; }
 QPushButton[btn="primary"]:disabled{ background: #F0B280; color: #ECECEC; }
 
 QPushButton[btn="muted"]         { background: #b5cbf5; }
-QPushButton[btn="muted"]:hover   { background: #c6def7; color: #000000;}
+QPushButton[btn="muted"]:hover   { background: #FFFFFF; color: #000000;}
 QPushButton[btn="muted"]:pressed { background: #646464; }
 QPushButton[btn="muted"]:disabled{ background: #B0B0B0; color: #ECECEC; }
 
