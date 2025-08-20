@@ -61,16 +61,31 @@ class Tab1MaxWidget(QWidget):
         left_layout.addWidget(port_group)
 
         # Serial command input
-        serial_cmd_box = QGroupBox("Serial Command input (click button to retrieve table)")
-        v = QVBoxLayout(serial_cmd_box); row = QHBoxLayout()
-        self.serial_command_input = QLineEdit(placeholderText="Enter serial command")
-        self.send_button = QPushButton("Send command"); self.send_button.setProperty("btn", "primary")
-        row.addWidget(self.serial_command_input); row.addWidget(self.send_button)
-        self.serial_text = QLabel("Use the serial command input with caution… sending the wrong command might upset calibration.")
-        self.serial_text.setWordWrap(True); self.serial_text.setProperty("typo", "p1")
-        v.addLayout(row); v.addWidget(self.serial_text)
-        self.serial_command_input.returnPressed.connect(self.send_button.click)
+        serial_cmd_box = QGroupBox("Serial Command input")
+        v = QVBoxLayout(serial_cmd_box)
+
+        row = QHBoxLayout()
+        self.serial_command_input = QLineEdit()
+        self.serial_command_input.setPlaceholderText("Enter serial command")
+
+        self.send_button = QPushButton("Send command")
+        self.send_button.setProperty("btn", "primary")
+
+        row.addWidget(self.serial_command_input)
+        row.addWidget(self.send_button)
+
+        # Feedback label (create once, update later)
+        self.serial_status = QLabel("Click 'Send' to retrieve info !")
+        self.serial_status.setWordWrap(True)  # still useful
+        self.serial_status.setProperty("typo", "p1")
+
+        v.addLayout(row)
+        v.addWidget(self.serial_status)
+
+        # Connect both Enter and button to the same slot
+        self.serial_command_input.returnPressed.connect(self.on_send_command)
         self.send_button.clicked.connect(self.on_send_command)
+
         left_layout.addWidget(serial_cmd_box)
 
         # Temperature calibration data
@@ -147,36 +162,37 @@ class Tab1MaxWidget(QWidget):
 
     def on_send_command(self):
         cmd = self.serial_command_input.text().strip()
-
         if not cmd:
             cmd = "-inf"
+            with shared.write_lock:
+                print(f"devinfo:{shared.cached_device_info}")
 
-        # admin override
+        # Admin override
         is_override = cmd.startswith("+")
-
         if is_override:
             cmd = cmd[1:]
 
+        # Validate command
         if not is_override and not fn.allowed_command(cmd):
-            self.serial_command_sent.setText("Command not allowed")
+            self.serial_status.setText("Caution !! (+- to override)")
             return
 
-        # Send the command
+        # Immediate user feedback
+        self.serial_status.setText(f"Command sent: {cmd}")
+        self.serial_command_input.clear()
+
+        # Send the command (assumed quick)
         process_03(cmd)
-        time.sleep(0.05)  # Wait for response to arrive
 
-        # Update the table
-        self.update_device_info_table()
+        # Non-blocking: wait briefly for response to populate shared state
+        def _finish():
+            # Refresh table
+            self.update_device_info_table()
+            # Show latest received response
+            with shared.write_lock:
+                raw_output = getattr(shared, "max_serial_output", "[No output]")
 
-        # Update UI labels
-        self.serial_command_sent.setText(f"Command sent: {cmd}")
-        self.serial_command_input.setText("")
-
-        # Show the latest received response
-        with shared.write_lock:
-            raw_output = getattr(shared, "max_serial_output", "[No output]")
-        self.serial_output_received = QLabel("Waiting for response...")
-        self.serial_output_received.setText(f"Response: {raw_output}")
+        QTimer.singleShot(50, _finish)
 
 
     def update_device_info_table(self):

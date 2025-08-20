@@ -22,7 +22,7 @@ run_flag_lock = Lock()
 
 # --------------------
 # Versioning
-__version__ = "v3.0.5"
+__version__ = "v3.0.6"
 # --------------------
 
 SETTINGS = {}  
@@ -114,8 +114,8 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 log_file = LOG_DIR / "impulseqt_log.txt"
 
 # Set root logger to DEBUG
-#logging.basicConfig(level=logging.INFO)
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
+#logging.basicConfig(level=logging.DEBUG)
 #logging.basicConfig(level=logging.WARNING)
 #logging.basicConfig(level=logging.ERROR)
 
@@ -229,8 +229,9 @@ t_interval = 1
 max_counts = 0
 max_seconds = 0
 
-# --- 3D Specific ---
+
 compression = 1
+compression_2 = 1
 endTime3d = ""
 startTime3d = ""
 
@@ -322,6 +323,7 @@ SETTINGS_SCHEMA = {
     "coi_switch": {"type": "bool", "default": False},
     "coi_window": {"type": "int", "default": 0},
     "compression": {"type": "int", "default": 1.0},
+    "compression_2": {"type": "int", "default": 1.0},
     "count_history": {"type": "list", "default": []},
     "counts": {"type": "int", "default": 0},
     "counts_2": {"type": "int", "default": 0},

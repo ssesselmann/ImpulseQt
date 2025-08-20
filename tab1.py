@@ -20,10 +20,11 @@ from qt_compat import QBrush
 from qt_compat import QColor
 from qt_compat import QIntValidator
 from qt_compat import QPixmap
+from qt_compat import QPushButton
 
 from tab1_pro import Tab1ProWidget 
 from tab1_max import Tab1MaxWidget
-from shared import logger, MONO, FOOTER
+from shared import logger, MONO, FOOTER, ICON_PATH
 
 class Tab1(QWidget):
     def __init__(self):
@@ -79,21 +80,45 @@ class Tab1(QWidget):
     def switch_device_type(self, value):
         if value == shared.device_type:
             return  # No change needed
-        reply = QMessageBox.question(
-            self,
-            "Confirm Device Change",
-            f"Changing to {value} will quit the application. Continue?",
-            QMessageBox.Yes | QMessageBox.No
-        )
-        if reply == QMessageBox.Yes:
-            logger.info(f"[INFO] Device type changed to {value}")
+
+        # Create message box
+        box = QMessageBox(self)
+        box.setWindowTitle("Confirm Device Change")
+        box.setText(f"Changing to {value} will quit the application.\nDo you want to continue?")
+        box.setIcon(QMessageBox.Question)
+        box.setIconPixmap(QPixmap(ICON_PATH).scaled(48, 48, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+
+        # Manually create QPushButtons
+        yes_btn = QPushButton("Yes")
+        no_btn = QPushButton("No")
+
+        # Set properties for styling
+        yes_btn.setProperty("btn", "primary")
+        no_btn.setProperty("btn", "primary")
+
+        # Force Qt to re-evaluate QSS properties
+        yes_btn.style().unpolish(yes_btn)
+        yes_btn.style().polish(yes_btn)
+        no_btn.style().unpolish(no_btn)
+        no_btn.style().polish(no_btn)
+
+        # Add buttons to the box
+        box.addButton(yes_btn, QMessageBox.YesRole)
+        box.addButton(no_btn, QMessageBox.NoRole)
+
+        # Show and handle result
+        box.exec_()
+
+        if box.clickedButton() == yes_btn:
             with shared.write_lock:
                 shared.device_type = value
                 shared.save_settings()
             logger.info("[INFO] Quitting application to apply new device type")
             QApplication.quit()
         else:
-            self.selector.setCurrentText(shared.device_type)  # Revert selection
+            self.selector.setCurrentText(shared.device_type)
+
+
 
     def set_main_content(self, device_type):
         # Clear current content

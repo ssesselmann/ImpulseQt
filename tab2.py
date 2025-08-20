@@ -103,7 +103,6 @@ class Tab2(QWidget):
         self.has_loaded     = False
         self._last_peaks_t  = 0
         self._last_x_span   = None
-        self._last_peaks_t  = 0
         self.diff_switch    = False
 
        
@@ -267,7 +266,6 @@ class Tab2(QWidget):
         bin_size_layout.setContentsMargins(0, 0, 0, 0)
         self.bin_size = QLineEdit(str(bin_size))
         self.bin_size.setAlignment(Qt.AlignCenter)
-        self.bin_size.setToolTip("Pitch (bin-size)")
         self.bin_size.setValidator(positive_float_validator)
         self.bin_size.textChanged.connect(lambda text: self.on_text_changed(text, "bin_size"))
         bin_size_layout.addWidget(self.labeled_input("Pitch (bin size)", self.bin_size))
@@ -284,7 +282,6 @@ class Tab2(QWidget):
         self.bins_label.setProperty("typo", "p2")
 
         self.bins_selector = QComboBox()
-        self.bins_selector.setToolTip("Select number of channels (lower = more compression)")
 
         # Populate combo from BIN_OPTIONS = [(label, compression), ...]
         self.bins_selector.clear()
@@ -310,23 +307,25 @@ class Tab2(QWidget):
 
         #================================================================
         # OPEN MAX WRAPPER 
-        # ===============================================================
-        self.slb_container_max = self.make_checkbox_container(
-            label="Suppress last bin",
-            checked=slb_switch,
-            tooltip="Suppress last bin",
-            shared_key="slb_switch"
-        )
-        grid.addWidget(self.slb_container_max, 2, 2)
-        self.max_only_widgets.append(self.slb_container_max)
-        # CLOSE MAX WRAPPER =============================================
+        #================================================================
+        # Col 3 Row 3
+        self.slb_switch = QCheckBox("Suppress\nlast bin")
+        self.slb_switch.setChecked(slb_switch)
+        self.slb_switch.stateChanged.connect(lambda state, key="slb_switch": self.on_checkbox_toggle(key, state))
+
+        grid.addWidget(self.slb_switch, 2, 2)
+
+        self.max_only_widgets.append(self.slb_switch)
+        #================================================================
+        # CLOSE MAX WRAPPER 
+        #================================================================
+
 
         # ===================================================
         # OPEN MAX WRAPPER
         # ===================================================
         self.interval_input = QLineEdit(str(t_interval))
         self.interval_input.setAlignment(Qt.AlignCenter)
-        self.interval_input.setToolTip("Interval (s)")
         self.interval_input.setValidator(QIntValidator(1, 86400, self))
         self.interval_input.textChanged.connect(lambda text: self.on_text_changed(text, "t_interval"))
 
@@ -369,7 +368,6 @@ class Tab2(QWidget):
         # --- LLD (left) ---
         self.threshold = QLineEdit(str(threshold))
         self.threshold.setAlignment(Qt.AlignCenter)
-        self.threshold.setToolTip("LLD (bins)")
         self.threshold.setValidator(positive_int_validator)
         self.threshold.textChanged.connect(lambda text: self.on_text_changed(text, "threshold"))
         lld_widget = self.labeled_input("LLD (bins)", self.threshold)
@@ -377,7 +375,6 @@ class Tab2(QWidget):
         # --- Interval (right) ---
         self.interval_input = QLineEdit(str(t_interval))  # replace "1" with your interval value if you have one
         self.interval_input.setAlignment(Qt.AlignCenter)
-        self.interval_input.setToolTip("Interval (s)")
         self.interval_input.setValidator(positive_int_validator)
         self.interval_input.textChanged.connect(lambda text: self.on_text_changed(text, "t_interval"))
         interval_widget = self.labeled_input("Interval (s)", self.interval_input)
@@ -389,7 +386,6 @@ class Tab2(QWidget):
         grid.addWidget(self.threshold_container, 0, 3)
         self.pro_only_widgets.append(self.threshold_container)
         # PRO CLOSE wrapper =============================================================
-
 
         # Col 4 Row 2 - blank
 
@@ -403,7 +399,6 @@ class Tab2(QWidget):
 
         self.tolerance_input = QLineEdit(str(tolerance))
         self.tolerance_input.setAlignment(Qt.AlignCenter)
-        self.tolerance_input.setToolTip("Distortion tolerance threshold")
         self.tolerance_input.setValidator(positive_int_validator)
         self.tolerance_input.textChanged.connect(lambda text: self.on_text_changed(text, "tolerance"))
 
@@ -428,35 +423,32 @@ class Tab2(QWidget):
         grid.addWidget(self.labeled_input("Comparison spectrum", self.select_comparison), 3, 3)
 
         # Col 5 Row 1 ---------------------------------------------------------------------
-        self.comp_container = self.make_checkbox_container(
-            label="Show comparison",
-            checked=comp_switch,
-            tooltip="Comparison Spectrum",
-            shared_key="comp_switch"
-        )
-        grid.addWidget(self.comp_container, 2, 3)
+        # Col 4 Row 3
+        self.comp_switch = QCheckBox("Show\ncomparison")
+        self.comp_switch.setChecked(comp_switch)
+        self.comp_switch.stateChanged.connect(lambda state, key="comp_switch": self.on_checkbox_toggle(key, state))
+
+        grid.addWidget(self.comp_switch, 2, 3)
 
         # =================================================
         # PRO OPEN WRAPPER 
         # =================================================
-        self.coi_container = self.make_checkbox_container(
-            label="Coincidence",
-            checked=coi_switch,
-            tooltip="Coincidence spectrum",
-            shared_key="coi_switch"
-        )
-        grid.addWidget(self.coi_container, 1, 4)
-        self.pro_only_widgets.append(self.coi_container)
+        # Col 5 Row 2
+        self.coi_switch = QCheckBox("Coincidence")
+        self.coi_switch.setChecked(coi_switch)
+        self.coi_switch.stateChanged.connect(lambda state, key="coi_switch": self.on_checkbox_toggle(key, state))
+
+        grid.addWidget(self.coi_switch, 1, 4)
+
+        self.pro_only_widgets.append(self.coi_switch)
         # PRO CLOSE WRAPPER ==============================
 
-         # Col 5 Row 3
-        self.diff_container = self.make_checkbox_container(
-            label="Subtract comparison",
-            checked=diff_switch,
-            tooltip="Subtract comparison",
-            shared_key="diff_switch"
-        )
-        grid.addWidget(self.diff_container, 2, 4)
+        # Col 5 Row 3
+        self.diff_switch = QCheckBox("Subtract\ncomparison")
+        self.diff_switch.setChecked(diff_switch)
+        self.diff_switch.stateChanged.connect(lambda state, key="diff_switch": self.on_checkbox_toggle(key, state))
+
+        grid.addWidget(self.diff_switch, 2, 4)
 
         # Col 5 Row 4
         self.select_flag_table = QComboBox()
@@ -479,41 +471,34 @@ class Tab2(QWidget):
         self.select_flag_table.currentIndexChanged.connect(self.on_select_flag_table_changed)    
         grid.addWidget(self.labeled_input("Select Isotope Library", self.select_flag_table), 3, 4)
 
-        # Col 6 Row 1 
-        self.epb_container = self.make_checkbox_container(
-            label="Energy per bin",
-            checked=epb_switch,
-            tooltip="Energy by bin",
-            shared_key="epb_switch"
-        )
-        grid.addWidget(self.epb_container, 0, 5)
+        # Col 6 Row 1
+        self.epb_switch = QCheckBox("Energy / bin")
+        self.epb_switch.setChecked(epb_switch)
+        self.epb_switch.stateChanged.connect(lambda state, key="epb_switch": self.on_checkbox_toggle(key, state))
 
-        # Col 6 Row 2 
-        self.log_container = self.make_checkbox_container(
-            label="Show log(y)",
-            checked=log_switch,
-            tooltip="Energy by bin",
-            shared_key="log_switch"
-        )
-        grid.addWidget(self.log_container, 1, 5)
+        grid.addWidget(self.epb_switch, 0, 5)
+
+        # Col 6 Row 2
+        self.log_switch = QCheckBox("Log(y)")
+        self.log_switch.setChecked(log_switch)
+        self.log_switch.stateChanged.connect(lambda state, key="log_switch": self.on_checkbox_toggle(key, state))
+
+        grid.addWidget(self.log_switch, 1, 5)
 
         # Col 6 Row 3
-        self.cal_container = self.make_checkbox_container(
-            label="Calibration on",
-            checked=cal_switch,
-            tooltip="Calibration on",
-            shared_key="cal_switch"
-        )
-        grid.addWidget(self.cal_container, 2, 5)
+        self.cal_switch = QCheckBox("Calibration")
+        self.cal_switch.setChecked(cal_switch)
+        self.cal_switch.stateChanged.connect(lambda state, key="cal_switch": self.on_checkbox_toggle(key, state))
+
+        grid.addWidget(self.cal_switch, 2, 5)
 
         # Col 6 Row 4
-        self.iso_container = self.make_checkbox_container(
-            label="Show Isotopes",
-            checked=iso_switch,
-            tooltip="values or isotopes",
-            shared_key="iso_switch"
-        )
-        grid.addWidget(self.iso_container, 3, 5)
+        self.iso_switch = QCheckBox("Isotopes")
+        self.iso_switch.setChecked(iso_switch)
+        self.iso_switch.stateChanged.connect(lambda state, key="iso_switch": self.on_checkbox_toggle(key, state))
+
+        grid.addWidget(self.iso_switch, 3, 5)
+
 
         # Col 7 Row 1
         self.sigma_slider = QSlider(Qt.Horizontal)
@@ -580,7 +565,6 @@ class Tab2(QWidget):
         # Col 8: Notes input (spanning rows 0–3)
         self.notes_input = QTextEdit()
         self.notes_input.setPlaceholderText("Enter notes about this spectrum...")
-        self.notes_input.setToolTip("These notes are saved in the spectrum file")
         self.notes_input.setFixedWidth(260)  # Optional: adjust width
         self.notes_input.setStyleSheet(MONO)
 
@@ -614,7 +598,7 @@ class Tab2(QWidget):
         self.threshold_container,
         self.tolerance_container,
         self.bin_size_container,
-        self.coi_container
+        self.coi_switch
         ]
         self.update_widget_visibility()
 
@@ -636,7 +620,7 @@ class Tab2(QWidget):
     # === Timer to update live data ===
         self.ui_timer = QTimer()
         self.ui_timer.timeout.connect(self.update_ui)  
-        self.ui_timer.start(int(max(50, t_interval * 1000)))
+        self.ui_timer.start(int(max(50, t_interval * 500)))
 
     def update_ui(self):
         if not self.isVisible():      
@@ -650,24 +634,21 @@ class Tab2(QWidget):
             with shared.write_lock:
                 filename   = shared.filename
                 filename_2 = shared.filename_2
-
             if filename:
                 load_histogram(filename)
-
             self.has_loaded = True
 
-    def make_checkbox_container(self, label, checked, tooltip, shared_key):
-        container = QWidget()
-        layout = QVBoxLayout(container)
-        layout.setContentsMargins(0, 0, 0, 0)
+    def load_switches(self):
 
-        checkbox = QCheckBox()
-        checkbox.setChecked(checked)
-        checkbox.setToolTip(tooltip)
-        checkbox.stateChanged.connect(lambda state: self.on_checkbox_toggle(state, shared_key))
+        with shared.write_lock:
+            log_state = shared.log_switch
+            epb_state = shared.epb_switch
+            cal_state = shared.cal_switch
 
-        layout.addWidget(self.labeled_input(label, checkbox))
-        return container
+        self.log_switch.setChecked(log_state)
+        self.cal_switch.setChecked(cal_state)
+        self.epb_switch.setChecked(epb_state)
+
 
     def update_widget_visibility(self):
         with shared.write_lock:
@@ -747,34 +728,50 @@ class Tab2(QWidget):
         file_path = os.path.join(USER_DATA_DIR, f"{filename}.json")
 
         if filename.startswith("i/"):
-            QMessageBox.warning(self, "Invalid filename", 'Cannot overwrite files in "i/" directory.')
             logger.info(f"[WARNING] Invalid filename - can't write to i/ directory 👆")
             return
 
         if os.path.exists(file_path):
-
-            msg_box = QMessageBox(self)
-            msg_box.setIcon(QMessageBox.Question)
-            msg_box.setWindowTitle("Confirm Overwrite")
-            msg_box.setText(f'"{filename}.json" already exists. Overwrite?')
-            msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-            icon = QPixmap(ICON_PATH).scaled(48, 48)
-            msg_box.setIconPixmap(icon)
-
-            reply = msg_box.exec()
-
-            if reply != QMessageBox.Yes:
+            if not self.confirm_overwrite(file_path, filename):
                 return
-
 
         if self.process_thread and self.process_thread.is_alive():
             logger.warning("[WARNING] thread still running, attempting to stop 👆")
             stop_recording()
             self.process_thread.join(timeout=2)
             logger.info("[INFO] Previous thread joined ✅")
-       
-        # self.clear_session()
+
         self.start_recording_2d(filename)
+
+    
+
+    def confirm_overwrite(self, file_path, filename_display=None):
+        if filename_display is None:
+            filename_display = os.path.basename(file_path)
+
+        msg_box = QMessageBox(self)
+        msg_box.setIcon(QMessageBox.Question)
+        msg_box.setWindowTitle("Confirm Overwrite")
+        msg_box.setText(f'"{filename_display}.json" already exists. Overwrite?')
+        msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        icon = QPixmap(ICON_PATH).scaled(48, 48)
+        msg_box.setIconPixmap(icon)
+
+        # Assign custom property to buttons for styling
+        yes_button = msg_box.button(QMessageBox.Yes)
+        no_button = msg_box.button(QMessageBox.No)
+        yes_button.setProperty("btn", "primary")
+        no_button.setProperty("btn", "primary")
+
+        # Refresh style
+        yes_button.style().unpolish(yes_button)
+        yes_button.style().polish(yes_button)
+        no_button.style().unpolish(no_button)
+        no_button.style().polish(no_button)
+
+        reply = msg_box.exec()
+        return reply == QMessageBox.Yes
+
 
     def clear_session(self):
         # Reset shared state only
@@ -868,11 +865,10 @@ class Tab2(QWidget):
             y = histogram[x]
             self.vline.setPos(x)
             self.hline.setPos(y)
-            # optional tooltip: fine
             self.plot_widget.setToolTip(f"Bin: {x}, Counts: {y}")
 
 
-    def on_checkbox_toggle(self, state, name):
+    def on_checkbox_toggle(self, name, state):
         value = bool(state)
 
         with shared.write_lock:
@@ -956,12 +952,12 @@ class Tab2(QWidget):
 
         self.filename_input.setText(filename_no_ext)
 
+        # Load histogram using just the stem
+        load_histogram(filename_no_ext)
+
         with shared.write_lock:
             shared.filename = filename_no_ext
             note = shared.spec_notes
-
-        # Load histogram using just the stem
-        load_histogram(filename_no_ext)
 
         # Safe GUI update outside the lock
         self.notes_input.setText(note)
@@ -1362,7 +1358,8 @@ class Tab2(QWidget):
             y2_scaled = [b * scale for b in y2]
 
             # update protocol variables for downstream plotting
-            y_vals  = [a - s for a, s in zip(y1, y2_scaled)]  
+            y_vals = [max(a - s, 0) for a, s in zip(y1, y2_scaled)]
+
             y_vals2 = y2_scaled                              
             x_vals  = list(range(max_len))
 

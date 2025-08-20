@@ -894,13 +894,8 @@ def reset_stores():
 
 def load_histogram(filename):
 
-    with shared.write_lock:
-        data_directory = shared.USER_DATA_DIR
-
-    # Ensure .json extension exactly once
     filename = Path(filename).stem + ".json"
-    # Build full path using get_path logic
-    path     = get_path(os.path.join(data_directory, filename))
+    path     = get_path(os.path.join(USER_DATA_DIR, filename))
 
     try:
         with open(path, "r", encoding="utf-8") as file:
@@ -909,29 +904,22 @@ def load_histogram(filename):
         if data.get("schemaVersion") == "NPESv2":
             data = data["data"][0]
 
-        spectrum_data = data["resultData"]["energySpectrum"]
-        calibration = spectrum_data.get("energyCalibration", {})
-        coefficients = calibration.get("coefficients")
-
-        # Handle missing, null, or invalid coefficient lists
-        if not isinstance(coefficients, list) or len(coefficients) < 1:
-            coefficients = [0.0, 0.0, 0.0]
-        else:
-            # Fill missing terms with zeros and reverse
-            coefficients = (coefficients + [0.0, 0.0, 0.0])[:3][::-1]
-
+        result = data["resultData"]["energySpectrum"]
+        coeffs = result["energyCalibration"]["coefficients"]
 
         with shared.write_lock:
-            shared.histogram       = spectrum_data["spectrum"]
-            shared.bins            = spectrum_data["numberOfChannels"]
-            shared.elapsed         = spectrum_data["measurementTime"]
+            shared.histogram       = result["spectrum"]
+            shared.bins            = result["numberOfChannels"]
+            shared.elapsed         = result["measurementTime"]
+            shared.dropped_counts  = result.get("droppedPulseCounts", 0)
+            shared.spec_notes      = data.get("sampleInfo", {}).get("note", "")
+
+            # Coefficients inverted from NPES format [c3, c2, c1] → [c1, c2, c3]
+            shared.coeff_1, shared.coeff_2, shared.coeff_3 = coeffs[::-1]
+
+            shared.compression     = int(shared.bins_abs / shared.bins)
             shared.counts          = sum(shared.histogram)
-            shared.dropped_counts  = spectrum_data.get("droppedPulseCounts", 0)
-            shared.spec_notes      = data["sampleInfo"].get("note", "")
-            shared.compression     = int(shared.bins_abs/spectrum_data["numberOfChannels"])
-            shared.coeff_1 = coefficients[0]
-            shared.coeff_2 = coefficients[1]
-            shared.coeff_3 = coefficients[2]
+
 
         logger.info(f"[INFO] Loaded histogram {filename} ✅")    
 
@@ -942,15 +930,9 @@ def load_histogram(filename):
         return False
 
 def load_histogram_2(filename):
-    
-    with shared.write_lock:
-        data_directory = USER_DATA_DIR
 
-    # Ensure .json extension exactly once
     filename = Path(filename).stem + ".json"
-
-    # Build full path using get_path logic
-    path = get_path(os.path.join(data_directory, filename))
+    path = get_path(os.path.join(USER_DATA_DIR, filename))
 
     try:
         with open(path, 'r') as file:
@@ -959,73 +941,70 @@ def load_histogram_2(filename):
         if data["schemaVersion"] == "NPESv2":
             data = data["data"][0]
             
-        with shared.write_lock:
-            shared.histogram_2      = data["resultData"]["energySpectrum"]["spectrum"]
-            shared.bins_2           = data["resultData"]["energySpectrum"]["numberOfChannels"]
-            shared.elapsed_2        = data["resultData"]["energySpectrum"]["measurementTime"]
-            shared.counts_2         = sum(shared.histogram_2)
-            shared.comp_coeff_1     = data["resultData"]["coefficients"][0]
-            shared.comp_coeff_2     = data["resultData"]["coefficients"][1]
-            shared.comp_coeff_3     = data["resultData"]["coefficients"][2]
+        result = data["resultData"]["energySpectrum"]
+        coeffs = result["energyCalibration"]["coefficients"]
 
-        logger.info(f"[INFO] Loaded histogram_2 {filename} ✅") 
+        with shared.write_lock:
+            shared.histogram_2     = result["spectrum"]
+            shared.bins_2          = result["numberOfChannels"]
+            shared.elapsed_2       = result["measurementTime"]
+
+            # Coefficients inverted from NPES format [c3, c2, c1] → [c1, c2, c3]
+            shared.comp_coeff_1, shared.comp_coeff_2, shared.comp_coeff_3 = coeffs[::-1]
+
+            shared.compression_2   = int(shared.bins_abs / shared.bins_2)
+            shared.counts_2        = sum(shared.histogram_2)
+
+
+        logger.info(f"[INFO] Loaded comparison {filename} ✅") 
 
         return True
 
     except Exception as e:
         
-        logger.info(f"[ERROR] failed loading histogram_2 {filename}: {e} ❌")
+        logger.info(f"[ERROR] failed loading comparison {filename}: {e} ❌")
 
         return False
 
 def load_histogram_hmp(stem):
 
-    # Strip any extension and suffix to avoid duplication
     clean_stem = Path(stem).stem.removesuffix("_hmp")
-
-    file_path  = Path(shared.USER_DATA_DIR) / f"{clean_stem}_hmp.json"
+    file_path  = Path(USER_DATA_DIR) / f"{clean_stem}_hmp.json"
 
     if not file_path.exists():
-
         logger.error(f"[ERROR] Load_histogram_hmp, file not found: {file_path} ❌")
-
         with shared.write_lock:
-
             shared.histogram_hmp = [[0] * 512] * 10
-
         return
 
     try:
         with open(file_path, "r", encoding="utf-8") as file:
-
             logger.info("[INFO] loading 3d file ✅")
 
             data = json.load(file)
 
-            logger.info("[INFO]parsed 3d file ✅")
-
         if data.get("schemaVersion") == "NPESv2":
-
             data = data["data"][0]
 
+        result = data["resultData"]["energySpectrum"]
+        coeffs = result["energyCalibration"]["coefficients"]
+
         with shared.write_lock:
-            result                  = data["resultData"]["energySpectrum"]
-            shared.histogram_hmp    = result["spectrum"]
-            shared.counts           = result["validPulseCount"]
-            shared.bins             = result["numberOfChannels"]
-            shared.elapsed          = result["measurementTime"]
-            coeffs                  = result["energyCalibration"]["coefficients"]
-            shared.coeff_1, shared.coeff_2, shared.coeff_3 = coeffs
-            shared.startTime3d      = data["resultData"]["startTime"]
-            shared.endTime3d        = data["resultData"]["startTime"]
-            shared.compression      = int(shared.bins_abs / data["numberOfChannels"])
+            shared.histogram_hmp  = [row[:] for row in result["spectrum"]]
+            shared.counts         = result["validPulseCount"]
+            shared.bins           = result["numberOfChannels"]
+            shared.elapsed        = result["measurementTime"]
+            shared.startTime3d    = data["resultData"]["startTime"]
+            shared.endTime3d      = data["resultData"]["startTime"]
+
+            # Coefficients inverted from NPES format [c3, c2, c1] → [c1, c2, c3]
+            shared.coeff_1, shared.coeff_2, shared.coeff_3 = coeffs[::-1]
+
+            # Calculated field
+            shared.compression = int(shared.bins_abs / shared.bins)
 
 
         logger.info(f"[INFO] shared updated from {file_path} ✅")
-
-    except KeyError as e:
-
-        logger.error(f"[ERROR] Missing expected data key in {file_path}: {e} ❌")
 
     except Exception as e:
 

@@ -30,7 +30,9 @@ from qt_compat import QTimer
 from qt_compat import QVBoxLayout
 from qt_compat import QWidget
 from qt_compat import Signal
+from qt_compat import Slot
 from qt_compat import QGroupBox
+from qt_compat import QIcon
 
 from pathlib import Path
 from mpl_toolkits.mplot3d import Axes3D 
@@ -39,7 +41,7 @@ from matplotlib.figure import Figure
 from matplotlib import cm
 from datetime import datetime, timedelta
 from collections import deque 
-from shared import logger, MONO, START, STOP, BTN, BUD, FOOTER, DLD_DIR, USER_DATA_DIR, BIN_OPTIONS, DARK_BLUE
+from shared import logger, MONO, START, STOP, BTN, BUD, FOOTER, DLD_DIR, USER_DATA_DIR, BIN_OPTIONS, DARK_BLUE, ICON_PATH
 from functions import (
     load_histogram_hmp, 
     get_options_hmp, 
@@ -101,8 +103,8 @@ class Tab3(QWidget):
 
         # START button
         self.start_button = QPushButton("START")
-        self.start_button.setStyleSheet(START)
-        self.start_button.clicked.connect(self.confirm_overwrite)
+        self.start_button.setProperty("btn", "start")
+        self.start_button.clicked.connect(self.on_start_clicked)
         top_left_col.addWidget(self.start_button)
 
         # select file dropdown label
@@ -204,7 +206,7 @@ class Tab3(QWidget):
 
         # Scroll up button
         self.scroll_up_btn = QPushButton("Scroll ↑")
-        self.scroll_up_btn.setStyleSheet(BUD)
+        self.scroll_up_btn.setProperty("btn", "muted")
         self.scroll_up_btn.clicked.connect(self.scroll_up)
         top_left_col.addWidget(self.scroll_up_btn)
 
@@ -216,7 +218,7 @@ class Tab3(QWidget):
 
         # STOP button
         self.stop_button = QPushButton("STOP")
-        self.stop_button.setStyleSheet(STOP)
+        self.stop_button.setProperty("btn", "stop")
         self.stop_button.clicked.connect(self.on_stop_clicked)
         top_right_col.addWidget(self.stop_button)
 
@@ -262,23 +264,23 @@ class Tab3(QWidget):
         top_right_col.addWidget(self.t_interval_input)
 
         # Download array button
-        self.dld_array_btn = QPushButton("Download array")
-        self.dld_array_btn.setStyleSheet(BTN)
-        self.dld_array_btn.clicked.connect(self.download_array_csv)
-        top_right_col.addWidget(self.dld_array_btn)
+        self.dld_array_button = QPushButton("Download array")
+        self.dld_array_button.setProperty("btn", "primary")
+        self.dld_array_button.clicked.connect(self.download_array_csv)
+        top_right_col.addWidget(self.dld_array_button)
 
 
         # Scroll down button
         self.scroll_down_btn = QPushButton("Scroll ↓")
-        self.scroll_down_btn.setStyleSheet(BUD)
+        self.scroll_down_btn.setProperty("btn", "muted")
         self.scroll_down_btn.clicked.connect(self.scroll_down)
         top_right_col.addWidget(self.scroll_down_btn)
 
         # 2. Middle Section — Instructions
         middle_section = QWidget()
         middle_layout = QVBoxLayout(middle_section)        
-        text =  """This 3D spectrum gets it's calibration ssettings from the 2D spectrum on tab2. 3D spectra quickly become large arrays, for this reason the number of channels have been restricted to less than 1024 channels. Calibration is automatically adjusted accordingly. The plot shows the last 60 seconds, to see the entire file download the csv and open the array in a third party application."""
-        text2 = "\n\nMore detailed arrays can be achieved by increasing the interval time."
+        text =  """This plot inherits calibration and interval from the 2D histogram"""
+        text2 = "\nDecrease bins and increase interval to reduce file size."
         self.instructions_label = QLabel(text+text2)
         self.instructions_label.setProperty("typo","p1")
         self.instructions_label.setWordWrap(True)
@@ -330,11 +332,6 @@ class Tab3(QWidget):
         dummy = np.zeros((10, 10))
         self.ax.imshow(dummy, aspect='auto', origin='lower', cmap='turbo')
 
-
-
-
-
-
         self.canvas.draw()
         tab3_layout.addWidget(self.canvas, stretch=2)
 
@@ -352,9 +349,10 @@ class Tab3(QWidget):
     #    FUNCTIONS
     # ======================================================================
     def load_on_show(self):
+
         if not self.has_loaded:
             with shared.write_lock:
-                filename = shared.filename
+                filename    = shared.filename
                 compression = shared.compression
 
             load_histogram_hmp(filename)
@@ -362,14 +360,25 @@ class Tab3(QWidget):
             self.refresh_bin_selector()
 
             index = self.bins_selector.findData(compression)
-            
+
             if index != -1:
                 self.bins_selector.setCurrentIndex(index)
             else:
                 logger.warning(f"[WARNING] Compression {compression} not found in BIN_OPTIONS 👆\n")
 
             self.has_loaded = True
-     
+
+    def load_switches(self):
+
+        with shared.write_lock:
+            log_state = shared.log_switch
+            epb_state = shared.epb_switch
+            cal_state = shared.cal_switch
+
+        self.log_switch.setChecked(log_state)
+        self.cal_switch.setChecked(cal_state)
+        self.epb_switch.setChecked(epb_state)
+
 
     def scroll_up(self):
         self.scroll_offset = min(self.scroll_offset + 30, len(self.plot_data) - self.plot_window_size)
@@ -403,6 +412,7 @@ class Tab3(QWidget):
     def on_checkbox_toggle(self, key, state):
         with shared.write_lock:
             setattr(shared, key, bool(state))
+            logger.info(f"shared.{key} = {state}")
             shared.save_settings()
 
         self.update_graph()    
@@ -454,7 +464,14 @@ class Tab3(QWidget):
 
             self.plot_data.clear()
             self.time_stamps.clear()
+
+            # Push all rows into plot_data at once
+            with shared.write_lock:
+                for row in shared.histogram_hmp:
+                    self.plot_data.append(row[:])  # use slice to ensure deep copy if needed
+
             self.update_graph()
+
 
         except Exception as e:
             logger.warning(f"[WARNING] Failed to load 3D file: {e} 👆\n")
@@ -462,40 +479,66 @@ class Tab3(QWidget):
                 self.ready_to_plot = False
                 run_flag = False
 
-    def on_stop_clicked(self):
+    @Slot()
+    def on_start_clicked(self):
 
-        self.refresh_timer.stop()
-        stop_recording()
-        time.sleep(1)
-        self.refresh_file_list()
-        self.filename_dropdown.setCurrentIndex(0)
-
-
-    def confirm_overwrite(self):
-        filename = self.filename_input.text()
+        filename = self.filename_input.text().strip()
         file_path = os.path.join(USER_DATA_DIR, f"{filename}_hmp.json")
+
         if os.path.exists(file_path):
-            result = QMessageBox.question(
-                self, "Overwrite Confirmation",
-                f"File {filename}_hmp.json exists. Overwrite?",
-                QMessageBox.Yes | QMessageBox.No
-            )
-            if result == QMessageBox.No:
+            if not self.confirm_overwrite(file_path, f"{filename}_hmp"):
                 return
+
         self.start_recording_hmp(filename)
+
+    def confirm_overwrite(self, file_path, filename_display=None):
+        if filename_display is None:
+            filename_display = os.path.basename(file_path)
+
+        msg_box = QMessageBox(self)
+        msg_box.setIcon(QMessageBox.Question)
+        msg_box.setWindowTitle("Confirm Overwrite")
+        msg_box.setText(f'"{filename_display}.json" already exists. Overwrite?')
+        msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        icon = QPixmap(ICON_PATH).scaled(48, 48)
+        msg_box.setIconPixmap(icon)
+
+        # Assign custom property to buttons for styling
+        yes_button = msg_box.button(QMessageBox.Yes)
+        no_button = msg_box.button(QMessageBox.No)
+        yes_button.setProperty("btn", "primary")
+        no_button.setProperty("btn", "primary")
+
+        # Refresh style
+        yes_button.style().unpolish(yes_button)
+        yes_button.style().polish(yes_button)
+        no_button.style().unpolish(no_button)
+        no_button.style().polish(no_button)
+
+        reply = msg_box.exec()
+        return reply == QMessageBox.Yes
+
+
 
     def start_recording_hmp(self, filename):
         try:
-            self.plot_data.clear()
-
+            
             with shared.write_lock:
                 shared.filename = filename
                 coi             = shared.coi_switch
                 device_type     = shared.device_type
                 t_interval      = shared.t_interval
+                histogram_hmp   = []
 
             # --- Reset plotting ---
+            
             self.refresh_timer.stop()
+
+            self.figure.clear()      
+            self.ax = self.figure.add_subplot(111)  
+            self.canvas.draw()   
+            self.plot_data.clear() 
+
             self.refresh_timer.start(t_interval * 1000)
 
             # Call the centralized recording logic
@@ -506,6 +549,14 @@ class Tab3(QWidget):
 
         except Exception as e:
             QMessageBox.critical(self, "Start Error", f"Error starting: {str(e)}")
+
+    def on_stop_clicked(self):
+
+        self.refresh_timer.stop()
+        stop_recording()
+        time.sleep(1)
+        self.refresh_file_list()
+        self.filename_dropdown.setCurrentIndex(0)
 
 
     def refresh_bin_selector(self):
@@ -604,7 +655,7 @@ class Tab3(QWidget):
                 counts     = shared.counts
                 elapsed    = shared.elapsed
                 bins       = shared.bins
-                coeffs     = [shared.coeff_3, shared.coeff_2, shared.coeff_1]
+                coeffs     = [shared.coeff_1, shared.coeff_2, shared.coeff_3]
 
             # ── Ensure data is valid ────────────────────────────────────────
             if not hist3d or not isinstance(hist3d[-1], list):
@@ -616,7 +667,9 @@ class Tab3(QWidget):
                 return
 
             # ── Append and maintain buffer ──────────────────────────────────
+
             self.plot_data.append(hist3d[-1])
+
 
             if not self.plot_data:
                 logger.warning("[WARNING] Plot data is empty 👆\n")
@@ -637,27 +690,24 @@ class Tab3(QWidget):
             # Y-axis in seconds
             y_axis = np.arange(offset, offset + Z.shape[0]) * t_interval
 
-            y_axis = np.arange(offset, offset + Z.shape[0]) * t_interval
 
             if Z.ndim != 2 or Z.shape[1] != bins:
                 logger.error(f"[ERROR] Z shape mismatch: {Z.shape}, expected (n_rows, {bins}) ❌\n")
                 return
 
+            bin_indices = np.arange(bins)
+            x_axis      = bin_indices                
+
+            if epb_switch:
+                weights = x_axis / np.mean(x_axis) 
+                Z *= weights[np.newaxis, :] 
+
             if log_switch:
                 Z[Z <= 0] = 0.1
                 Z = np.log10(Z)    
 
-            # ── Axes: Energy/Bins (X), Time (Y) ─────────────────────────────
-            bin_indices = np.arange(bins)
             if cal_switch:
-                x_axis = coeffs[2] * bin_indices**2 + coeffs[1] * bin_indices + coeffs[0]
-            else:
-                x_axis = bin_indices
-
-            if epb_switch:
-                # Normalize x_axis to a multiplier (e.g. 1.0 to 10.0 range)
-                weights = x_axis / np.mean(x_axis) 
-                Z *= weights[np.newaxis, :]   
+                x_axis = coeffs[0] * bin_indices**2 + coeffs[1] * bin_indices + coeffs[2]
 
             num_rows = Z.shape[0]
             y_axis = np.arange(offset, offset + Z.shape[0]) * t_interval
