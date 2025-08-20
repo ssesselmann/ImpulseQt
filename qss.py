@@ -36,7 +36,9 @@ QWidget {
     font-size: 13px;
 }
 
-
+QCheckBox {
+    color: #b5cbf5
+}
 
 QCheckBox::indicator {
     width: 18px;
@@ -48,6 +50,7 @@ QCheckBox::indicator {
 
 QCheckBox::indicator:checked {
     background-color: #FF0000;
+
 }
 
 QFont {
@@ -155,7 +158,7 @@ QPlainTextEdit[mono="true"],
 QTextEdit[mono="true"],
 QTableView[mono="true"],
 QTreeView[mono="true"] {
-    font-family: Menlo, Consolas, "Courier New", monospace;
+    font-family: "Menlo", "Consolas", "Courier New", "Courier";
     font-size: 10pt;
     color: #555;
 }
@@ -185,8 +188,8 @@ QPushButton[btn="primary"]:hover  { background: #E88430; }
 QPushButton[btn="primary"]:pressed{ background: #B85E17; }
 QPushButton[btn="primary"]:disabled{ background: #F0B280; color: #ECECEC; }
 
-QPushButton[btn="muted"]         { background: #b5cbf5; }
-QPushButton[btn="muted"]:hover   { background: #FFFFFF; color: #000000;}
+QPushButton[btn="muted"]         { background: #999999; }
+QPushButton[btn="muted"]:hover   { background: #BBBBBB; color: #000000;}
 QPushButton[btn="muted"]:pressed { background: #646464; }
 QPushButton[btn="muted"]:disabled{ background: #B0B0B0; color: #ECECEC; }
 
@@ -216,6 +219,7 @@ QSlider::handle:horizontal {
     margin: -4px 0;   /* centers handle */
     border-radius: 7px;
 }
+
 
 
 
