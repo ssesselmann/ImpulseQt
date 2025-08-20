@@ -168,7 +168,8 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
                 shared.elapsed          = local_elapsed
                 shared.spec_notes       = spec_notes
                 shared.dropped_counts   = dropped_counts
-                shared.histogram        = full_histogram.copy()  
+                if mode in (2, 4):
+                    shared.histogram    = full_histogram.copy()  
                 shared.count_history.append(counts_per_sec)
 
             interval_counter, last_histogram = update_mode_3_data(
