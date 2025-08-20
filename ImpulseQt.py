@@ -82,7 +82,7 @@ def initialize_user_data():
 # StatusBus / QtStatusHandler
 class StatusBus(QObject):
 
-    message = Signal(str, int)   # (msg, level)
+    message = Signal(str, int) 
 
 class QtStatusHandler(logging.Handler):
     def __init__(self, bus, level=logging.INFO):
@@ -170,7 +170,6 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(delay, lambda m=msg, lv=level: self._commit_status(m, lv))
             return
 
-        # severity color
         if level >= logging.ERROR:
             color = "#FF0000" 
 
@@ -189,11 +188,14 @@ class MainWindow(QMainWindow):
         w = self.tabs.widget(index)
         if hasattr(w, "load_on_show"):
             w.load_on_show()
+
         if hasattr(w, "update_bins_selector"):
             w.update_bins_selector()
+            
+        if hasattr(w, "load_switches"):
+            w.load_switches()
 
     def closeEvent(self, event):
-        # Save size/position
         pos = self.pos()
         size = self.size()
         shared.window_pos_x = pos.x()
@@ -203,11 +205,6 @@ class MainWindow(QMainWindow):
         shared.session_end = datetime.datetime.now()
         shared.save_settings()
 
-        # Show feedback popup
-        popup = FeedbackPopup(self)
-        popup.exec()  # Modal — waits until user responds
-
-        # Extra cleanup from the new version
         for name in ("ui_timer", "refresh_timer"):
             t = getattr(self, name, None)
             if t:
@@ -223,7 +220,6 @@ class MainWindow(QMainWindow):
             if h.__class__.__name__ == "QtStatusHandler":
                 logger.removeHandler(h)
 
-        # Now close
         super().closeEvent(event)
 
 
