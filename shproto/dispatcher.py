@@ -225,11 +225,10 @@ def start(sn=None):
     csv_file_path = os.path.join(USER_DATA_DIR, "_max-pulse-shape.csv")  # hoisted for safety
 
     while not stopflag:
-
-        if not shared.run_flag.is_set():
-            time.sleep(0.25)  # Quarter-second pause
-        else:
-            time.sleep(0.05)
+        
+        # Energy saver
+        if not shared.run_flag.is_set(): time.sleep(0.2)
+        else: time.sleep(0.05)
 
         _elapsed_push_if_needed(period=0.95)
 
@@ -268,12 +267,14 @@ def start(sn=None):
         # ---- blocking read with timeout; no busy spin, no lock around I/O ----
         try:
             rx_byte_arr = nano.read(size=READ_BUFFER)
+            
             if not rx_byte_arr:
-                continue  # timed out, loop again
+                
+                continue  
 
         except serial.SerialException as e:
 
-            logger.error(f"[ERROR] shproto.dispatcher.start: {e} ❌")
+            logger.warning(f"[WARNING] dispatcher: {e} ❌")
 
             break
 

@@ -10,6 +10,8 @@ import shproto
 import threading
 import time
 
+from datetime import datetime
+
 from qt_compat import QWidget
 from qt_compat import QVBoxLayout
 from qt_compat import QGridLayout
@@ -1451,7 +1453,10 @@ class Tab2(QWidget):
         # Optional: nudge autorange to recompute with the new transform
         self.plot_widget.autoRange()
 
-        self.plot_title.setText(f"Histogram \n {filename}")
+        now = datetime.now()
+        formatted = now.strftime("%Y-%m-%d %H:%M:%S")
+        print(f"Current time: {formatted}")
+        self.plot_title.setText(f"{formatted}\n {filename}")
 
         # 5) Peak markers — rate-limited (safe to call; avoid y<=0 in log in that method)
         now = time.monotonic()

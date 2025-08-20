@@ -73,7 +73,8 @@ class Tab3(QWidget):
 
     def init_ui(self):
         # Main layout for the entire widget
-        main_layout = QVBoxLayout(self)     
+        main_layout = QVBoxLayout(self)
+
         tab3_layout = QHBoxLayout()         
         main_layout.addLayout(tab3_layout) 
 
@@ -306,9 +307,6 @@ class Tab3(QWidget):
         left_panel_layout.addWidget(middle_section, stretch=1)
         left_panel_layout.addWidget(bottom_section, stretch=1)
 
-
-
-
         # Create the figure with dark background
         self.figure = Figure(facecolor=DARK_BLUE)  # DARK_BLUE
         self.canvas = FigureCanvas(self.figure)
@@ -330,7 +328,11 @@ class Tab3(QWidget):
 
         # Optional: empty dummy image so canvas shows something
         dummy = np.zeros((10, 10))
-        self.ax.imshow(dummy, aspect='auto', origin='lower', cmap='turbo')
+        img = self.ax.imshow(dummy,aspect='auto',origin='lower',cmap='turbo',vmin=0,vmax=1)
+        cbar = self.figure.colorbar(img, ax=self.ax, label="Counts")
+        cbar.ax.yaxis.set_tick_params(color='white')
+        plt.setp(cbar.ax.yaxis.get_ticklabels(), color='white')
+        cbar.set_label("Counts", color='white')
 
         self.canvas.draw()
         tab3_layout.addWidget(self.canvas, stretch=2)
@@ -352,7 +354,7 @@ class Tab3(QWidget):
 
         if not self.has_loaded:
             with shared.write_lock:
-                filename    = shared.filename
+                filename    = shared.filename_hmp
                 compression = shared.compression
 
             load_histogram_hmp(filename)

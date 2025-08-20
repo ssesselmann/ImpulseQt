@@ -174,7 +174,7 @@ class MainWindow(QMainWindow):
             color = "#FF0000" 
 
         elif level >= logging.WARNING:
-            color = "#E0751C"
+            color = "#FFFF00"
 
         else:
             color = "#9AFF7B"

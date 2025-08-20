@@ -445,13 +445,13 @@ def start_max_recording(mode):
     # Start dispatcher thread (if needed)
     dispatcher_thread = threading.Thread(target=shproto.dispatcher.start, daemon=True)
     dispatcher_thread.start()
-    time.sleep(0.25)
+    time.sleep(0.15)
     shproto.dispatcher.process_03('-mode 0')
-    time.sleep(0.25)
+    time.sleep(0.15)
     shproto.dispatcher.process_03('-rst')
-    time.sleep(0.25)
+    time.sleep(0.15)
     shproto.dispatcher.process_03('-sta')
-    time.sleep(0.25)
+    time.sleep(0.15)
 
     # Create a recording thread to run process_01 or process_02
     def run_dispatcher():
@@ -486,7 +486,7 @@ def start_max_recording(mode):
                 shproto.dispatcher.process_01(filename, compression, device, t_interval)
 
         except Exception as e:
-            logger.error(f"[ERROR] MAX process thread crashed: {e} ✅")
+            logger.error(f"[ERROR] fn.run_dispatcher: {e} ✅")
 
     process_thread = threading.Thread(target=run_dispatcher, daemon=True)
     process_thread.start()
@@ -972,7 +972,7 @@ def load_histogram_hmp(stem):
     file_path  = Path(USER_DATA_DIR) / f"{clean_stem}_hmp.json"
 
     if not file_path.exists():
-        logger.error(f"[ERROR] Load_histogram_hmp, file not found: {file_path} ❌")
+        logger.warning(f"[WARNING] file not found: {file_path} ❌")
         with shared.write_lock:
             shared.histogram_hmp = [[0] * 512] * 10
         return
