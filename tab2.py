@@ -622,7 +622,7 @@ class Tab2(QWidget):
     # === Timer to update live data ===
         self.ui_timer = QTimer()
         self.ui_timer.timeout.connect(self.update_ui)  
-        self.ui_timer.start(int(max(50, t_interval * 500)))
+        self.ui_timer.start(1000)
 
     def update_ui(self):
         if not self.isVisible():      
