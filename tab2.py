@@ -111,7 +111,7 @@ class Tab2(QWidget):
 
         # ---- Title Setup ----
         self.plot_title = QLabel("Histogram")  
-        self.plot_title.setProperty("typo", "h2")  
+        self.plot_title.setProperty("typo", "p1")  
         self.plot_title.setAlignment(Qt.AlignRight)
 
         # --- Create the PlotWidget first ----------
@@ -1455,7 +1455,6 @@ class Tab2(QWidget):
 
         now = datetime.now()
         formatted = now.strftime("%Y-%m-%d %H:%M:%S")
-        print(f"Current time: {formatted}")
         self.plot_title.setText(f"{formatted}\n {filename}")
 
         # 5) Peak markers — rate-limited (safe to call; avoid y<=0 in log in that method)
