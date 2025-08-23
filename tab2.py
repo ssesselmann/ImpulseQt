@@ -1339,8 +1339,6 @@ class Tab2(QWidget):
             logger.warning("[WARNING] No histogram data 👆")
             return
 
-        
-
         # 2) Build series in linear space
         x_vals  = list(range(len(histogram)))
         y_vals  = histogram.copy()
