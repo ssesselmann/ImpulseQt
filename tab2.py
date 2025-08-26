@@ -1179,6 +1179,15 @@ class Tab2(QWidget):
         pi.showGrid(x=True, y=True, alpha=0.18)
 
 
+    def calibrate_spectrum(self, indices, coeffs, cal_switch):
+        # if not cal_switch Just return bin indices
+        if not cal_switch or coeffs is None or not any(np.isfinite(coeffs)):
+            return indices
+        # if cal switch convert indices to energy
+        poly = np.poly1d(coeffs)
+        return np.polyval(poly, np.asarray(indices, dtype=float)).tolist()
+
+
     def update_peak_markers(self):
 
         with shared.write_lock:
@@ -1378,16 +1387,10 @@ class Tab2(QWidget):
             except Exception as e:
                 logger.error(f"[ERROR] Gaussian correlation failed: {e} ❌")
 
-        # Calibration (X only)
-        if cal_switch and any(coeff_abc):
-            xv = np.asarray(x_vals, dtype=float)
-            x_vals = np.polyval(np.poly1d(coeff_abc), xv).tolist()
-            if x_vals2:
-                xv2 = np.asarray(x_vals2, dtype=float)
-                x_vals2 = np.polyval(np.poly1d(comp_coeff_abc), xv2).tolist()
-            if x_vals_corr:
-                xvc = np.asarray(x_vals_corr, dtype=float)
-                x_vals_corr = np.polyval(np.poly1d(coeff_abc), xvc).tolist()
+        x_vals      = self.calibrate_spectrum(x_vals,      coeff_abc,      cal_switch)
+        x_vals2     = self.calibrate_spectrum(x_vals2,     comp_coeff_abc, cal_switch) if x_vals2 else []
+        x_vals_corr = self.calibrate_spectrum(x_vals_corr, coeff_abc,      cal_switch) if x_vals_corr else []
+
 
         # EPB (display only) — linear space
         if epb_switch:
