@@ -18,7 +18,7 @@ class CalibrationPopup(QDialog):
     def __init__(self, poly_label=None, filename=None):
         super().__init__()
         self.poly_label = poly_label
-        self.filename = filename or shared.filename  # fallback ok
+        self.filename   = filename or shared.filename  # fallback ok
 
         self.setWindowTitle("Calibration Settings")
         self.setFixedSize(400, 300)
@@ -28,7 +28,7 @@ class CalibrationPopup(QDialog):
             layout.addWidget(QLabel(f"File: {Path(self.filename).with_suffix('.json').name}"))
 
         grid = QGridLayout()
-        self.bin_inputs = []
+        self.bin_inputs    = []
         self.energy_inputs = []
 
         for i in range(5):
@@ -58,6 +58,7 @@ class CalibrationPopup(QDialog):
     def update_calibration(self):
         bins, energies = [], []
 
+        # Collect inputs
         for i in range(5):
             try:
                 b = int(self.bin_inputs[i].text())
@@ -65,11 +66,12 @@ class CalibrationPopup(QDialog):
                 setattr(shared, f"calib_bin_{i+1}", b)
                 setattr(shared, f"calib_e_{i+1}", e)
                 if b > 0 and e > 0:
-                    bins.append(b); energies.append(e)
+                    bins.append(b)
+                    energies.append(e)
             except ValueError:
                 continue
 
-        # --- build coeffs as pure Python floats ---
+        # --- Fit polynomial ---
         coeffs = [0.0, 0.0, 0.0]
         if len(bins) == 1:
             coeffs = [0.0, 0.0, float(energies[0])]
@@ -82,43 +84,44 @@ class CalibrationPopup(QDialog):
 
         shared.coeff_1, shared.coeff_2, shared.coeff_3 = coeffs
 
-        # --- save to file (robust path + structure) ---
+        # --- Update file (preserve everything else) ---
         if self.filename:
             try:
                 file_path = USER_DATA_DIR / Path(self.filename).with_suffix(".json")
                 file_path.parent.mkdir(parents=True, exist_ok=True)
 
-                # Load or start a minimal NPESv2-like skeleton
+                # Load existing JSON
                 if file_path.exists():
                     with open(file_path, "r", encoding="utf-8") as f:
                         data = json.load(f)
                 else:
-                    data = {}
+                    logger.error(f"File {file_path} not found — cannot update calibration ❌")
+                    return
 
-                # Ensure nested dicts exist
-                rd = data.setdefault("resultData", {})
-                es = rd.setdefault("energySpectrum", {})
+                # Drill safely into NPESv2 structure
+                root    = data.setdefault("data", [{}])[0]
+                rd      = root.setdefault("resultData", {})
+                es      = rd.setdefault("energySpectrum", {})
 
-                # NPESv2 stores coefficients reversed (c, b, a)
+                # Update only calibration
                 es["energyCalibration"] = {
                     "polynomialOrder": 2,
-                    "coefficients": [coeffs[2], coeffs[1], coeffs[0]],
+                    "coefficients": [coeffs[2], coeffs[1], coeffs[0]],  # NPESv2 order
                 }
 
-                # Keep the raw points you entered as well
-                calib = data.setdefault("calibration", {})
-                for i in range(5):
-                    calib[f"calib_bin_{i+1}"] = int(getattr(shared, f"calib_bin_{i+1}", 0) or 0)
-                    calib[f"calib_e_{i+1}"]   = float(getattr(shared, f"calib_e_{i+1}", 0.0) or 0.0)
+                # optionally save calibration points
+                # es["calibrationPoints"] = [
+                #     {"bin": b, "energy": e} for b, e in zip(bins, energies)
+                # ]
 
+                # Save updated file
                 with open(file_path, "w", encoding="utf-8") as f:
-                    json.dump(data, f, indent=2)
+                    json.dump(data, f)
 
-                logger.info(f"Calibration succeeded for {file_path} ✅")    
+                logger.info(f"Calibration updated ✅ {file_path}")
 
             except Exception as e:
-                # Include more context for debug
-                logger.exception(f"[ERROR] Failed to save coefficients into {file_path}: {e} ❌")
+                logger.exception(f"[ERROR] Failed to update calibration in {file_path}: {e} ❌")
 
         if self.poly_label:
             self.poly_label.setText(
@@ -126,3 +129,4 @@ class CalibrationPopup(QDialog):
             )
 
         self.accept()
+
