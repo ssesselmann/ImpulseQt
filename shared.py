@@ -58,7 +58,7 @@ LIGHT_GREEN = "#9AFF7B"
 
 WHITE       = "#FFFFFF"
 
-PINK        = "#FF7B9C"
+PINK        = "#FF0066"
 
 RED         = "#FF0000"
 
