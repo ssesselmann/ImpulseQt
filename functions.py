@@ -907,16 +907,17 @@ def load_histogram(filename):
         result = data["resultData"]["energySpectrum"]
         coeffs = result["energyCalibration"]["coefficients"]
 
+
         with shared.write_lock:
             shared.histogram       = result["spectrum"]
             shared.bins            = result["numberOfChannels"]
             shared.elapsed         = result["measurementTime"]
             shared.dropped_counts  = result.get("droppedPulseCounts", 0)
             shared.spec_notes      = data.get("sampleInfo", {}).get("note", "")
-
             # Coefficients inverted from NPES format [c3, c2, c1] → [c1, c2, c3]
-            shared.coeff_1, shared.coeff_2, shared.coeff_3 = coeffs[::-1]
-
+            shared.coeff_1         = coeffs[2]
+            shared.coeff_2         = coeffs[1]
+            shared.coeff_3         = coeffs[0]
             shared.compression     = int(shared.bins_abs / shared.bins)
             shared.counts          = sum(shared.histogram)
 
@@ -948,9 +949,10 @@ def load_histogram_2(filename):
             shared.histogram_2     = result["spectrum"]
             shared.bins_2          = result["numberOfChannels"]
             shared.elapsed_2       = result["measurementTime"]
-
             # Coefficients inverted from NPES format [c3, c2, c1] → [c1, c2, c3]
-            shared.comp_coeff_1, shared.comp_coeff_2, shared.comp_coeff_3 = coeffs[::-1]
+            shared.comp_coeff_1    = coeffs[2]
+            shared.comp_coeff_2    = coeffs[1]
+            shared.comp_coeff_3    = coeffs[0]
 
             shared.compression_2   = int(shared.bins_abs / shared.bins_2)
             shared.counts_2        = sum(shared.histogram_2)
