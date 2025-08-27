@@ -44,11 +44,11 @@ _start_lock         = threading.Lock()
 _TIME_SCALE         = 1
 
 # ---- local elapsed timer (host based) ----
-_elapsed_lock = threading.Lock()
-_elapsed_accum = 0.0            # seconds accumulated while stopped or between runs
+_elapsed_lock       = threading.Lock()
+_elapsed_accum      = 0.0       # seconds accumulated while stopped or between runs
 _elapsed_start_host = None      # perf_counter() when running, else None
-_elapsed_running = False        # True while "started"
-_elapsed_last_push = 0.0        # last time we pushed shared.elapsed
+_elapsed_running    = False     # True while "started"
+_elapsed_last_push  = 0.0       # last time we pushed shared.elapsed
 
 # CPS from full-spectrum (between STATs)
 _hist_delta_since_stat = 0      # sum of bin deltas since last STAT
