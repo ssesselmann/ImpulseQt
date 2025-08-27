@@ -746,7 +746,6 @@ class Tab2(QWidget):
         self.start_recording_2d(filename)
 
     
-
     def confirm_overwrite(self, file_path, filename_display=None):
         if filename_display is None:
             filename_display = os.path.basename(file_path)
@@ -855,20 +854,55 @@ class Tab2(QWidget):
         populate_combo(self.select_file)
         populate_combo(self.select_comparison)
 
+    # on_mouse_moved --------------------------------
+    # Slightly complicated function because 
+    # it becomes necessary to uncalibrate the
+    # x value in order to obtain the correct y value.
+    # -----------------------------------------------
     def on_mouse_moved(self, pos):
         vb = self.plot_widget.getViewBox()
         mouse_point = vb.mapSceneToView(pos)
-        x = int(mouse_point.x())
+        x_val = float(mouse_point.x()) 
 
         with shared.write_lock:
-            histogram = shared.histogram.copy()
+            histogram  = shared.histogram.copy()
+            cal_switch = shared.cal_switch
+            diff_switch= shared.diff_switch
+            coeffs     = [shared.coeff_1, shared.coeff_2, shared.coeff_3]
 
-        if 0 <= x < len(histogram):
-            y = histogram[x]
-            self.vline.setPos(x)
+        pen_color = WHITE if diff_switch else LIGHT_GREEN
+        pen = pg.mkPen(color=pen_color, width=1)
+        self.vline.setPen(pen)
+        self.hline.setPen(pen)
+    
+
+        if len(histogram) == 0:
+            return
+
+        if cal_switch:
+            ch_idx = self.inverse_calibration(x_val, coeffs, len(histogram))
+            if ch_idx is None:
+                return
+
+            ch_idx = int(round(ch_idx))
+            y = histogram[ch_idx]
+
+            # keV on x-axis, counts on y-axis
+            self.vline.setPos(x_val)
             self.hline.setPos(y)
-            self.plot_widget.setToolTip(f"Bin: {x}, Counts: {y}")
+            self.plot_widget.setToolTip(f"{x_val:.2f} keV\n{y} cts")
 
+        else:
+            ch_idx = int(round(x_val))
+            if not (0 <= ch_idx < len(histogram)):
+                return
+            y = histogram[ch_idx]
+
+            self.vline.setPos(ch_idx)
+            self.hline.setPos(y)       
+            self.plot_widget.setToolTip(f"Bin: {ch_idx}\ncts: {y}")
+
+  
 
     def on_checkbox_toggle(self, name, state):
         value = bool(state)
@@ -1178,15 +1212,23 @@ class Tab2(QWidget):
         pi.getAxis("bottom").setTextPen(WHITE)
         pi.showGrid(x=True, y=True, alpha=0.18)
 
-
     def calibrate_spectrum(self, indices, coeffs, cal_switch):
-        # if not cal_switch Just return bin indices
         if not cal_switch or coeffs is None or not any(np.isfinite(coeffs)):
             return indices
-        # if cal switch convert indices to energy
         poly = np.poly1d(coeffs)
         return np.polyval(poly, np.asarray(indices, dtype=float)).tolist()
 
+    # required for on_mouse_moved
+    def inverse_calibration(self, energy, coeffs, n_channels):
+        poly = np.poly1d(coeffs)
+        roots = np.roots(poly - energy)
+        real_roots = roots[np.isreal(roots)].real
+        if len(real_roots) == 0:
+            return None
+        valid = [r for r in real_roots if 0 <= r < n_channels]
+        if not valid:
+            return None
+        return valid[0]
 
     def update_peak_markers(self):
 
