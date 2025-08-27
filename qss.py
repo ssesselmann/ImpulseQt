@@ -32,9 +32,10 @@ QGroupBox::title {
 QWidget {
     background-color: #112365;
     color: #aaaaaa;
-    font-family: "Helvetica Neue";
+    font-family: "Helvetica Neue", "Segoe UI", Arial, sans-serif;
     font-size: 13px;
 }
+
 
 QCheckBox {
     color: #b5cbf5
@@ -53,16 +54,13 @@ QCheckBox::indicator:checked {
 
 }
 
-QFont {
-    font-family: "Courier";
-    font-size: 10px;
-}
+QAbstractScrollArea::viewport { 
+    background: #112365; 
+    }
 
-
-
-QAbstractScrollArea::viewport { background: #112365; }
-QGraphicsView { background: #112365; }
-
+QGraphicsView { 
+    background: #112365; 
+    }
 
 QTabWidget::pane { border: 0; }
 QTabBar::tab {
@@ -163,7 +161,6 @@ QTreeView[mono="true"] {
     color: #555;
 }
 
-
 QPushButton[btn] {
     border: 1px solid transparent;
     border-radius: 6px;
@@ -220,7 +217,43 @@ QSlider::handle:horizontal {
     border-radius: 7px;
 }
 
+QMessageBox QPushButton {
+    border-radius: 6px;
+    font-weight: 600;
+    color: #fff;
+    min-width: 80px;
+    min-height: 28px;
+}
 
+/* Primary button: usually the default button */
+QMessageBox QPushButton:default {
+    background: #E0751C;
+}
+QMessageBox QPushButton:default:hover {
+    background: #E88430;
+}
+QMessageBox QPushButton:default:pressed {
+    background: #B85E17;
+}
+QMessageBox QPushButton:default:disabled {
+    background: #F0B280;
+    color: #ECECEC;
+}
 
+/* Cancel / secondary button */
+QMessageBox QPushButton:!default {
+    background: #999999;
+}
+QMessageBox QPushButton:!default:hover {
+    background: #BBBBBB;
+    color: #000;
+}
+QMessageBox QPushButton:!default:pressed {
+    background: #646464;
+}
+QMessageBox QPushButton:!default:disabled {
+    background: #B0B0B0;
+    color: #ECECEC;
+}
 
 """
