@@ -49,7 +49,8 @@ from functions import (
     get_flag_options,
     read_flag_data,
     resource_path,
-    sanitize_for_log
+    sanitize_for_log,
+    generate_synthetic_histogram
     )
 from audio_spectrum import play_wav_file
 from shared import logger, device_type, MONO, FOOTER, DLD_DIR, USER_DATA_DIR, BIN_OPTIONS, LIGHT_GREEN, PINK, RED, WHITE, DARK_BLUE, ICON_PATH
@@ -421,7 +422,7 @@ class Tab2(QWidget):
         self.select_comparison.setInsertPolicy(QComboBox.NoInsert)
         self.select_comparison.setProperty("typo", "p2")
         self.select_comparison.addItem("— Select file —", "")
-        self.select_comparison.currentIndexChanged.connect(self.on_select_filename_2_changed)    
+        self.select_comparison.currentIndexChanged.connect(self.on_select_filename_2_changed) 
         grid.addWidget(self.labeled_input("Comparison spectrum", self.select_comparison), 3, 3)
 
         # Col 5 Row 1 ---------------------------------------------------------------------
@@ -729,7 +730,7 @@ class Tab2(QWidget):
         filename = self.filename_input.text().strip()
         file_path = os.path.join(USER_DATA_DIR, f"{filename}.json")
 
-        if filename.startswith("i/"):
+        if filename.startswith("lib/"):
             logger.info(f"[WARNING] Invalid filename - can't write to i/ directory 👆")
             return
 
@@ -837,22 +838,24 @@ class Tab2(QWidget):
         self.refresh_file_dropdowns()
 
     def refresh_file_dropdowns(self):
-        # Get latest file options once
-        options = get_filename_options()
+        # Get latest file options
+        options  = get_filename_options()      # user files
+        options2 = get_filename_2_options()    # isotopes
 
-        # Shared function to refresh a combo
-        def populate_combo(combo, label="— Select file —"):
+
+        def populate_combo(combo, file_options, label="— Select file —"):
             combo.blockSignals(True)
             combo.clear()
             combo.addItem(label, "")
-            for opt in options:
+            for opt in file_options:
                 combo.addItem(opt['label'], opt['value'])
             combo.setCurrentIndex(0)
             combo.blockSignals(False)
 
-        # Refresh both dropdowns using the same options
-        populate_combo(self.select_file)
-        populate_combo(self.select_comparison)
+        # Refresh with different lists
+        populate_combo(self.select_file, options)
+        populate_combo(self.select_comparison, options2)
+
 
     # on_mouse_moved --------------------------------
     # Slightly complicated function because 
@@ -902,7 +905,19 @@ class Tab2(QWidget):
             self.hline.setPos(y)       
             self.plot_widget.setToolTip(f"Bin: {ch_idx}\ncts: {y}")
 
-  
+
+    def on_select_comparison_changed(self, value: str):
+        # Isotope entries use value like "lib/cs137" or you can pass the text label
+        if value.startswith("lib/"):
+            iso = value.split("/", 1)[1]
+            ok = generate_synthetic_histogram(iso)
+            if ok:
+                self.refresh_plot()    # or whatever your UI uses
+        else:
+            # Handle regular file-based comparison (if you still support it)
+            load_histogram_2(value)
+
+      
 
     def on_checkbox_toggle(self, name, state):
         value = bool(state)
@@ -1001,22 +1016,45 @@ class Tab2(QWidget):
         # Selection spring back function
         QTimer.singleShot(0, lambda: self.select_file.setCurrentIndex(0))
 
-    def on_select_filename_2_changed(self, index):
-        filename_2 = self.select_comparison.itemData(index)
 
-        if filename_2:
+
+    def on_select_filename_2_changed(self, index: int):
+        # this is the data you added with addItem(..., value)
+        value = self.select_comparison.currentData() or ""   # ALWAYS a python object (we made it a str)
+        value = value.strip()
+
+        if not value:
             with shared.write_lock:
-                shared.filename_2 = filename_2
+                shared.filename_2    = ""
+                shared.histogram_2   = []
+                shared.bins_2        = 0
+                shared.comp_coeff_1  = 0.0
+                shared.comp_coeff_2  = 0.0
+                shared.comp_coeff_3  = 0.0
+                shared.counts_2      = 0
+                shared.compression_2 = 1
+            self.update_histogram()
+            return
 
-            success = load_histogram_2(filename_2)
+        if value.startswith("lib/"):
+            iso = value.split("/", 1)[1]
 
-            if success:
-                logger.info(f"[INFO] Loaded comparison spectrum: {filename_2} ✅")
-            else:
-                logger.error(f"[ERROR] Failed to load comparison spectrum: {filename_2} ❌")
+            print(iso)
 
-        # Always trigger a redraw in case comp_switch is active
+            ok = generate_synthetic_histogram(iso)
+            if not ok:
+                logger.error (f"[ERROR] Failed to build synthetic comparison: {iso} ❌")
+            self.update_histogram()
+            return
+
+        ok = load_histogram_2(value)
+        logger.info(f"[INFO] Loaded comparison spectrum: {value} ✅" if ok else
+                    f"[ERROR] Failed to load comparison spectrum: {value} ❌")
         self.update_histogram()
+
+
+
+
 
 
     def on_select_flag_table_changed(self, index):

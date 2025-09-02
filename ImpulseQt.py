@@ -55,14 +55,20 @@ def copy_lib_if_needed():
         except Exception as e:
             logger.error(f"[ERROR] Could not copy lib: {e} ❌")
 
+
 # --------------------------------------
 # One-time setup for user data folders
+# Copies assets/lib -> USER_DATA_DIR/lib if lib doesn't exist
+# Seeds USER_DATA_DIR/i/isotopes.json from assets/isotopes.json if missing
 # --------------------------------------
+
 def initialize_user_data():
 
-    source_lib = BASE_DIR / "assets" / "lib"
-
-    target_lib = USER_DATA_DIR / "lib"
+    user_dir    = Path(USER_DATA_DIR)
+    source_lib  = Path(BASE_DIR) / "assets" / "lib"
+    asset_iso   = Path(BASE_DIR) / "assets" / "lib" / "isotopes.json"
+    target_lib  = user_dir / "lib"
+    target_iso  = target_lib / "isotopes.json"
 
     if not target_lib.exists():
         try:
@@ -71,8 +77,21 @@ def initialize_user_data():
 
         except Exception as e:
             logger.error(f"[ERROR] copying default lib directory: {e} ❌")
-    else:
-        logger.info("[INFO] lib already exists, skipping initialization ✅")
+
+    # --- 2) Ensure /lib/isotopes.json exists (new for v3.0.9) ---
+    try:
+        
+        if not target_iso.exists():
+            
+            if not asset_iso.exists():
+                logger.error(f"[ERROR] isotopes.json asset not found at: {asset_iso} ❌")
+
+            else:
+                shutil.copy2(asset_iso, target_iso)
+                logger.info(f"[INFO] Seeded isotopes.json to: {target_iso} ✅")
+
+    except Exception as e:
+        logger.error(f"[ERROR] ensuring lib/isotopes.json: {e} ❌")
 
 
 # ==============================================

@@ -768,6 +768,8 @@ def is_valid_json(file_path):
     except (json.JSONDecodeError, FileNotFoundError):
         return False
 
+from pathlib import Path
+
 def get_filename_options(kind="user"):
     # Returns a list of file options for dropdowns, based on file type.
     def match(filename: str) -> bool:
@@ -784,64 +786,86 @@ def get_filename_options(kind="user"):
             return False
 
     def make_option(file_path: Path, base_dir: Path):
-        rel = file_path.relative_to(base_dir)
-        label = rel.stem
+        try:
+            rel = file_path.relative_to(base_dir)
+        except ValueError:
+            rel = file_path.name  # fallback to just the filename
+        label = Path(rel).stem
         value = str(rel).replace("\\", "/")
         return {'label': label, 'value': value}
 
-    user_dir = Path(shared.USER_DATA_DIR)
-
     files = [
-        make_option(f, user_dir)
-        for f in user_dir.glob("*.json")
-        if match(str(f.name))
+        make_option(f, USER_DATA_DIR)
+        for f in USER_DATA_DIR.glob("*.json")
+        if match(f.name)
     ]
     files.sort(key=lambda x: x['label'].lower())  # case-insensitive sort
-
     return files
 
+
 def get_filename_2_options():
+
     def is_valid(filename: str) -> bool:
         excluded = ["_cps.json", "-cps.json", "_hmp.json", "_settings.json", "_user.json"]
-        return not any(filename.endswith(sfx) for sfx in excluded)
+        return filename.endswith(".json") and not any(filename.endswith(sfx) for sfx in excluded)
 
     def make_option(file_path: Path, base_dir: Path, prefix: str = "", dot_prefix: bool = False):
-        rel = file_path.relative_to(base_dir)
-        name = rel.stem
+        try:
+            rel = file_path.relative_to(base_dir)
+        except ValueError:
+            rel = file_path.name
+        name = Path(rel).stem
         label = ("• " if dot_prefix else "") + name
         value = f"{prefix}{rel}".replace("\\", "/")
         return {'label': label, 'value': value, 'sort_key': name.lower()}
 
-    user_dir = Path(shared.USER_DATA_DIR)
-    iso_dir = Path(shared.ISO_DIR)
-
-    # Only include user files at root level of USER_DATA_DIR
+    # --- User files at USER_DATA_DIR root ---
     user_files = [
-        make_option(f, user_dir)
-        for f in user_dir.glob("*.json")
-        if is_valid(str(f))
+        make_option(f, USER_DATA_DIR)
+        for f in USER_DATA_DIR.glob("*.json")
+        if is_valid(f.name)
     ]
     user_files.sort(key=lambda x: x['sort_key'])
 
-    # Include isotope files
-    iso_files = [
-        make_option(f, iso_dir, prefix="lib/iso/", dot_prefix=True)
-        for f in iso_dir.glob("*.json")
-        if is_valid(str(f))
-    ]
-    iso_files.sort(key=lambda x: x['sort_key'])
+    # --- Isotope lookup entries from /lib/isotopes.json ---
+    iso_options = []
+    try:
+        iso_json_path = USER_DATA_DIR / "lib" / "isotopes.json"
+        if not iso_json_path.exists():
+            # Fallbacks: allow an app-shipped asset or an explicit path in shared
+            candidate = getattr(shared, "ISOTOPES_JSON", None)
+            if candidate:
+                iso_json_path = Path(candidate)
+            else:
+                iso_json_path = Path(__file__).resolve().parent / "assets" / "isotopes.json"
 
-    # Remove sort_key before returning
-    for item in user_files + iso_files:
-        item.pop('sort_key', None)
+        data = json.loads(iso_json_path.read_text(encoding="utf-8"))
+        # Keys are isotope ids (e.g., "cs137"); prefer optional display if present
+        for key, item in data.items():
+            display = (item.get("display") or key).strip()
+            iso_options.append({
+                'label': f"• {display}",
+                'value': f"lib/{key}",           # special value so loader can detect “isotope lookup”
+                'sort_key': display.lower()
+            })
+        iso_options.sort(key=lambda x: x['sort_key'])
+    except Exception as e:
+        logger.info(f"[INFO] No isotopes.json found or failed to load: {e}")
+        iso_options = []
 
-    # Combine with separator
-    combined = user_files
-    if user_files and iso_files:
+    # Remove sort keys
+    for it in user_files + iso_options:
+        it.pop('sort_key', None)
+
+    # Combine with a separator if both present
+    combined = list(user_files)
+    if user_files and iso_options:
         combined.append({'label': '───────', 'value': '', 'disabled': True})
-    combined += iso_files
+    combined += iso_options
 
     return combined
+
+
 
 def get_options_hmp():
     with shared.write_lock:
@@ -850,7 +874,7 @@ def get_options_hmp():
     files = [os.path.relpath(file, data_directory).replace("\\", "/")
              for file in glob.glob(os.path.join(data_directory, "**", "*_hmp.json"), recursive=True)]
     
-    options = [{'label': "~ " + os.path.basename(file), 'value': file} if "i/" in file and file.endswith(".json")
+    options = [{'label': "~ " + os.path.basename(file), 'value': file} if "lib/" in file and file.endswith(".json")
         else {'label': os.path.basename(file), 'value': file} for file in files]
 
     options_sorted = sorted(options, key=lambda x: x['label'])
@@ -1293,4 +1317,117 @@ def sanitize_for_log(y_values, floor=0.1):
         arr[mask_bad] = floor
     return arr.tolist()
 
+# --- Step #3: Synthetic comparison spectrum from isotopes.json ---
 
+
+MAX_ENERGY_KEV = 3000.0
+TARGET_COUNTS  = 10_000
+
+def _load_isotope_db() -> dict:
+    path = Path(USER_DATA_DIR) / "lib" / "isotopes.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for v in data.values():
+        for ln in v.setdefault("lines", []):
+            ln["energy"]    = float(ln["energy"])
+            ln["intensity"] = float(ln["intensity"])
+            ln["label"]     = str(ln.get("label", "gamma")).lower()
+    return data
+
+def _resolve_iso_key(name: str, db: dict) -> str:
+    k = re.sub(r"[^a-z0-9]+", "", (name or "").lower())
+    return k if k in db else name.strip().lower()
+
+def generate_synthetic_histogram(isotope_key: str, include_xray: bool = False) -> bool:
+    """
+    Place single-bin spikes at indices:
+        i = int((E / MAX_ENERGY_KEV) * bins)   # NOTE: uses 'bins', not (bins-1)
+    and set comparison calibration to invert that:
+        E = (bin / bins) * MAX_ENERGY_KEV  -> [c0,c1,c2] = [0, MAX_ENERGY_KEV/bins, 0]
+    Total counts are fixed to TARGET_COUNTS.
+    """
+    try:
+        db  = _load_isotope_db()
+        key = _resolve_iso_key(isotope_key, db)
+        if key not in db:
+            logger.info(f"[INFO] Isotope '{isotope_key}' not found in isotopes.json")
+            return False
+
+        bins = int(shared.bins_abs / shared.compression)
+        if bins <= 0:
+            logger.error("[ERROR] bins <= 0; ensure primary spectrum & compression are set.")
+            return False
+
+        # choose lines, compute total intensity
+        lines = [ln for ln in db[key]["lines"] if include_xray or ln["label"] != "x-ray"]
+        I_sum = sum(ln["intensity"] for ln in lines)
+        if I_sum <= 0:
+            logger.info(f"[INFO] No usable lines for '{key}'")
+            return False
+
+        scale = TARGET_COUNTS / I_sum
+
+        # accumulate (fractional) counts by your exact bin formula
+        acc = [0.0] * bins
+        added = 0
+        for ln in lines:
+            E = ln["energy"]; I = ln["intensity"] * scale
+            if E < 0:
+                continue
+            i = int((E / MAX_ENERGY_KEV) * bins)  # <-- EXACT formula you specified
+            if i >= bins:                         # clamp edge case E≈MAX_ENERGY_KEV
+                i = bins - 1
+            if i >= 0:
+                acc[i] += I
+                added += 1
+
+        # round to integers while preserving exact total = TARGET_COUNTS
+        spec2 = [int(math.floor(v)) for v in acc]
+        remainder = TARGET_COUNTS - sum(spec2)
+        if remainder > 0:
+            order = sorted(range(bins), key=lambda j: (acc[j] - spec2[j]), reverse=True)
+            for j in order[:remainder]:
+                spec2[j] += 1
+
+        # --- rescale synthetic so max(histogram_2) == max(primary) ---
+        try:
+            primary_max = max(shared.histogram) if getattr(shared, "histogram", None) else 0
+        except Exception:
+            primary_max = 0
+        comp_max = max(spec2) if spec2 else 0
+
+        if primary_max > 0 and comp_max > 0:
+            s = float(primary_max) / float(comp_max)
+            # scale and round to ints
+            spec2 = [int(round(v * s)) for v in spec2]
+            # enforce exact equality on the peak bin (guard against rounding drift)
+            j = max(range(len(spec2)), key=lambda k: spec2[k])  # index of current max
+            spec2[j] = int(primary_max)
+
+
+        dE = MAX_ENERGY_KEV / float(bins)  # invert mapping uses 'bins' in denominator
+
+        with shared.write_lock:
+            shared.histogram_2   = spec2
+            shared.bins_2        = bins
+            shared.elapsed_2     = 0
+            shared.counts_2      = int(sum(spec2))  # == TARGET_COUNTS
+            shared.filename_2    = f"• {key}"
+
+            # NPES order [c0,c1,c2]; your fields map as comp_coeff_1=c1, _2=c2, _3=c0
+            shared.comp_coeff_1  = 0.0
+            shared.comp_coeff_2  = float(dE)
+            shared.comp_coeff_3  = 0.0
+
+            # derived
+            try:
+                babs = int(getattr(shared, "bins_abs", 0) or 0)
+                shared.compression_2 = int(babs // bins) if (babs and bins) else 1
+            except Exception:
+                shared.compression_2 = 1
+
+        logger.info(f"[INFO] Synthetic comparison '{key}': bins={bins}, peaks={added}, total={shared.counts_2}, dE={dE:.4f} keV/bin ✅")
+        return True
+
+    except Exception as e:
+        logger.error(f"[ERROR] generate_synthetic_histogram('{isotope_key}'): {e} ❌")
+        return False
