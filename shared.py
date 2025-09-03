@@ -86,10 +86,6 @@ USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
 # Static library paths (packaged or local)
 LIB_DIR = USER_DATA_DIR / "lib"
 
-ISO_DIR = LIB_DIR / "iso"  # Gamma reference spectra
-
-TBL_DIR = LIB_DIR / "tbl"
-
 SETTINGS_FILE = DATA_DIR / "settings.json"
 
 ICON_PATH = os.path.join("assets", "favicon.png")
@@ -465,7 +461,7 @@ def load_settings():
 
     try:
         if isotope_tbl:
-            full_path = TBL_DIR / isotope_tbl
+            full_path = LIB_DIR / isotope_tbl
             if full_path.exists():
                 isotope_flags = read_flag_data(full_path)
                 logger.info(f"[INFO] Preloaded {len(isotope_flags)} isotope flags from {isotope_tbl}")

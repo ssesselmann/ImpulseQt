@@ -34,7 +34,7 @@ from datetime import datetime
 from urllib.request import urlopen
 from shproto.dispatcher import process_03, start
 from pathlib import Path
-from shared import logger, USER_DATA_DIR
+from shared import logger, USER_DATA_DIR, LIB_DIR
 
 cps_list        = []
 
@@ -1136,39 +1136,34 @@ def capture_pulse_data():
     except Exception as e:
         logger.error(f"[ERROR] while capturing pulse data: {e} ❌")
 
+
+
 def get_flag_options():
-    """Returns a list of dicts with 'label' and 'value' for each .json file in the given directory."""
+    """
+    Return [{'label','value'}] for each JSON flag file in shared.LIB_DIR,
+    excluding 'isotopes.json'. Sorted by label.
+    """
     options = []
-    path = Path(shared.TBL_DIR)
+    path = Path(shared.LIB_DIR)
 
     try:
-        for file in path.glob("*.json"):
-            label = file.stem.replace('-', ' ').title()
-            options.append({
-                'label': label,
-                'value': file.name  # Only the filename, not full path
-            })
+        # Ensure dir exists so first-run returns [] instead of raising
+        path.mkdir(parents=True, exist_ok=True)
+
+        files = [
+            f for f in path.glob("*.json")
+            if f.name.casefold() != "isotopes.json".casefold()
+        ]
+        files.sort(key=lambda p: p.stem.casefold())
+
+        for f in files:
+            label = f.stem.replace('-', ' ').replace('_', ' ').title()
+            options.append({'label': label, 'value': f.name})
     except Exception as e:
-        loger.error(f"[ERROR] Failed to list flag files in {path}: {e} ❌")
+        logger.error(f"[ERROR] Failed to list flag files in {path}: {e} ❌")
+        return []
 
-    return options
-
-def read_flag_data(path):
-    try:
-        with open(path, 'r') as f:
-            data = json.load(f)
-        return data
-    except Exception as e:
-        logger.error(f"[ERROR] reading isotopes data: {e} ❌")
-        return []    
-
-# Opens and reads the isotopes.json file
-def get_isotope_flags(path):
-    try:
-        with open(path, 'r') as file:
-            return json.load(file)
-    except:
-        logger.error('[ERROR] functions get_isotopes failed ❌')
+    return options   
 
 def extract_tco_pairs(dev_info):
     match = re.search(r'Tco\s+\[([-\d\s]+)\]', dev_info)

@@ -40,8 +40,15 @@ class Tab1(QWidget):
         header_label.setAlignment(Qt.AlignLeft)
 
         self.selector = QComboBox()
-        self.selector.addItems(["PRO", "MAX"])
-        self.selector.setCurrentText(device_type)
+        self.selector.addItem("Audio Device", "PRO")
+        self.selector.addItem("Serial Device", "MAX")
+
+        index = self.selector.findData(shared.device_type)
+        if index != -1:
+            self.selector.setCurrentIndex(index)
+        else:
+            logger.warning(f"[WARNING] Unknown device_type '{shared.device_type}' in settings 👆")
+
         self.selector.setMinimumWidth(150)
         self.selector.setSizeAdjustPolicy(QComboBox.AdjustToContents)
         self.selector.currentTextChanged.connect(self.switch_device_type)
@@ -77,47 +84,45 @@ class Tab1(QWidget):
 
         self.setLayout(device_tab_layout) 
 
-    def switch_device_type(self, value):
+
+    def switch_device_type(self):
+        value = self.selector.currentData()  # "PRO" or "MAX"
+        label = self.selector.currentText()  # "Audio Spectrometer" or "USB Spectrometer"
+
         if value == shared.device_type:
             return  # No change needed
 
-        # Create message box
+        # Confirmation dialog
         box = QMessageBox(self)
         box.setWindowTitle("Confirm Device Change")
-        box.setText(f"Changing to {value} will quit the application.\nDo you want to continue?")
+        box.setText(f"Changing to {label} will quit the application.\nDo you want to continue?")
         box.setIcon(QMessageBox.Question)
         box.setIconPixmap(QPixmap(ICON_PATH).scaled(48, 48, Qt.KeepAspectRatio, Qt.SmoothTransformation))
 
-        # Manually create QPushButtons
         yes_btn = QPushButton("Yes")
         no_btn = QPushButton("No")
 
-        # Set properties for styling
-        yes_btn.setProperty("btn", "primary")
-        no_btn.setProperty("btn", "primary")
+        for btn in (yes_btn, no_btn):
+            btn.setProperty("btn", "primary")
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
 
-        # Force Qt to re-evaluate QSS properties
-        yes_btn.style().unpolish(yes_btn)
-        yes_btn.style().polish(yes_btn)
-        no_btn.style().unpolish(no_btn)
-        no_btn.style().polish(no_btn)
-
-        # Add buttons to the box
         box.addButton(yes_btn, QMessageBox.YesRole)
         box.addButton(no_btn, QMessageBox.NoRole)
 
-        # Show and handle result
         box.exec_()
 
         if box.clickedButton() == yes_btn:
             with shared.write_lock:
                 shared.device_type = value
                 shared.save_settings()
-            logger.info("[INFO] Quitting application to apply new device type")
-            QApplication.quit()
+            logger.info(f"[INFO] Device type changed to {value}, quitting to apply ✅")
+            QApplication.quit()  # <-- This will now work again as expected
         else:
-            self.selector.setCurrentText(shared.device_type)
-
+            # Revert to original value if cancelled
+            idx = self.selector.findData(shared.device_type)
+            if idx != -1:
+                self.selector.setCurrentIndex(idx)
 
 
     def set_main_content(self, device_type):

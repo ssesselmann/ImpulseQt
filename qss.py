@@ -32,7 +32,7 @@ QGroupBox::title {
 QWidget {
     background-color: #112365;
     color: #aaaaaa;
-    font-family: "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+    font-family: "Helvetica Neue", Arial, sans-serif;
     font-size: 13px;
 }
 

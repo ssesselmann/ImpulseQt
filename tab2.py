@@ -47,7 +47,6 @@ from functions import (
     gaussian_correl,
     peak_finder,
     get_flag_options,
-    read_flag_data,
     resource_path,
     sanitize_for_log,
     generate_synthetic_histogram
@@ -454,25 +453,28 @@ class Tab2(QWidget):
         grid.addWidget(self.diff_switch, 2, 4)
 
         # Col 5 Row 4
+        # --- Initialization (run once at UI setup) ---
+        self.current_flag_file = None  # Remember current selection during session only
+
         self.select_flag_table = QComboBox()
         self.select_flag_table.setEditable(False)
         self.select_flag_table.setInsertPolicy(QComboBox.NoInsert)
         self.select_flag_table.setProperty("typo", "p2")
-        options = get_flag_options()
+        self.select_flag_table.currentIndexChanged.connect(self.on_select_flag_table_changed)
+
+        # Initial populate
+        options = get_flag_options()  # Excludes isotopes.json
         for opt in options:
             self.select_flag_table.addItem(opt['label'], opt['value'])
 
-        # Restore previously selected isotope table from shared settings
-        with shared.write_lock:
-            saved_tbl = shared.isotope_tbl
-        if saved_tbl:
-            index = self.select_flag_table.findData(saved_tbl)
-            if index != -1:
-                self.select_flag_table.setCurrentIndex(index)
-                self.on_select_flag_table_changed(index)  
+        # Set first item by default (if list not empty)
+        if self.select_flag_table.count() > 0:
+            self.select_flag_table.setCurrentIndex(0)
+            self.on_select_flag_table_changed(0)
 
-        self.select_flag_table.currentIndexChanged.connect(self.on_select_flag_table_changed)    
+        # Add to layout
         grid.addWidget(self.labeled_input("Select Isotope Library", self.select_flag_table), 3, 4)
+
 
         # Col 6 Row 1
         self.epb_switch = QCheckBox("Energy / bin")
@@ -631,15 +633,45 @@ class Tab2(QWidget):
         self.update_labels()
         self.update_histogram()
 
-    def load_on_show(self):
+    def _reload_flag_combo(self):
+        """Rebuild combo from LIB_DIR and preserve current selection in-memory only."""
+        prev_value = getattr(self, "current_flag_file", None)  # remember previous selection (session only)
+        self.select_flag_table.blockSignals(True)
+        self.select_flag_table.clear()
 
-        if not self.has_loaded:
+        options = get_flag_options()
+        for opt in options:
+            self.select_flag_table.addItem(opt['label'], opt['value'])
+
+        # restore previous selection if still present; otherwise select first if any
+        if prev_value:
+            idx = self.select_flag_table.findData(prev_value)
+            if idx != -1:
+                self.select_flag_table.setCurrentIndex(idx)
+        if self.select_flag_table.currentIndex() < 0 and self.select_flag_table.count() > 0:
+            self.select_flag_table.setCurrentIndex(0)
+
+        self.select_flag_table.blockSignals(False)
+
+        # fire handler for the (possibly new) selection
+        if self.select_flag_table.currentIndex() >= 0:
+            self.on_select_flag_table_changed(self.select_flag_table.currentIndex())
+
+    def load_on_show(self):
+        # always refresh quickly (no settings involved)
+        try:
+            self._reload_flag_combo()
+        except Exception as e:
+            logger.error(f"[ERROR] refreshing flag options: {e} ❌")
+
+        # heavy stuff only once
+        if not getattr(self, "has_loaded", False):
             with shared.write_lock:
-                filename   = shared.filename
-                filename_2 = shared.filename_2
+                filename = shared.filename
             if filename:
                 load_histogram(filename)
             self.has_loaded = True
+
 
     def load_switches(self):
 
@@ -1049,29 +1081,35 @@ class Tab2(QWidget):
                     f"[ERROR] Failed to load comparison spectrum: {value} ❌")
         self.update_histogram()
 
-    def on_select_flag_table_changed(self, index):
-        # Get the selected file name (e.g. "norm.json")
-        isotope_tbl = self.select_flag_table.itemData(index)
-        if not isotope_tbl:
+    def on_select_flag_table_changed(self, index: int):
+        """Load the selected flag file and update shared.isotope_flags"""
+        if index < 0:
+            self.current_flag_file = None
+            with shared.write_lock:
+                shared.isotope_flags = []  # clear if nothing selected
             return
 
-        # Build full path
-        isotope_tbl_path = Path(USER_DATA_DIR) / "lib" / "tbl" / isotope_tbl
+        fname = self.select_flag_table.itemData(index)
+        self.current_flag_file = fname
+        flag_path = Path(shared.LIB_DIR) / fname
 
-        # Load isotope flags
-        flags = read_flag_data(isotope_tbl_path)
+        try:
+            with open(flag_path, "r", encoding="utf-8") as f:
+                flags = json.load(f)
 
-        with shared.write_lock:
-            shared.isotope_tbl = isotope_tbl  # remember filename only, not full path
-            shared.isotope_flags = flags if flags else []
-            shared.save_settings()  # <-- Persist selection
+            # ✅ Store into shared.isotope_flags so update_peak_markers() can use it
+            with shared.write_lock:
+                shared.isotope_flags = flags
 
-        # Log result
-        if flags:
-            logger.info(f"[INFO] Loaded {len(flags)} isotope flags from {isotope_tbl} ✅")
-        else:
-            logger.warning(f"[WARNING] No isotope flags loaded from {isotope_tbl} 👆")
-        
+            logger.info(f"[INFO] Loaded isotope flags from: {fname} ✅")
+            self.update_peak_markers()  # optional: force marker update on file change
+
+        except Exception as e:
+            logger.error(f"[ERROR] reading flag file '{flag_path}': {e} ❌")
+            with shared.write_lock:
+                shared.isotope_flags = []  # fallback to empty on error
+
+
     def on_sigma_changed(self, val):
         sigma = val / 10.0
         with shared.write_lock:
