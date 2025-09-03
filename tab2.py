@@ -130,7 +130,7 @@ class Tab2(QWidget):
 
         # Appearance / labels
         self.plot_widget.setLabel('left', 'Counts')
-        self.plot_widget.setLabel('bottom', 'Bins')
+        #self.plot_widget.setLabel('bottom', 'Bins')
         self.plot_widget.getPlotItem().showGrid(x=True, y=True, alpha=0.3)
 
         # in __init__ after creating self.plot_widget
@@ -890,7 +890,6 @@ class Tab2(QWidget):
             ch_idx = int(round(ch_idx))
             y = histogram[ch_idx]
 
-            # keV on x-axis, counts on y-axis
             self.vline.setPos(x_val)
             self.hline.setPos(y)
             self.plot_widget.setToolTip(f"{x_val:.2f} keV\n{y} cts")
@@ -961,9 +960,9 @@ class Tab2(QWidget):
 
         elif log_switch:
             logger.info(f"[INFO] {name} turned on ✅")    
-
         else:
             logger.info(" ")
+
         
         self.update_histogram()
 
@@ -1039,8 +1038,6 @@ class Tab2(QWidget):
         if value.startswith("lib/"):
             iso = value.split("/", 1)[1]
 
-            print(iso)
-
             ok = generate_synthetic_histogram(iso)
             if not ok:
                 logger.error (f"[ERROR] Failed to build synthetic comparison: {iso} ❌")
@@ -1051,11 +1048,6 @@ class Tab2(QWidget):
         logger.info(f"[INFO] Loaded comparison spectrum: {value} ✅" if ok else
                     f"[ERROR] Failed to load comparison spectrum: {value} ❌")
         self.update_histogram()
-
-
-
-
-
 
     def on_select_flag_table_changed(self, index):
         # Get the selected file name (e.g. "norm.json")
@@ -1527,6 +1519,11 @@ class Tab2(QWidget):
             self.gauss_curve.setData(x_vals_corr, corr)
         else:
             self.gauss_curve.setData([], [])
+
+        if cal_switch:
+            self.plot_widget.setLabel('bottom', 'Energy KeV')
+        else:
+            self.plot_widget.setLabel('bottom', 'Bins/Channels')
 
         # 4) Toggle log transform LAST so it picks up the just-set data
         self.plot_widget.setLogMode(x=False, y=log_switch)
