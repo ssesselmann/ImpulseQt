@@ -61,20 +61,28 @@ def copy_lib_if_needed():
 # Copies assets/lib -> USER_DATA_DIR/lib if lib doesn't exist
 # Seeds USER_DATA_DIR/i/isotopes.json from assets/isotopes.json if missing
 # --------------------------------------
+
 def initialize_user_data():
+    """
+    One-time setup for user data folders.
+    Copies all files from assets/lib → USER_DATA_DIR/lib if not already present.
+    """
     user_dir    = Path(USER_DATA_DIR)
     source_lib  = Path(BASE_DIR) / "assets" / "lib"
     target_lib  = user_dir / "lib"
-    asset_iso   = source_lib / "isotopes.json"
-    target_iso  = target_lib / "isotopes.json"
 
-    # Ensure target lib dir exists
+    # Ensure USER_DATA_DIR/lib exists
     try:
         target_lib.mkdir(parents=True, exist_ok=True)
     except Exception as e:
         logger.error(f"[ERROR] creating lib dir at {target_lib}: {e} ❌")
 
-    # --- Copy individual JSON files (flat layout, new since v3.1.0) ---
+    # Check source directory exists
+    if not source_lib.exists():
+        logger.error(f"[ERROR] source_lib not found at {source_lib} ❌")
+        return
+
+    # Copy all .json files if not already present
     try:
         for file in source_lib.glob("*.json"):
             dest = target_lib / file.name
@@ -82,21 +90,9 @@ def initialize_user_data():
                 shutil.copy2(file, dest)
                 logger.info(f"[INFO] Copied {file.name} → {dest} ✅")
             else:
-                logger.info(f"[INFO] {file.name} already exists in lib/, skipping ✔")
+                logger.info(f"[INFO] {file.name} already exists, skipping ✔")
     except Exception as e:
-        logger.error(f"[ERROR] copying default lib files: {e} ❌")
-
-    # --- Ensure isotopes.json exists (legacy support from v3.0.9) ---
-    try:
-        if not target_iso.exists():
-            if not asset_iso.exists():
-                logger.error(f"[ERROR] isotopes.json asset not found at: {asset_iso} ❌")
-            else:
-                shutil.copy2(asset_iso, target_iso)
-                logger.info(f"[INFO] Seeded isotopes.json to: {target_iso} ✅")
-    except Exception as e:
-        logger.error(f"[ERROR] ensuring isotopes.json exists: {e} ❌")
-
+        logger.error(f"[ERROR] copying lib files from {source_lib}: {e} ❌")
 
 
 # ==============================================

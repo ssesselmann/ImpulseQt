@@ -24,6 +24,7 @@ asset_files = (
     + [(f, "assets/lib") for f in glob("assets/lib/*")]
 )
 
+
 a = Analysis(
     ["ImpulseQt.py"],
     pathex=[str(project_root)],
