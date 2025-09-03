@@ -65,15 +65,16 @@ def get_pro_manual_html():
         <body>
 
         
-        <p>Thank you for downloading and installing ImpulseQt, this open-source software is written in Python with the intention that users may modify and adapt it to their own experiments. The following text describes each function featured.
+        <p>Thank you for downloading and installing ImpulseQt, this open-source app is written in Python by Steven Sesselmann with the intention that users can run it straight out of the box, however by downloading the raw script users may modify and adapt it to their own experiments. The following manual explains its functions.</p>
+
+        <p>This program is compatible with USB sound card spectrometers and USB serial spectrometers, select device type from the dropdown menu on tab1 and restart. After restart, only fields specific to the selected device will be visible, including this manual. If you are seeing the wrong manual, go back to the device selection tab, select the correct device type and restart.</p>
         
         <h3>The Sound Card Spectrometer as a low cost MCA</h3>
         <p>Gamma radiation detectors with photomultiplier tubes (PMTs) output pulses in the form of an analogue voltage. Typically the pulses are on the order of 4 µs, which is too fast for 48 kHz sampling as used by by common PC sound cards. But by amplifying and passing the signal through a low-pass filter the pulses can be stretched to 100 µs, this longer pulse can be accurately sampled by the sound card.</p>
 
-        <p>Computer sound cards typically take a maximum AC input voltage of around ±1.2 Volts. It is not advisable to connect signals from older NIM equipment directly to a sound card input unless the signal is attenuated to audio line level.</p>
+        <p>Computer sound cards typically take a maximum AC input voltage of around ±1.2 Volts, therefore it is advisable to use a low cost gammaspectacular or theremino adaptor with audio preamplifier to output the signal.[WARNING] connecting signals directly from older NIM modules directly to a sound card input is likely to kill the soundcard !</p>
 
-        <p>This program is compatible with both sound card spectrometers and serial spectrometers, use selects device type from the dropdown menu on tab1, the program requires restart on change of device type. After restart, only fields specific to the selected device will be visible, including this manual. If you are seeing the wrong manual, go back to the device selection tab, select the correct device type and restart.</p>
-
+        
         <h2>Impulse stores the following files on your computer.</h2>
         <code>
         <p><strong>User data directory</strong><br> {USER_DATA_DIR}/ </p>
@@ -113,47 +114,73 @@ def get_pro_manual_html():
         <h3>Functions below the plot</h3>
         <p>ImpulseQt was designed to have easy access and high visibility of all settings, somthing which is sadly missing in many commersial MCA programs where settings are hidden in hard to find windows. Following are the main settings the user will need.</p>
 
-        <li><strong>START</strong> - Click to start histogram recording </li>
+        <li><strong>START</strong>
+        <br>Click to start histogram recording </li><br>
 
-        <li><strong>STOP</strong> - Click to stop histogram recording </li>
+        <li><strong>STOP</strong>
+        <br>Click to stop histogram recording </li><br>
 
-        <li><strong>Stop at counts</strong> - This is a stop condition, the spectrometer will automatically stop after n counts.</li>  
+        <li><strong>Stop at counts</strong>
+        <br>This is a stop condition, the spectrometer will automatically stop after n counts.</li><br>
 
-        <li><strong>Stop at seconds</strong> - This is a stop condition, the spectrometer will automatically stop after n seconds.</li>    
+        <li><strong>Stop at seconds</strong>
+        <br>This is a stop condition, the spectrometer will automatically stop after n seconds.</li><br>    
 
-        <li><strong>filename</strong> - Filename input without the [.json] extension </li> 
+        <li><strong>Filename</strong>
+        <br>User defined filename input - enter a filename without the [.json] extension.</li><br> 
 
-        <li><strong>Select bins</strong> - Selects the resolution of the x axis (shared with waterfall). Bins are commonly called channels, higher bin counts improve resolution but increase file size and processing time.</li> 
+        <li><strong>Select bins</strong>
+        <br>Sets the resolution of the x axis (shared with waterfall). Bins are commonly called channels, higher bin counts improve resolution but increases file size and CPU load.</li><br> 
 
-        <li><strong>Select spectrum file</strong> - Select and open a prior recording to plot</li>  
+        <li><strong>Open spectrum file</strong>
+        <br>Select and plot a previously recorded spectrum file, the plot line will render in light green.</li><br>
 
-        <li><strong>Comparison spectrum</strong> - Select a second file for comparison, typically used for background comparison and/or subtraction.</li>  
+        <li><strong>Comparison spectrum</strong>
+        <br>Select a second file for comparison, this feature allows the user to super-impose a second spectrum. The dropdown selection menu lists all compatible files in the user data directory followed by synthetic gamma line spectra of almost 400 known isotopes. Synthetic spectra are prefixed by "•" i.e. • cs137.
+        The isotope library lives in the user data directory at /lib/isotopes.json. 
+        To see the comparison spectrum (red line plot) check the box called 'Show Comparison'.</li><br>
 
-        <li><strong>Subtract comparison</strong> - Check the box to subtract second spectrum from first spectrum (both must be visible)</li>   
+        <li><strong>Subtract comparison</strong>
+        <br>After selecting a comparison plot, checking the 'Subtract comparison' box, will subtract the comparison spectrum from the main spectrum, bin for bin. This feature is useful for background subtraction. When 'Subract comparison' is active, the plot line will render in white.</li><br>  
 
-        <li><strong>Download csv</strong> - Downloads the primary spectrum to your downloads directory.</li>
+        <li><strong>Download csv</strong>
+        <br>Downloads the primary spectrum to your downloads directory.</li><br>
 
-        <li><strong>Select Isotope Library</strong> - Select a library of common or less common isotope flags. These libraries live in the ImpulseQtData Directory and can be manually edited.</li>
+        <li><strong>Select Isotope Library</strong>
+        <br>Select a library of common or less common isotope flags. These libraries live in the ImpulseQtData Directory and can be manually edited.</li><br>
 
-        <li><strong>Energy per bin</strong> - Enhances low counts by factoring (x * y).</li>
+        <li><strong>Energy per bin</strong>
+        <br>Enhances low counts by factoring (x * y).</li><br>
 
-        <li><strong>Log</strong> - Expresses (y) axis in log scale.</li>
+        <li><strong>Log</strong>
+        <br>Expresses (y) axis in log scale.</li><br>
 
-        <li><strong>Calibration on</strong> - Turns on second order polynomial calibration </li>
+        <li><strong>Calibration on</strong>
+        <br>Turns on second order polynomial calibration </li><br>
 
-        <li><strong>Show Isotopes</strong> - Shows matching isotope flags, this functions only works with calibration and sigma turned on</li>
+        <li><strong>Show Isotopes</strong>
+        <br>Shows matching isotope flags, this functions only works with calibration and sigma turned on</li><br>
 
-        <li><strong>Sigma</strong> - Produces a gaussian curve overlay, sigma wide for easy identification of smaller peaks.</li>
+        <li><strong>Sigma</strong>
+        <br>Produces a gaussian curve overlay, sigma wide for easy identification of smaller peaks.</li><br>
 
-        <li><strong>Peaks slider</strong> - Turns peak notation on and adjusts sensitivity</li>
+        <li><strong>Peaks slider</strong>
+        <br>Turns peak notation on and adjusts sensitivity</li><br>
 
-        <li><strong>Notes</strong> - Input for spectrum specific notes (saves immediately to spectrum file) </li>
+        <li><strong>Notes</strong>
+        <br>Input for spectrum specific notes (saves immediately to spectrum file).</li><br>
 
         <li><strong>Calibration</strong><br>
-        The calibration settings open up in a pop up window, it can accept anything from two calibration points for linear calibration up to five calibration points for a best fit second order polynomial. Verify that your calibration works by clicking apply and checking the calibration box. </li>
+        The calibration settings open up in a pop up window, it can accept anything from two calibration points for linear calibration up to five calibration points for a best fit second order polynomial. Verify that your calibration works by clicking apply and checking the calibration box. </li><br>
+
+
 
         <h3>Stereo</h3>
-        <p>This special function is used for coincidence detection and will only work with two detectors and two GS-PRO spectrometers. Requires stereo input. Only pulses that occur within ±3 sample points between left and right are considered coincident. Before recording a spectrum with two detectors the pulse shape acquisition on tab 1 needs to be run with two both detectors connected and stereo checked. 
+        <p>This special function is used for coincidence detection and will only work with two GS-PRO spectrometers and two detectors.
+            A custom 3.5 mm stereo jack plug adaptor with left and right channels crossed is required. The adaptor is easy to make (also available fom gammaspectacular.com).
+         The main GS-PRO records the primary detector on the left channel and takes the signal input for the right channel via the jack plugs from the secondary GS-PRO. Only pulses that occur within ±3 sample points between left and right are considered coincident. At count rated below 2000 cps this method works extremely well and serves as a great teaching aid for students learning about electron/positron annihilation gamma emission from Na22
+
+            Note! Before recording a spectrum with two detectors, make sure that pulse shape acquisition on tab 1 is run with both detectors connected and stereo checked. 
             </p>
 
         <h3>Peak Width / Toggle Flags</h3>
