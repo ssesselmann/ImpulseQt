@@ -1,3 +1,4 @@
+# build-pc.spec
 # -*- mode: python ; coding: utf-8 -*-
 # This builds a single-file executable: ImpulseQt.exe
 
@@ -9,8 +10,8 @@ from PyInstaller.utils.hooks import (
     collect_dynamic_libs,
 )
 
-project_root = Path(".").resolve()
-app_name     = "ImpulseQt"
+project_root    = Path(".").resolve()
+app_name        = "ImpulseQt"
 
 # --- Collect PySide6 runtime (modules, plugins, translations, etc.) ---
 hiddenimports    = collect_submodules("PySide6")
@@ -19,12 +20,13 @@ pyside6_binaries = collect_dynamic_libs("PySide6")          # Qt *.dlls and shim
 
 # --- Your app assets ---
 asset_files = [(f, "assets") for f in glob("assets/*")]
+lib_files   = [(f, "lib") for f in glob("lib/*")]
 
 a = Analysis(
     ["ImpulseQt.py"],
     pathex=[str(project_root)],
     binaries=pyside6_binaries,                # <— include PySide6 DLLs
-    datas=pyside6_datas + asset_files,        # <— include PySide6 data + your assets
+    datas=pyside6_datas + asset_files + lib_files,
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
