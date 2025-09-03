@@ -19,14 +19,16 @@ pyside6_datas    = collect_data_files("PySide6")            # Qt plugins, transl
 pyside6_binaries = collect_dynamic_libs("PySide6")          # Qt *.dlls and shims
 
 # --- Your app assets ---
-asset_files = [(f, "assets") for f in glob("assets/*")]
-lib_files   = [(f, "lib") for f in glob("lib/*")]
+asset_files = (
+    [(f, "assets") for f in glob("assets/*")]
+    + [(f, "assets/lib") for f in glob("assets/lib/*")]
+)
 
 a = Analysis(
     ["ImpulseQt.py"],
     pathex=[str(project_root)],
     binaries=pyside6_binaries,                # <— include PySide6 DLLs
-    datas=pyside6_datas + asset_files + lib_files,
+    datas=pyside6_datas + asset_files,
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
