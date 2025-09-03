@@ -324,7 +324,6 @@ SETTINGS_SCHEMA = {
     "coi_window": {"type": "int", "default": 0},
     "compression": {"type": "int", "default": 1.0},
     "compression_2": {"type": "int", "default": 1.0},
-    "count_history": {"type": "list", "default": []},
     "counts": {"type": "int", "default": 0},
     "counts_2": {"type": "int", "default": 0},
     "cps": {"type": "int", "default": 0},
