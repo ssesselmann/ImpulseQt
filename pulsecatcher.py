@@ -96,7 +96,7 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
         
         with shared.write_lock: shared.doing = f"[ERROR] Device not selected: {e}"
 
-    save_queue = queue.Queue()
+    save_queue  = queue.Queue()
     save_thread = threading.Thread(target=save_data, args=(save_queue,))
     save_thread.start()
     
@@ -225,12 +225,13 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
             time_last_save_time = time_this_save
             time.sleep(0)
 
-    # Signal the save thread to exit
+    # Save and exit
     save_queue.put(None)
     save_thread.join()
-    
     p.terminate()  # Closes stream when done
-    shared.run_flag.clear()  # Ensure the CPS thread also stops
+
+    with shared.write_lock:
+        shared.save_done.set()
     return
 
     #======================================================================================

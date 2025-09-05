@@ -503,7 +503,7 @@ def start_pro_recording(mode):
         shared.recording = True
 
     if mode == 2 or mode == 4:
-        logger.info(f"[INFO] Start recording in mode {mode} ✅")
+        logger.info(f"[INFO] Start recording ✅")
 
         try:
             thread = threading.Thread(target=pulsecatcher, args=(mode, run_flag, run_flag_lock))
@@ -515,7 +515,7 @@ def start_pro_recording(mode):
 
     elif mode == 3:
 
-        logger.info("[INFO] Start 3D recording...✅")
+        logger.info("[INFO] Start recording (3D) ✅")
 
         write_blank_json_schema_hmp(filename_hmp, device)
 
@@ -527,7 +527,7 @@ def start_pro_recording(mode):
 
         except Exception as e:
 
-            logger.error(f"[ERROR] starting 3D spectrum thread: {e} ❌")
+            logger.error(f"[ERROR] 3D spectrum thread: {e} ❌")
 
     else:
         logger.error(f"[ERROR] Unsupported mode for PRO device: {mode} ❌")
@@ -543,7 +543,7 @@ def stop_recording():
         shproto.dispatcher.spec_stopflag = 1
         shproto.dispatcher.stop()
         
-    logger.info(f"[INFO] Recording stopped for device [{device_type}] ✅")
+    logger.info(f"[INFO] Recording stopped [{device_type}] ✅")
 
 # clear variables
 def clear_shared(mode):
@@ -558,7 +558,7 @@ def clear_shared(mode):
             shared.histogram       = [0] * shared.bins
             shared.spec_notes      = ""
 
-        logger.info(f"[INFO] cleared shared variables on mode {mode} ✅")    
+        logger.info(f"[INFO] Data cleared mode({mode}) ✅")    
 
     if mode == 3:
 
@@ -567,14 +567,14 @@ def clear_shared(mode):
         try:
             if os.path.exists(file_path):
                 os.remove(file_path)
-                logger.info(f"[INFO] deleting file: {file_path} ✅")
+                logger.info(f"[INFO] Deleting: {file_path} ✅")
 
             else:
-                logger.warning(f"[WARNING] file does not exist: {file_path}")
+                logger.warning(f"[WARNING] File does not exist: {file_path}")
 
         except Exception as e:
 
-            logger.error(f"[ERROR] deleting file {file_path}: {e} ❌")
+            logger.error(f"[ERROR] Deleting: {file_path}: {e} ❌")
 
         
         with shared.write_lock:
@@ -585,7 +585,7 @@ def clear_shared(mode):
             shared.dropped_counts  = 0
             shared.histogram_hmp    = []
 
-        logger.info("[INFO] cleared shared variables on mode 3")  
+        logger.info(f"[INFO] Cleared data mode({mode})")  
 
     return
 

@@ -47,6 +47,8 @@ class Tab1ProWidget(QWidget):
             shapecatches    = shared.shapecatches
             chunk_size      = shared.chunk_size
             stereo          = shared.stereo
+            distortion_left = shared.distortion_left
+            distortion_right = shared.distortion_right
 
         # --- Selection Controls
         self.device_selector = QComboBox()
@@ -292,6 +294,7 @@ class Tab1ProWidget(QWidget):
 
         self.setLayout(tab1_pro_layout)
         self.plot_shape()
+        self.plot_distortion(distortion_left, distortion_right)
     
     def on_stereo_toggled(self, checked: bool):
         with shared.write_lock:
@@ -339,12 +342,18 @@ class Tab1ProWidget(QWidget):
         with shared.write_lock:
             stereo = shared.stereo
 
-        left_distortion, right_distortion = distortion_finder(stereo)
+        distortion_left, distortion_right = distortion_finder(stereo)
 
         # Optional: plot distortion histogram
-        self.plot_distortion_histogram(left_distortion, right_distortion)
+        self.plot_distortion(distortion_left, distortion_right)
         
-    def plot_distortion_histogram(self, left, right):
+    def plot_distortion(self, left, right):
+
+        with shared.write_lock:
+            x_vals_left = shared.mean_shape_left
+            x_vals_right = shared.mean_shape_right
+
+
         self.curve_plot.clear()
         self.curve_plot.setBackground(DARK_BLUE)
 
@@ -388,12 +397,12 @@ class Tab1ProWidget(QWidget):
         try:
             # --- snapshot shared state ---
             with shared.write_lock:
-                y_left        = shared.mean_shape_left
-                y_right       = shared.mean_shape_right
-                sample_length = shared.sample_length
-                stereo        = shared.stereo
+                mean_shape_left     = shared.mean_shape_left
+                mean_shape_right    = shared.mean_shape_right
+                sample_length       = shared.sample_length
+                stereo              = shared.stereo
 
-            if not y_left and not y_right:
+            if not mean_shape_left and not mean_shape_right:
                 return
 
             # --- fit lengths to sample_length ---
@@ -402,16 +411,16 @@ class Tab1ProWidget(QWidget):
                     return data[:n]
                 return data + [0] * (n - len(data))
 
-            y_left  = fit_length(y_left,  sample_length)
-            y_right = fit_length(y_right, sample_length)
+            mean_shape_left  = fit_length(mean_shape_left,  sample_length)
+            mean_shape_right = fit_length(mean_shape_right, sample_length)
             x_vals  = list(range(sample_length))
 
             # --- ranges ---
             y_peak   = max(
-                abs(max(y_left,  default=[0])),
-                abs(min(y_left,  default=[0])),
-                abs(max(y_right, default=[0])),
-                abs(min(y_right, default=[0])),
+                abs(max(mean_shape_left,  default=[0])),
+                abs(min(mean_shape_left,  default=[0])),
+                abs(max(mean_shape_right, default=[0])),
+                abs(min(mean_shape_right, default=[0])),
             )
             y_margin = max(50, y_peak * 0.10)
             y_min, y_max = -y_margin, y_peak + y_margin
@@ -438,7 +447,7 @@ class Tab1ProWidget(QWidget):
             # --- traces ---
             pw.plot(
                 x_vals,
-                y_left,
+                mean_shape_left,
                 pen=pg.mkPen(LIGHT_GREEN, width=2),
                 symbol='o',
                 symbolSize=6,
@@ -449,7 +458,7 @@ class Tab1ProWidget(QWidget):
             if stereo:
                 pw.plot(
                 x_vals,
-                y_right,
+                mean_shape_right,
                 pen=pg.mkPen(PINK, width=2),
                 symbol='o',
                 symbolSize=6,

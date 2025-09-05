@@ -16,13 +16,14 @@ from default_settings import DEFAULT_SETTINGS
 
 
 # --- Thread Control ---
-write_lock = Lock()
-run_flag = Event()
-run_flag_lock = Lock()
+run_flag        = Event()
+save_done       = Event()
+write_lock      = Lock()
+run_flag_lock   = Lock()
 
 # --------------------
 # Versioning
-__version__ = "3.0.9"
+__version__ = "3.1.0"
 # --------------------
 
 SETTINGS = {}  
@@ -168,8 +169,8 @@ flip = 1
 mean_shape_left       = []
 mean_shape_right      = []
 
-distortion_list_left  = []
-distortion_list_right = []
+distortion_left  = []
+distortion_right = []
 
 isotope_tbl           = ""
 isotope_flags         = []
@@ -346,10 +347,10 @@ SETTINGS_SCHEMA = {
     "peakfinder": {"type": "int", "default": 0},
     "peakshift": {"type": "int", "default": 0},
     "polynomial_fn": {"type": "list", "default": []},
-    "mean_shape_left": {"type": "list", "default": [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]},
-    "mean_shape_right": {"type": "list", "default": [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]},
-    "distortion_list_left": {"type": "list", "default": []},
-    "distortion_list_right": {"type": "list", "default": []},
+    "mean_shape_left": {"type": "list", "default": []},
+    "mean_shape_right": {"type": "list", "default": []},
+    "distortion_left": {"type": "list", "default": []},
+    "distortion_right": {"type": "list", "default": []},
     "isotope_tbl": {"type": "str", "default": "Gamma common"},
     "rolling_interval": {"type": "int", "default": 60},
     "sample_length": {"type": "int", "default": 51},

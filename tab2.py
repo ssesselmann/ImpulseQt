@@ -771,7 +771,6 @@ class Tab2(QWidget):
                 return
 
         if self.process_thread and self.process_thread.is_alive():
-            logger.warning("[WARNING] thread still running, attempting to stop 👆")
             stop_recording()
             self.process_thread.join(timeout=2)
             logger.info("[INFO] Previous thread joined ✅")
@@ -856,18 +855,24 @@ class Tab2(QWidget):
 
     @Slot()
     def on_stop_clicked(self):
-
-        if self.process_thread and self.process_thread.is_alive():
-            logger.info("[INFO] Waiting for recording thread to finish ✅")
-            self.process_thread.join(timeout=2)
-            logger.info("[INFO] Recording thread stopped ✅ ")
-
-        self.process_thread = None
-        #self.plot_timer.stop()
-
         stop_recording()
-        time.sleep(1) # [Botch] wait for save to complete
-        self.refresh_file_dropdowns()
+        self._wait_for_stop_nonblocking()
+
+    def _wait_for_stop_nonblocking(self):
+        # Try a zero-time join (non-blocking check)
+        if self.process_thread and self.process_thread.is_alive():
+            self.process_thread.join(timeout=0)
+
+        # If the worker has exited and the final save is done, finish up
+        if (not self.process_thread) or (not self.process_thread.is_alive()):
+            if shared.save_done.is_set():
+                self.process_thread = None
+                self.refresh_file_dropdowns()
+                logger.info("[INFO] Recording stopped & saved ✅")
+                return
+
+        # Otherwise, poll again shortly without blocking the event loop
+        QTimer.singleShot(50, self._wait_for_stop_nonblocking)
 
     def refresh_file_dropdowns(self):
         # Get latest file options
