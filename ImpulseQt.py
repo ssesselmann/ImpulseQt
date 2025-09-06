@@ -50,10 +50,10 @@ def copy_lib_if_needed():
 
         try:
             shutil.copytree(src, dest)
-            logger.info(f"[INFO] Copied lib to {dest} ✅")
+            logger.info(f"   ✅ Copied lib to {dest} ")
 
         except Exception as e:
-            logger.error(f"[ERROR] Could not copy lib: {e} ❌")
+            logger.error(f"  ❌Could not copy lib: {e} ")
 
 
 # --------------------------------------
@@ -75,11 +75,11 @@ def initialize_user_data():
     try:
         target_lib.mkdir(parents=True, exist_ok=True)
     except Exception as e:
-        logger.error(f"[ERROR] creating lib dir at {target_lib}: {e} ❌")
+        logger.error(f"  ❌creating lib dir at {target_lib}: {e} ")
 
     # Check source directory exists
     if not source_lib.exists():
-        logger.error(f"[ERROR] source_lib not found at {source_lib} ❌")
+        logger.error(f"  ❌source_lib not found at {source_lib} ")
         return
 
     # Copy all .json files if not already present
@@ -88,11 +88,11 @@ def initialize_user_data():
             dest = target_lib / file.name
             if not dest.exists():
                 shutil.copy2(file, dest)
-                logger.info(f"[INFO] Copied {file.name} → {dest} ✅")
+                logger.info(f"   ✅Copied {file.name} → {dest} ")
             else:
-                logger.info(f"[INFO] {file.name} already exists, skipping ✔")
+                logger.info(f"   ✅ {file.name} already exists, skipping")
     except Exception as e:
-        logger.error(f"[ERROR] copying lib files from {source_lib}: {e} ❌")
+        logger.error(f"  ❌ copying lib files from {source_lib}: {e} ")
 
 
 # ==============================================
