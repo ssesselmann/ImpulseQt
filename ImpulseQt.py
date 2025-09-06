@@ -152,7 +152,7 @@ class MainWindow(QMainWindow):
                 logger.removeHandler(h)
         logger.addHandler(qt_handler)
 
-        logger.info("Status bus wired ✅")
+        logger.info("   ✅ Status bus wired ")
 
         # ---------- Tabs / central widget ----------
         self.tab1 = Tab1()
