@@ -52,8 +52,6 @@ from functions import (
     resource_path
 )
 
-logger = logging.getLogger(__name__)
-
 class Tab3(QWidget):
     def __init__(self):
         super().__init__()
@@ -354,10 +352,10 @@ class Tab3(QWidget):
 
         if not self.has_loaded:
             with shared.write_lock:
-                filename    = shared.filename_hmp
+                filename_hmp    = shared.filename_hmp
                 compression = shared.compression
 
-            load_histogram_hmp(filename)
+            load_histogram_hmp(filename_hmp)
 
             self.refresh_bin_selector()
 
@@ -397,19 +395,21 @@ class Tab3(QWidget):
                     setattr(shared, key, int(text))
 
             elif key == "filename":
-                filename = text.strip()
+                base = text.strip()
 
-                # ✅ Remove .json or .JSON extension if present
-                if filename.lower().endswith(".json"):
-                    filename = filename[:-5]
+                # Normalise: strip .json and any trailing _hmp
+                if base.lower().endswith(".json"):
+                    base = base[:-5]
+                if base.lower().endswith("_hmp"):
+                    base = base[:-4]
 
                 with shared.write_lock:
-                    shared.filename_hmp = filename
-
-                shared.save_settings()
+                    shared.filename_hmp = base
+                    shared.save_settings()
 
         except Exception as e:
             logger.warning(f"👆 Invalid input for {key}: {text} ({e})")
+
 
     def on_checkbox_toggle(self, key, state):
         with shared.write_lock:
@@ -455,12 +455,12 @@ class Tab3(QWidget):
         self.filename_input.setText(selected_name)
 
 
-    def load_selected_file(self, filename):
+    def load_selected_file(self, filename_hmp):
         try:
-            load_histogram_hmp(filename)
+            load_histogram_hmp(filename_hmp)
 
             # Simplify input update
-            self.filename_input.setText(Path(filename).stem.replace("_hmp", ""))
+            self.filename_input.setText(Path(filename_hmp).stem.replace("_hmp", ""))
             self.ready_to_plot = True
             self.refresh_timer.stop()
 
@@ -474,12 +474,12 @@ class Tab3(QWidget):
 
             self.update_graph()
 
-
         except Exception as e:
             logger.warning(f"👆 Failed to load 3D file: {e}")
-            with write_lock:
+            with shared.write_lock:
                 self.ready_to_plot = False
-                run_flag = False
+                shared.run_flag = False
+
 
     @Slot()
     def on_start_clicked(self):
@@ -524,33 +524,35 @@ class Tab3(QWidget):
 
     def start_recording_hmp(self, filename):
         try:
-            
+            base = filename.strip()
+            if base.lower().endswith(".json"):
+                base = base[:-5]
+            if base.lower().endswith("_hmp"):
+                base = base[:-4]
+
             with shared.write_lock:
-                shared.filename = filename
-                coi             = shared.coi_switch
-                device_type     = shared.device_type
-                t_interval      = shared.t_interval
-                histogram_hmp   = []
+                shared.filename_hmp  = base                 # ← use the arg
+                coi                  = shared.coi_switch
+                device_type          = shared.device_type
+                t_interval           = int(shared.t_interval)
+                shared.histogram_hmp = []                   # ← clear the shared buffer
 
             # --- Reset plotting ---
-            
             self.refresh_timer.stop()
-
-            self.figure.clear()      
-            self.ax = self.figure.add_subplot(111)  
-            self.canvas.draw()   
-            self.plot_data.clear() 
+            self.figure.clear()
+            self.ax = self.figure.add_subplot(111)
+            self.canvas.draw()
+            self.plot_data.clear()
 
             self.refresh_timer.start(t_interval * 1000)
 
-            # Call the centralized recording logic
             thread = start_recording(3, device_type)
-            
             if thread:
                 self.process_thread = thread
 
         except Exception as e:
             QMessageBox.critical(self, "Start Error", f"Error starting: {str(e)}")
+
 
     def on_stop_clicked(self):
 
@@ -566,10 +568,11 @@ class Tab3(QWidget):
             index = next(i for i, (_, value) in enumerate(BIN_OPTIONS) if value == shared.compression)
             self.bins_selector.setCurrentIndex(index)
         except StopIteration:
-            logger.warning(f"👆 Compression {compression} not found in BIN_OPTIONS")
-            self.bins_selector.setCurrentIndex(len(BIN_OPTIONS) - 1) 
+            logger.warning(f"👆 Compression {shared.compression} not found in BIN_OPTIONS")
+            self.bins_selector.setCurrentIndex(len(BIN_OPTIONS) - 1)
 
         self.update_graph()
+
 
 
     def on_select_bins_changed(self, index):
@@ -647,17 +650,17 @@ class Tab3(QWidget):
         try:
             # ── Snapshot shared state ───────────────────────────────────────
             with shared.write_lock:
-                run_flag   = shared.run_flag
-                hist3d     = list(shared.histogram_hmp)
-                filename   = shared.filename
-                t_interval = shared.t_interval
-                log_switch = shared.log_switch
-                epb_switch = shared.epb_switch
-                cal_switch = shared.cal_switch
-                counts     = shared.counts
-                elapsed    = shared.elapsed
-                bins       = shared.bins
-                coeffs     = [shared.coeff_1, shared.coeff_2, shared.coeff_3]
+                run_flag    = shared.run_flag
+                hist3d      = list(shared.histogram_hmp)
+                filename_hmp    = shared.filename_hmp
+                t_interval  = shared.t_interval
+                log_switch  = shared.log_switch
+                epb_switch  = shared.epb_switch
+                cal_switch  = shared.cal_switch
+                counts      = shared.counts
+                elapsed     = shared.elapsed
+                bins        = shared.bins
+                coeffs      = [shared.coeff_1, shared.coeff_2, shared.coeff_3]
 
             # ── Ensure data is valid ────────────────────────────────────────
             if not hist3d or not isinstance(hist3d[-1], list):
@@ -748,7 +751,7 @@ class Tab3(QWidget):
                 vmax=z_max
             )
 
-            self.hmp_plot_title = f"Waterfall - {filename}"
+            self.hmp_plot_title = f"Waterfall - {filename_hmp}"
             self.ax.set_title(self.hmp_plot_title, color="white")
             self.ax.set_xlabel("Energy (keV)" if cal_switch else "Bin #", color="white")
             self.ax.set_ylabel("Time (s)", color="white")
