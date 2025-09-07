@@ -35,7 +35,6 @@ class Tab4(QWidget):
     @Slot(int)
     def update_slider_label(self, value):
         self.slider_label.setText(f"Smoothing sec: {value}")
-        self.last_loaded_filename = Path(rel_path).stem
 
     def __init__(self):
         super().__init__()
@@ -177,8 +176,11 @@ class Tab4(QWidget):
             self.selected_label.setText(f"{self.last_loaded_filename}")
             self.update_plot()
 
+            logger.info(f"   ✅ fileneme selected {rel_path}")
+
         except Exception as e:
             QMessageBox.critical(self, "File Error", str(e))
+            logger.error(f"   ❌ error {e}")
 
         QTimer.singleShot(0, lambda: self.select_file.setCurrentIndex(0))
 
@@ -212,9 +214,11 @@ class Tab4(QWidget):
                     f.write(f"{i},{count}\n")
 
             QMessageBox.information(self, "Download Complete", f"Saved to:\n{file_path}")
+            logger.info(f"   ✅ Download complete {file_path}")
 
         except Exception as e:
             QMessageBox.critical(self, "Download Error", str(e))
+            logger.error(f"  ❌ error {e}")
 
     def clear_session(self):
         shared.counts = []
@@ -230,7 +234,7 @@ class Tab4(QWidget):
                 cps = int(shared.cps)
             self.cps_live.setText(f"{cps}")
         except Exception as e:
-            logger.warning(f"[WARNING] Failed to update CPS label: {e} 👆\n")
+            logger.warning(f"👆 Failed to update CPS label: {e}")
 
     def update_plot(self):
         try:
@@ -282,4 +286,4 @@ class Tab4(QWidget):
             self.canvas.draw()
 
         except Exception as e:
-            logger.error(f"[ERROR] update_plot error: {e} ❌\n")
+            logger.error(f"  ❌ update_plot error: {e} ")
