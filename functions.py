@@ -417,19 +417,27 @@ def start_recording(mode, device_type):
         return None
 
 def start_max_recording(mode):
-    # 0) Stop any previous worker cleanly (don’t kill the dispatcher)
-    t_prev = getattr(shared, "max_process_thread", None)
-    if t_prev and t_prev.is_alive():
-        logger.warning("👆 MAX worker still running; stopping it")
-        shproto.dispatcher.spec_stopflag = 1
-        t_prev.join(timeout=2.0)
-        shproto.dispatcher.spec_stopflag = 0
-        logger.info("   ✅ Previous MAX worker stopped")
+    # 1) Cleanly stop any existing dispatcher so COM closes
+    try:
+        t = getattr(shproto.dispatcher, "_dispatcher_thread", None)
+        # signal stop to the dispatcher loop and the spec loop
+        with shproto.dispatcher.stopflag_lock:
+            shproto.dispatcher.stopflag = 1
+            shproto.dispatcher.spec_stopflag = 1
+        try:
+            shproto.dispatcher.process_03('-sto')  # ask device to stop
+        except Exception:
+            pass
+        if t and t.is_alive():
+            t.join(timeout=2.0)
+        # reset flags for next run
+        with shproto.dispatcher.stopflag_lock:
+            shproto.dispatcher.stopflag = 0
+            shproto.dispatcher.spec_stopflag = 0
+    except Exception as e:
+        logger.warning(f"👆 stop-before-start had an issue: {e}")
 
-    # 1) Ensure dispatcher thread (and port) is up exactly once
-    disp_t = shproto.dispatcher.ensure_running()
-
-    # 2) Fresh run state
+    # 2) Reset shared state for a fresh run
     with shared.write_lock:
         shared.dropped_counts = 0
         shared.counts         = 0
@@ -441,29 +449,24 @@ def start_max_recording(mode):
         device       = shared.device
         t_interval   = shared.t_interval
 
-    logger.info(f"   ✅ Starting MAX recording ({filename}) in mode {mode}")
+    logger.info(f"   ✅ fn Starting MAX recording ({filename}) in mode {mode} ")
 
-    # 3) Launch the correct worker thread
-    if mode == 3:
-        target = shproto.dispatcher.process_02
-        args   = (filename_hmp, compression, device, t_interval)
-    else:
-        target = shproto.dispatcher.process_01
-        args   = (filename, compression, device, t_interval)
+    # 3) Ensure a single dispatcher thread (reuses if already alive)
+    dispatcher_thread = shproto.dispatcher.ensure_running(sn=None)
+    try:
+        # optionally keep a handle for diagnostics only
+        shared.max_process_thread = dispatcher_thread
+    except Exception:
+        pass
 
-    worker = threading.Thread(target=target, args=args, daemon=True, name=f"MAX-worker-{mode}")
-    worker.start()
-    shared.max_process_thread = worker
-
-    # 4) Tell the device to switch/start
+    # 4) Send the start sequence (let process_03 talk to the same dispatcher)
     time.sleep(0.10)
-    shproto.dispatcher.process_03(f"-mode {mode}")
+    shproto.dispatcher.process_03(f'-mode {mode}')
     time.sleep(0.10)
-    shproto.dispatcher.process_03("-rst")
+    shproto.dispatcher.process_03('-rst')
     time.sleep(0.10)
-    shproto.dispatcher.process_03("-sta")
+    shproto.dispatcher.process_03('-sta')
     time.sleep(0.10)
-
 
 
     # Create a recording thread to run process_01 or process_02
@@ -547,24 +550,16 @@ def start_pro_recording(mode):
         return None
 
 def stop_recording():
+
     with shared.write_lock:
         device_type = shared.device_type
         shared.run_flag.clear()
 
     if device_type == "MAX":
-        # stop worker
-        t = getattr(shared, "max_process_thread", None)
-        if t and t.is_alive():
-            shproto.dispatcher.spec_stopflag = 1
-            t.join(timeout=2.0)
-            shproto.dispatcher.spec_stopflag = 0
-            setattr(shared, "max_process_thread", None)
-
-        # stop dispatcher (closes COM)
+        shproto.dispatcher.spec_stopflag = 1
         shproto.dispatcher.stop()
-
+        
     logger.info(f"   ✅ fn Recording stopped [{device_type}] ")
-
 
 # clear variables
 def clear_shared(mode):
