@@ -58,8 +58,6 @@ def copy_lib_if_needed():
 
 # --------------------------------------
 # One-time setup for user data folders
-# Copies assets/lib -> USER_DATA_DIR/lib if lib doesn't exist
-# Seeds USER_DATA_DIR/i/isotopes.json from assets/isotopes.json if missing
 # --------------------------------------
 
 def initialize_user_data():
