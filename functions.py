@@ -417,15 +417,27 @@ def start_recording(mode, device_type):
         return None
 
 def start_max_recording(mode):
-    # Try to stop any previous process
-    if hasattr(shared, "max_process_thread") and shared.max_process_thread.is_alive():
+    # 1) Cleanly stop any existing dispatcher so COM closes
+    try:
+        t = getattr(shproto.dispatcher, "_dispatcher_thread", None)
+        # signal stop to the dispatcher loop and the spec loop
+        with shproto.dispatcher.stopflag_lock:
+            shproto.dispatcher.stopflag = 1
+            shproto.dispatcher.spec_stopflag = 1
+        try:
+            shproto.dispatcher.process_03('-sto')  # ask device to stop
+        except Exception:
+            pass
+        if t and t.is_alive():
+            t.join(timeout=2.0)
+        # reset flags for next run
+        with shproto.dispatcher.stopflag_lock:
+            shproto.dispatcher.stopflag = 0
+            shproto.dispatcher.spec_stopflag = 0
+    except Exception as e:
+        logger.warning(f"👆 stop-before-start had an issue: {e}")
 
-        logger.warning("👆 fn MAX thread still running, attempting to stop ")
-
-        shproto.dispatcher.spec_stopflag = 1
-        shared.max_process_thread.join(timeout=2)
-        logger.info("   ✅ fn Previous MAX thread stopped ")
-
+    # 2) Reset shared state for a fresh run
     with shared.write_lock:
         shared.dropped_counts = 0
         shared.counts         = 0
@@ -439,19 +451,23 @@ def start_max_recording(mode):
 
     logger.info(f"   ✅ fn Starting MAX recording ({filename}) in mode {mode} ")
 
-    # Reset dispatcher stop flag
-    shproto.dispatcher.spec_stopflag = 0
+    # 3) Ensure a single dispatcher thread (reuses if already alive)
+    dispatcher_thread = shproto.dispatcher.ensure_running(sn=None)
+    try:
+        # optionally keep a handle for diagnostics only
+        shared.max_process_thread = dispatcher_thread
+    except Exception:
+        pass
 
-    # Start dispatcher thread (if needed)
-    dispatcher_thread = threading.Thread(target=shproto.dispatcher.start, daemon=True)
-    dispatcher_thread.start()
-    time.sleep(0.15)
-    shproto.dispatcher.process_03('-mode 0')
-    time.sleep(0.15)
+    # 4) Send the start sequence (let process_03 talk to the same dispatcher)
+    time.sleep(0.10)
+    shproto.dispatcher.process_03(f'-mode {mode}')
+    time.sleep(0.10)
     shproto.dispatcher.process_03('-rst')
-    time.sleep(0.15)
+    time.sleep(0.10)
     shproto.dispatcher.process_03('-sta')
-    time.sleep(0.15)
+    time.sleep(0.10)
+
 
     # Create a recording thread to run process_01 or process_02
     def run_dispatcher():
