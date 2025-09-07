@@ -272,7 +272,12 @@ def start(sn=None):
                 pass
 
         # blocking read with timeout; returns b'' on timeout
-        rx = nano.read(READ_BUFFER)
+        try:
+            rx = nano.read(READ_BUFFER)
+        except serial.SerialException as e:
+            logger.warning(f"👆 Serial read failed (likely disconnected or busy): {e}")
+            break  # or `continue`, depending on how you want to handle it
+
         if not rx:
             continue  # silent: normal timeout / no bytes yet
 
