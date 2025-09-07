@@ -994,7 +994,7 @@ def load_histogram(filename):
         return True
 
     except Exception as e:
-        logger.info(f"[ERROR] failed to load_histogram('{filename}'): {e} ❌")
+        logger.info(f"  ❌ load_histogram('{filename}') failed: {e} ")
         return False
 
 def load_histogram_2(filename):
