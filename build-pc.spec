@@ -1,6 +1,5 @@
-# build-pc.spec
 # -*- mode: python ; coding: utf-8 -*-
-# This builds a single-file executable: ImpulseQt.exe
+# build-pc.spec
 
 from pathlib import Path
 from glob import glob
