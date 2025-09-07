@@ -95,7 +95,7 @@ class CalibrationPopup(QDialog):
                     with open(file_path, "r", encoding="utf-8") as f:
                         data = json.load(f)
                 else:
-                    logger.error(f"File {file_path} not found — cannot update calibration ❌")
+                    logger.error(f"  ❌ calibration file {file_path} not found")
                     return
 
                 # Drill safely into NPESv2 structure
@@ -118,10 +118,10 @@ class CalibrationPopup(QDialog):
                 with open(file_path, "w", encoding="utf-8") as f:
                     json.dump(data, f)
 
-                logger.info(f"Calibration updated ✅ {file_path}")
+                logger.info(f"   ✅ Calibration updated {file_path}")
 
             except Exception as e:
-                logger.exception(f"[ERROR] Failed to update calibration in {file_path}: {e} ❌")
+                logger.exception(f"  ❌ Failed to update calibration in {file_path}: {e} ")
 
         if self.poly_label:
             self.poly_label.setText(
