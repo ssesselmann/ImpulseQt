@@ -164,8 +164,6 @@ class Tab1MaxWidget(QWidget):
         cmd = self.serial_command_input.text().strip()
         if not cmd:
             cmd = "-inf"
-            with shared.write_lock:
-                print(f"devinfo:{shared.cached_device_info}")
 
         # Admin override
         is_override = cmd.startswith("+")
@@ -183,7 +181,7 @@ class Tab1MaxWidget(QWidget):
 
         # Send the command (assumed quick)
         process_03(cmd)
-
+        time.sleep(1)
         # Non-blocking: wait briefly for response to populate shared state
         def _finish():
             # Refresh table
