@@ -106,7 +106,7 @@ class Tab2(QWidget):
         self._last_peaks_t  = 0
         self._last_x_span   = None
         self.diff_switch    = False
-
+        self.filename_2     = ""
        
 
         # ---- Title Setup ----
@@ -179,6 +179,7 @@ class Tab2(QWidget):
             max_counts  = shared.max_counts
             max_seconds = shared.max_seconds
             filename    = shared.filename
+            filename_2  = shared.filename_2
             bin_size    = shared.bin_size
             bins        = shared.bins
             compression = shared.compression
@@ -419,10 +420,10 @@ class Tab2(QWidget):
         self.select_comparison = QComboBox()
         self.select_comparison.setEditable(False)
         self.select_comparison.setInsertPolicy(QComboBox.NoInsert)
-        self.select_comparison.setProperty("typo", "p2")
-        self.select_comparison.addItem("— Select file —", "")
-        self.select_comparison.currentIndexChanged.connect(self.on_select_filename_2_changed) 
+        self.select_comparison.addItem("— Select file —", "")  # placeholder
+        self.select_comparison.currentIndexChanged.connect(lambda _:self.on_select_comparison_changed(self.select_comparison.currentData() or ""))
         grid.addWidget(self.labeled_input("Comparison spectrum", self.select_comparison), 3, 3)
+
 
         # Col 5 Row 1 ---------------------------------------------------------------------
         # Col 4 Row 3
@@ -662,7 +663,7 @@ class Tab2(QWidget):
         try:
             self._reload_flag_combo()
         except Exception as e:
-            logger.error(f"[ERROR] refreshing flag options: {e} ❌")
+            logger.error(f"  ❌ refreshing flag options: {e}")
 
         # heavy stuff only once
         if not getattr(self, "has_loaded", False):
@@ -689,7 +690,7 @@ class Tab2(QWidget):
         with shared.write_lock:
             device_type = shared.device_type
 
-        logger.info(f"[INFO] Set device visibility: {device_type} ✅")
+        logger.info(f"   ✅Set device visibility: {device_type}")
 
         for widget in getattr(self, "pro_only_widgets", []):
             widget.setVisible(device_type == "PRO")
@@ -726,7 +727,7 @@ class Tab2(QWidget):
         try:
             index = next(i for i, (_, value) in enumerate(BIN_OPTIONS) if int(value) == cur_comp)
         except StopIteration:
-            logger.warning(f"[WARNING] Compression {cur_comp} not found in BIN_OPTIONS 👆")
+            logger.warning(f"👆 Compression {cur_comp} not found in BIN_OPTIONS")
             index = len(BIN_OPTIONS) - 1 
 
         self.bins_selector.setCurrentIndex(index)
@@ -738,7 +739,7 @@ class Tab2(QWidget):
 
         data = self.bins_selector.itemData(index)
         if data is None:
-            logger.warning(f"[WARNING] No compression data for index {index} 👆")
+            logger.warning(f"👆 No compression data for index {index}")
             return
 
         compression = int(data)
@@ -747,7 +748,7 @@ class Tab2(QWidget):
             shared.compression = compression
             shared.bins = shared.bins_abs // compression
 
-        logger.info(f"[INFO] Compression set to {compression}, bins = {shared.bins} ✅")
+        logger.info(f"   ✅ Compression set to {compression}, bins = {shared.bins}")
         # If Tab needs an immediate redraw beyond update_bins_selector():
         self.update_graph()
 
@@ -763,7 +764,7 @@ class Tab2(QWidget):
         file_path = os.path.join(USER_DATA_DIR, f"{filename}.json")
 
         if filename.startswith("lib/"):
-            logger.info(f"[WARNING] Invalid filename - can't write to i/ directory 👆")
+            logger.info(f" 👆Invalid filename - can't write to i/ directory")
             return
 
         if os.path.exists(file_path):
@@ -773,7 +774,7 @@ class Tab2(QWidget):
         if self.process_thread and self.process_thread.is_alive():
             stop_recording()
             self.process_thread.join(timeout=2)
-            logger.info("[INFO] Previous thread joined ✅")
+            logger.info("   ✅ Previous thread joined")
 
         self.start_recording_2d(filename)
 
@@ -851,7 +852,7 @@ class Tab2(QWidget):
 
         except Exception as e:
             QMessageBox.critical(self, "Start Error", f"Error starting: {str(e)}")
-            logger.info(f"[ERROR] {str(e)} ❌")
+            logger.info(f"  ❌ Start recording failed: {str(e)} ")
 
     @Slot()
     def on_stop_clicked(self):
@@ -868,31 +869,11 @@ class Tab2(QWidget):
             if shared.save_done.is_set():
                 self.process_thread = None
                 self.refresh_file_dropdowns()
-                logger.info("[INFO] Recording stopped & saved ✅")
+                logger.info("   ✅ Recording stopped & saved ")
                 return
 
         # Otherwise, poll again shortly without blocking the event loop
         QTimer.singleShot(50, self._wait_for_stop_nonblocking)
-
-    def refresh_file_dropdowns(self):
-        # Get latest file options
-        options  = get_filename_options()      # user files
-        options2 = get_filename_2_options()    # isotopes
-
-
-        def populate_combo(combo, file_options, label="— Select file —"):
-            combo.blockSignals(True)
-            combo.clear()
-            combo.addItem(label, "")
-            for opt in file_options:
-                combo.addItem(opt['label'], opt['value'])
-            combo.setCurrentIndex(0)
-            combo.blockSignals(False)
-
-        # Refresh with different lists
-        populate_combo(self.select_file, options)
-        populate_combo(self.select_comparison, options2)
-
 
     # on_mouse_moved --------------------------------
     # Slightly complicated function because 
@@ -941,19 +922,91 @@ class Tab2(QWidget):
             self.hline.setPos(y)       
             self.plot_widget.setToolTip(f"Bin: {ch_idx}\ncts: {y}")
 
+    def refresh_file_dropdowns(self):
+        # Get latest file options
+        options  = get_filename_options()      # user files
+        options2 = get_filename_2_options()    # isotopes
+
+        with shared.write_lock:
+            want2 = shared.filename_2 or ""
+
+        cb = self.select_comparison
+
+        # Let the signal fire so the histogram loads
+        idx = cb.findData(want2) if want2 else 0
+        if idx < 0 and want2:
+            # If the saved item isn't in the list, add it and select it
+            import os
+            label = f"Library: {want2.split('/',1)[1]}" if want2.startswith("lib/") else (os.path.basename(want2) or want2)
+            cb.addItem(label, want2)
+            idx = cb.findData(want2)
+
+        cb.setCurrentIndex(idx if idx >= 0 else 0)  # this will trigger on_select_comparison_changed(...)
+
+
+
+        def populate_combo(combo, file_options, label="— Select file —"):
+            combo.blockSignals(True)
+            combo.clear()
+            combo.addItem(label, "")
+            for opt in file_options:
+                combo.addItem(opt['label'], opt['value'])
+            combo.setCurrentIndex(0)
+            combo.blockSignals(False)
+
+        # Refresh with different lists
+        populate_combo(self.select_file, options)
+        populate_combo(self.select_comparison, options2)
+
+        with shared.write_lock:
+            filename_2 = shared.filename_2 or ""
+
+        self.select_comparison.blockSignals(True)
+        idx = self.select_comparison.findData(filename_2) if filename_2 else 0
+        self.select_comparison.setCurrentIndex(idx if idx >= 0 else 0)
+        self.select_comparison.blockSignals(False)
 
     def on_select_comparison_changed(self, value: str):
-        # Isotope entries use value like "lib/cs137" or you can pass the text label
+        value = (value or "").strip()
+
+        if not value:
+            with shared.write_lock:
+                shared.filename_2    = ""
+                shared.histogram_2   = []
+                shared.bins_2        = 0
+                shared.comp_coeff_1  = 0.0
+                shared.comp_coeff_2  = 0.0
+                shared.comp_coeff_3  = 0.0
+                shared.counts_2      = 0
+                shared.compression_2 = 1
+            self.filename_2 = ""
+            self.update_histogram()
+            return
+
         if value.startswith("lib/"):
             iso = value.split("/", 1)[1]
             ok = generate_synthetic_histogram(iso)
-            if ok:
-                self.refresh_plot()    # or whatever your UI uses
         else:
-            # Handle regular file-based comparison (if you still support it)
-            load_histogram_2(value)
+            ok = load_histogram_2(value)
 
-      
+        if ok:
+            with shared.write_lock:
+                shared.filename_2 = value   # <- persist for next app launch
+            self.filename_2 = value
+            self.update_histogram()
+
+
+    def _persist_selection_in_combo(self, value: str):
+        """Ensure the combo shows 'value' as selected, without firing signals."""
+        with QSignalBlocker(self.select_comparison):
+            idx = self.select_comparison.findData(value)
+            if idx < 0 and value:
+                # add it if it's not present (e.g., file opened from elsewhere)
+                label = f"Library: {value.split('/',1)[1]}" if value.startswith("lib/") else (os.path.basename(value) or value)
+                self.select_comparison.addItem(label, value)
+                idx = self.select_comparison.findData(value)
+            self.select_comparison.setCurrentIndex(idx if idx >= 0 else 0)
+
 
     def on_checkbox_toggle(self, name, state):
         value = bool(state)
@@ -972,31 +1025,35 @@ class Tab2(QWidget):
 
 
         if sigma > 0 and peakfinder > 0 and cal_switch:
-            logger.info(f"[INFO] {name} set to {value} ✅")
+            logger.info(f"   ✅ {name} set to {value} ")
 
         elif iso_switch and not cal_switch:
-            logger.warning(f"[WARNING] {name} needs calibration on 👆")
+            logger.warning(f"👆 {name} needs calibration on ")
 
         elif iso_switch and sigma == 0:
-            logger.warning(f"[WARNING] {name} needs sigma on 👆")
+            logger.warning(f"👆 {name} needs sigma on")
 
         elif iso_switch and peakfinder == 0:
-            logger.warning(f"[WARNING] {name} needs peakfinder on 👆")
+            logger.warning(f"👆 {name} needs peakfinder on")
 
         elif comp_switch:
-            logger.info(f"[INFO] {name} turned {value} ✅")
+            logger.info(f"   ✅ {name} turned {value} ")
 
         elif diff_switch:
-            logger.info(f"[INFO] {name} turned on ✅")
+            logger.info(f"   ✅ {name} turned on ")
 
         elif coi_switch:
-            logger.info(f"[INFO] {name} turned on ✅")    
+            logger.info(f"   ✅ {name} turned on")    
 
         elif epb_switch:
-            logger.info(f"[INFO] {name} turned on ✅")
+            logger.info(f"   ✅ {name} turned on")
 
         elif log_switch:
-            logger.info(f"[INFO] {name} turned on ✅")    
+            logger.info(f"   ✅ {name} turned on")   
+
+        elif cal_switch:
+            logger.info(f"   ✅ {name} turned on")
+
         else:
             logger.info(" ")
 
@@ -1013,7 +1070,7 @@ class Tab2(QWidget):
             else:
                 setattr(shared, key, text)
 
-            logger.info(f"{key} changed to {text} ✅")
+            logger.info(f"   ✅ {key} changed to {text}")
 
         except ValueError:
             pass
@@ -1025,7 +1082,7 @@ class Tab2(QWidget):
             with shared.write_lock:
                 shared.compression = compression
                 shared.bins = shared.bins_abs // compression
-                logger.info(f"[INFO] Compression set to {compression}, bins = {shared.bins} ✅")
+                logger.info(f"   ✅ Compression set to {compression}, bins = {shared.bins}")
 
     def on_select_filename_changed(self, index):
 
@@ -1055,11 +1112,10 @@ class Tab2(QWidget):
 
 
     def on_select_filename_2_changed(self, index: int):
-        # this is the data you added with addItem(..., value)
-        value = self.select_comparison.currentData() or ""   # ALWAYS a python object (we made it a str)
-        value = value.strip()
+        # Always use the item's "data" (what you passed as addItem(..., userData))
+        value = (self.select_comparison.currentData() or "").strip()
 
-        if not value:
+        def _clear_comparison():
             with shared.write_lock:
                 shared.filename_2    = ""
                 shared.histogram_2   = []
@@ -1069,22 +1125,43 @@ class Tab2(QWidget):
                 shared.comp_coeff_3  = 0.0
                 shared.counts_2      = 0
                 shared.compression_2 = 1
+            self.filename_2 = ""
+            logger.info("   ✅ Cleared comparison selection")
+
+        # 1) No selection → clear everything
+        if not value:
+            _clear_comparison()
             self.update_histogram()
             return
 
+        # 2) Synthetic library: "lib/<isotope>"
         if value.startswith("lib/"):
             iso = value.split("/", 1)[1]
-
             ok = generate_synthetic_histogram(iso)
-            if not ok:
-                logger.error (f"[ERROR] Failed to build synthetic comparison: {iso} ❌")
+            if ok:
+                with shared.write_lock:
+                    shared.filename_2 = value              # record the logical selection
+                self.filename_2 = value
+                logger.info(f"   ✅ Built synthetic comparison: {value}")
+            else:
+                logger.error(f"  ❌ Failed to build synthetic comparison: {value}")
+                # keep previous selection; do not clobber filename_2 on failure
             self.update_histogram()
             return
 
+        # 3) Real file on disk
         ok = load_histogram_2(value)
-        logger.info(f"[INFO] Loaded comparison spectrum: {value} ✅" if ok else
-                    f"[ERROR] Failed to load comparison spectrum: {value} ❌")
+        if ok:
+            with shared.write_lock:
+                shared.filename_2 = value
+            self.filename_2 = value
+            logger.info(f"   ✅ Loaded comparison spectrum: {value}")
+        else:
+            logger.error(f"  ❌ Failed to load comparison spectrum: {value}")
+            # optional: _clear_comparison() if you want to drop previous on failure
+
         self.update_histogram()
+
 
     def on_select_flag_table_changed(self, index: int):
         """Load the selected flag file and update shared.isotope_flags"""
@@ -1106,11 +1183,11 @@ class Tab2(QWidget):
             with shared.write_lock:
                 shared.isotope_flags = flags
 
-            logger.info(f"[INFO] Loaded isotope flags from: {fname} ✅")
+            logger.info(f"   ✅ Loaded isotope flags from: {fname} ")
             self.update_peak_markers()  # optional: force marker update on file change
 
         except Exception as e:
-            logger.error(f"[ERROR] reading flag file '{flag_path}': {e} ❌")
+            logger.error(f"  ❌ reading flag file '{flag_path}': {e} ")
             with shared.write_lock:
                 shared.isotope_flags = []  # fallback to empty on error
 
@@ -1148,13 +1225,13 @@ class Tab2(QWidget):
             filename = shared.filename
 
         if not filename:
-            logger.warning("[WARNING] No filename available 👆")
+            logger.warning("👆 No filename available ")
             return
 
         json_path = USER_DATA_DIR / f"{filename}.json" if not filename.endswith(".json") else filename
 
         if not json_path.exists():
-            logger.warning(f"[WARNING] JSON file not found: {json_path} 👆")
+            logger.warning(f"👆 JSON file not found: {json_path}")
             return
 
         try:
@@ -1165,16 +1242,16 @@ class Tab2(QWidget):
             try:
                 data["data"][0]["sampleInfo"]["note"] = new_note
             except (IndexError, KeyError) as e:
-                logger.error(f"[ERROR] Failed to update note field: {e} ❌")
+                logger.error(f"  ❌ Failed to update note field: {e} ")
                 return
 
             with open(json_path, "w", encoding="utf-8") as f:
                 json.dump(data, f)  # no indent ➜ compact
 
-            logger.info(f"[INFO] Updated note in {filename} ✅")
+            logger.info(f"   ✅ Updated note in {filename} ")
 
         except Exception as e:
-            logger.error(f"[ERROR] Exception during JSON update: {e} ❌")
+            logger.error(f" ❌ Exception during JSON update: {e} ")
 
     def on_dld_csv_btn(self):
 
@@ -1221,7 +1298,7 @@ class Tab2(QWidget):
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to save CSV:\n{str(e)} ❌")
-            logger.error(f"[ERROR] Save failed: {str(e)} ❌")
+            logger.error(f"  ❌ Save failed: {str(e)} ")
 
     def apply_calibration(self, x_vals, coeffs):
         if any(coeffs):
@@ -1254,7 +1331,7 @@ class Tab2(QWidget):
             with shared.write_lock:
                 shared.compression = value
                 shared.bins = int(shared.bins_abs/value)
-                logger.info(f"[INFO] Compression set to {value} (i.e., {shared.bins_abs // value} bins) ✅")
+                logger.info(f"   ✅ Compression set to {value} (i.e., {shared.bins_abs // value} bins) ")
         return    
 
     def send_selected_command(self):
@@ -1262,7 +1339,7 @@ class Tab2(QWidget):
         cmd = self.cmd_selector.currentData()
 
         if cmd:  # Ignore if default item
-            logger.info(f"[INFO] tab2 command selected: {cmd} ✅")
+            logger.info(f"   ✅ tab2 command selected: {cmd} ")
 
             shproto.dispatcher.process_03(cmd)
 
@@ -1338,7 +1415,7 @@ class Tab2(QWidget):
                 smoothing_window=3
             )
         except Exception as e:
-            logger.error(f"[ERROR] peak_finder failed: {e} ❌")
+            logger.error(f"  ❌ peak_finder failed: {e} ")
             return
 
         coeffs = [coeff_1, coeff_2, coeff_3]
@@ -1460,7 +1537,7 @@ class Tab2(QWidget):
             filename       = shared.filename
 
         if not histogram:
-            logger.warning("[WARNING] No histogram data 👆")
+            logger.warning("👆 No histogram data ")
             return
 
         # 2) Build series in linear space
@@ -1500,7 +1577,7 @@ class Tab2(QWidget):
                 x_vals_corr = list(range(len(corr)))
                 y_for_peaks = gaussian_correl(y_for_peaks, sigma)
             except Exception as e:
-                logger.error(f"[ERROR] Gaussian correlation failed: {e} ❌")
+                logger.error(f"  ❌ Gaussian correlation failed: {e} ")
 
         x_vals      = self.calibrate_spectrum(x_vals,      coeff_abc,      cal_switch)
         x_vals2     = self.calibrate_spectrum(x_vals2,     comp_coeff_abc, cal_switch) if x_vals2 else []
