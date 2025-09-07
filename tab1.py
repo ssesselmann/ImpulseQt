@@ -47,7 +47,7 @@ class Tab1(QWidget):
         if index != -1:
             self.selector.setCurrentIndex(index)
         else:
-            logger.warning(f"[WARNING] Unknown device_type '{shared.device_type}' in settings 👆")
+            logger.warning(f"👆 Unknown device_type '{shared.device_type}'")
 
         self.selector.setMinimumWidth(150)
         self.selector.setSizeAdjustPolicy(QComboBox.AdjustToContents)
@@ -116,7 +116,7 @@ class Tab1(QWidget):
             with shared.write_lock:
                 shared.device_type = value
                 shared.save_settings()
-            logger.info(f"[INFO] Device type changed to {value}, quitting to apply ✅")
+            logger.info(f"   ✅ Device type changed to {value}")
             QApplication.quit()  # <-- This will now work again as expected
         else:
             # Revert to original value if cancelled
