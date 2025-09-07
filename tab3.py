@@ -55,7 +55,7 @@ from functions import (
 class Tab3(QWidget):
     def __init__(self):
         super().__init__()
-        
+        self._last_hist_len   = 0
         self.ready_to_plot    = True 
         self.has_loaded       = False
         self.plot_window_size = 60  
@@ -467,6 +467,9 @@ class Tab3(QWidget):
             self.plot_data.clear()
             self.time_stamps.clear()
 
+            self._last_hist_len = len(shared.histogram_hmp)
+
+
             # Push all rows into plot_data at once
             with shared.write_lock:
                 for row in shared.histogram_hmp:
@@ -536,6 +539,8 @@ class Tab3(QWidget):
                 device_type          = shared.device_type
                 t_interval           = int(shared.t_interval)
                 shared.histogram_hmp = []                   # ← clear the shared buffer
+
+            self._last_hist_len      = 0
 
             # --- Reset plotting ---
             self.refresh_timer.stop()
@@ -618,10 +623,10 @@ class Tab3(QWidget):
 
                 # ── Header line ────────────────────────────────────────────
                 if self.cal_switch.isChecked():  # Calibrated
-                    poly = np.poly1d([coeff_3, coeff_2, coeff_1])
+                    poly = np.poly1d([coeff_1, coeff_2, coeff_3])
                     energies = poly(np.arange(bins))
                     header = [f"{e:.3f}" for e in energies]
-                    writer.writerow(["Energy (keV)"] + header)
+                    writer.writerow(["Time Step"] + header)
                 else:  # Raw bin numbers
                     writer.writerow(["Time Step"] + [f"Bin {i}" for i in range(bins)])
 
@@ -673,8 +678,17 @@ class Tab3(QWidget):
 
             # ── Append and maintain buffer ──────────────────────────────────
 
-            self.plot_data.append(hist3d[-1])
+            # Handle resets (e.g., new run cleared the buffer)
+            if len(hist3d) < self._last_hist_len:
+                self._last_hist_len = 0
+                self.plot_data.clear()
 
+            new_rows = len(hist3d) - self._last_hist_len
+            if new_rows > 0:
+                for row in hist3d[-new_rows:]:
+                    self.plot_data.append(row[:])  # append only the newly arrived rows
+                self._last_hist_len += new_rows
+            # if no new rows, just re-render without appending
 
             if not self.plot_data:
                 logger.warning("👆 Plot data is empty ")
