@@ -223,6 +223,9 @@ def start(sn=None):
 
     csv_file_path = os.path.join(USER_DATA_DIR, "_max-pulse-shape.csv")  # hoisted for safety
 
+    noted_timeout = False
+    byte_misses = 0
+
     while not stopflag:
         
         # Energy saver
@@ -268,31 +271,20 @@ def start(sn=None):
             except Exception:
                 pass
 
+        # blocking read with timeout; returns b'' on timeout
+        rx = nano.read(READ_BUFFER)
+        if not rx:
+            continue  # silent: normal timeout / no bytes yet
 
-
-        # ---- blocking read with timeout; no busy spin, no lock around I/O ----
-        try:
-            rx_byte_arr = nano.read(size=READ_BUFFER)
-            
-            if not rx_byte_arr:
-                
-                continue  
-
-        except serial.SerialException as e:
-
-            logger.warning(f"👆 dispatcher {e} ")
-
-            break
-
-        for rx_byte in rx_byte_arr:
-            response.read(rx_byte)
+        for b in rx:
+            response.read(b)
             if response.dropped:
                 shproto.dispatcher.dropped += 1
                 shproto.dispatcher.total_pkts += 1
             if not response.ready:
                 continue
-
             shproto.dispatcher.total_pkts += 1
+
 
             # ===========================================================================
             # MODE_TEXT
