@@ -31,18 +31,7 @@ SETTINGS = {}
 session_start = datetime.datetime.now()
 session_end = None
 
-# -------------
-# FONTS
-# --------------
-# Paragraphs
-# P1      = "font-family: Verdana, sans-serif; font-size: 10pt; color: #aaa;"   # Small, light text
 
-# P2      = "font-family: Verdana, sans-serif; font-size: 12pt; color: #444;"  # Medium paragraph
-# # Headings
-# H1      = "font-family: Helvetica, sans-serif; font-size: 18pt; font-weight: bold; color: #027BFF;"
-
-# H2      = "font-family: Helvetica, sans-serif; font-size: 12pt; font-weight: bold; color: #333;"
-# Monospace 
 MONO    = "font-family: Menlo, Courier New; font-size: 10pt; color: #555;"
 # Buttons
 START   = "background-color: #79AB4C; color: white; font-weight: bold;"
@@ -132,7 +121,7 @@ if not logger.handlers:
     fh.setFormatter(formatter)
     logger.addHandler(fh)
 
-logger.debug("Logger is ready.")
+logger.info("   ✅ Logger is ready.")
 
 # -------------------------------
 # Environment: Development or Frozen
@@ -392,7 +381,7 @@ def read_flag_data(path):
             data = json.load(f)
         return data
     except Exception as e:
-        logger.error(f"[ERROR] reading isotopes data: {e}")
+        logger.error(f"  ❌ shared reading data: {e}")
         return []  
         
 def to_settings():
@@ -414,7 +403,7 @@ def to_settings():
 
 def from_settings(settings: dict):
     if not isinstance(settings, dict):
-        logger.error("[from_settings] ERROR: settings is not a dictionary.")
+        logger.error("  ❌ shared settings is not a dictionary.")
         return
 
     for key, meta in SETTINGS_SCHEMA.items():
@@ -444,7 +433,7 @@ def from_settings(settings: dict):
             SETTINGS[key] = value   # Optional: keep in SETTINGS dict too
 
         except Exception as e:
-            logger.warning(f"[from_settings] Failed to load '{key}' as {expected_type}. Using default. Error: {e}")
+            logger.error(f"   ❌ shared Failed to load '{key}' as {expected_type} Error: {e}")
             globals()[key] = default_value
             SETTINGS[key] = default_value
 
@@ -455,21 +444,21 @@ def load_settings():
             loaded = json.load(f)
 
     except Exception as e:
-        logger.warning(f"[load_settings] Using defaults due to error: {e}")
+        logger.error(f"   ❌ shared load_settings {e}")
         loaded = {}
 
     from_settings(loaded)
 
-    try:
-        if isotope_tbl:
-            full_path = LIB_DIR / isotope_tbl
-            if full_path.exists():
-                isotope_flags = read_flag_data(full_path)
-                logger.info(f"[INFO] Preloaded {len(isotope_flags)} isotope flags from {isotope_tbl}")
-            else:
-                logger.warning(f"[WARN] Isotope table '{isotope_tbl}' not found in {TBL_DIR}")
-    except Exception as e:
-        logger.error(f"[ERROR] Failed to preload isotope flags: {e}")
+    # try:
+    #     if isotope_tbl:
+    #         full_path = LIB_DIR / isotope_tbl
+    #         if full_path.exists():
+    #             isotope_flags = read_flag_data(full_path)
+    #             logger.info(f"[INFO] Preloaded {len(isotope_flags)} isotope flags from {isotope_tbl}")
+    #         else:
+    #             logger.warning(f"[WARN] Isotope table '{isotope_tbl}' not found in {LIB_DIR}")
+    # except Exception as e:
+    #     logger.error(f"  ❌ Failed to preload isotope flags: {e}")
 
 
 def save_default_settings():
@@ -477,19 +466,19 @@ def save_default_settings():
         defaults = {k: v["default"] for k, v in SETTINGS_SCHEMA.items()}
         with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
             json.dump(defaults, f, indent=2)
-        logger.info("Default settings saved successfully.")
+        logger.info("   ✅ Default settings saved successfully.")
     except Exception as e:
-        logger.error(f"[save_default_settings] Error: {e}")
+        logger.error(f"  ❌ failed to load settings: {e}")
 
 def save_settings():
     try:
         with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
             json.dump(to_settings(), f, indent=2)
-        logger.info("Runtime settings saved successfully.")
+        logger.info("   ✅ Runtime settings saved successfully.")
     except Exception as e:
-        logger.error(f"[save_settings] Error: {e}")
+        logger.error(f"  ❌ save_settings Error: {e}")
 
 def ensure_settings_exists():
     if not SETTINGS_FILE.exists():
-        logger.info("No settings file found. Saving default settings...")
+        logger.error("   ❌ No settings file found. Saving default settings...")
         save_default_settings()
