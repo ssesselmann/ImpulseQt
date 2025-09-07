@@ -13,6 +13,8 @@ import logging
 import os
 import platform
 import shared
+
+from threading import Event
 from struct import *
 from datetime import datetime
 from collections import deque
@@ -76,11 +78,6 @@ _histogram_version      = 0
 _histogram_row_complete = threading.Event()
 _histogram_offset_sum   = 0  # helps track packet coverage
 
-
-from threading import Event
-
-import threading
-
 _stat_tick = threading.Event()   # device 1 Hz heartbeat
 _stat_version = 0                # increments each MODE_STAT
 
@@ -88,6 +85,8 @@ _stat_version = 0                # increments each MODE_STAT
 _histogram_covered = bytearray(8192)  # per-bin coverage for current frame
 _histogram_cov_count = 0
 
+_expect_cal = False
+_last_cmd_sent = ""
 
 
 # ---- dispatcher runtime state (initialized once) ------------------
@@ -207,7 +206,7 @@ def start(sn=None):
     nano = shproto.port.connectdevice(sn)
     
     if not nano:
-        logger.error("[ERROR] Failed to connect to MAX ❌")
+        logger.error("[ERROR] ❌ Failed to connect to MAX ")
         return
 
     # ---- moved here (after connect) ----
@@ -216,7 +215,7 @@ def start(sn=None):
     nano.flushInput()
     nano.flushOutput()
 
-    logger.info("[INFO] MAX connected successfully ✅")
+    logger.info("   ✅ MAX connected successfully")
     response = shproto.packet()
 
     # Track whether the CSV file has been initialized
@@ -239,30 +238,37 @@ def start(sn=None):
                 local_cmd = shproto.dispatcher.command
                 shproto.dispatcher.command = ""
 
-            logger.info(f"[INFO] Dispatched command: {local_cmd!r} ✅")
+            logger.info(f"   ✅ Dispatched command: {local_cmd!r} ")
 
-            # Elapsed control (host-based)
-            if   local_cmd == "-sta":
-                _elapsed_start()
-
-            elif local_cmd == "-sto":
-                _elapsed_stop()
-
+            # Local host timers (still forward to device too; remove if device handles them)
+            if   local_cmd == "-sta": _elapsed_start()
+            elif local_cmd == "-sto": _elapsed_stop()
             elif local_cmd == "-rst":
                 _elapsed_reset()
-                shproto.dispatcher.clear() 
+                shproto.dispatcher.clear()
 
+            # IMPORTANT: send the command EXACTLY as provided (no CR/LF, no lowercasing)
             tx = shproto.packet()
             tx.cmd = shproto.MODE_TEXT
             tx.start()
-            cmd = local_cmd
-            if not cmd.endswith("\r\n"):
-                cmd = cmd + "\r\n"
-            for ch in local_cmd:
-                tx.add(ord(ch))
+            for b in local_cmd.encode("ascii", "strict"):
+                tx.add(b)
             tx.stop()
 
+            shproto.dispatcher._last_cmd_sent = local_cmd
+            shproto.dispatcher._expect_cal = (local_cmd.strip().lower() == "-cal")
+
             nano.write(tx.payload)
+
+            # Debug what we actually put on the wire (first 64 bytes)
+            try:
+                import binascii
+                logger.debug("  🐞 TX payload (hex): " + binascii.hexlify(tx.payload[:64]).decode())
+                logger.debug(f"  🐞 TX ascii: {local_cmd!r} (len={len(local_cmd)})")
+            except Exception:
+                pass
+
+
 
         # ---- blocking read with timeout; no busy spin, no lock around I/O ----
         try:
@@ -274,7 +280,7 @@ def start(sn=None):
 
         except serial.SerialException as e:
 
-            logger.warning(f"[WARNING] dispatcher: {e} ❌")
+            logger.warning(f"👆 dispatcher {e} ")
 
             break
 
@@ -293,41 +299,88 @@ def start(sn=None):
             # ===========================================================================
             if response.cmd == shproto.MODE_TEXT:
                 shproto.dispatcher.pkts03 += 1
-                resp_decoded = bytes(response.payload[:len(response.payload) - 2])
-                resp_lines = []
-
                 try:
-                    resp_decoded = resp_decoded.decode("ascii")
-                    resp_lines = resp_decoded.splitlines()
-                    if re.search('^VERSION', resp_decoded):
-                        shproto.dispatcher.inf_str = resp_decoded
-                        logger.info(f"[INFO] Got MAX settings ✅")
+                    raw_bytes = bytes(response.payload)  # DO NOT SLICE
+                    resp_text = raw_bytes.decode("ascii", errors="replace")
 
-                except UnicodeDecodeError:
-                    logger.warning("[WARNING] Unknown response from dispatcher 👆")
+                    # Preserve original line structure; trim only the very last empty line if present
+                    lines = resp_text.splitlines()
+                    if lines and lines[-1] == "":
+                        lines = lines[:-1]
 
-                if len(resp_lines) == 40:
-                    serial_number = "{}".format(resp_lines[39])
-                    logger.info("[INFO] Found MAX serial # {} ✅".format(serial_number))
+                    # Publish to UI: first non-empty line
+                    first_non_empty = next((ln for ln in lines if ln.strip()), "")
+                    with shared.write_lock:
+                        shared.last_text = resp_text
+                        shared.max_serial_output = first_non_empty
 
+                    # ACK detection
+                    if any(ln.strip().lower() == "ok" for ln in lines):
+                        logger.info("   ✅ ok ")
 
-                    b_str = ''
-                    for b in resp_lines[0:10]:
-                        b_str += b
-                    crc = binascii.crc32(bytearray(b_str, 'ascii')) % 2**32
-                    if crc == int(resp_lines[10], 16):
-                        with shproto.dispatcher.calibration_lock:
-                            shproto.dispatcher.calibration[0] = unpack('d', int((resp_lines[0] + resp_lines[1]), 16).to_bytes(8, 'little'))[0]
-                            shproto.dispatcher.calibration[1] = unpack('d', int((resp_lines[2] + resp_lines[3]), 16).to_bytes(8, 'little'))[0]
-                            shproto.dispatcher.calibration[2] = unpack('d', int((resp_lines[4] + resp_lines[5]), 16).to_bytes(8, 'little'))[0]
-                            shproto.dispatcher.calibration[3] = unpack('d', int((resp_lines[6] + resp_lines[7]), 16).to_bytes(8, 'little'))[0]
-                            shproto.dispatcher.calibration[4] = unpack('d', int((resp_lines[8] + resp_lines[9]), 16).to_bytes(8, 'little'))[0]
-                            shproto.dispatcher.calibration_updated = 1
-                        logger.info("[INFO] Got calibration: {} ✅".format(shproto.dispatcher.calibration))
-                    else:
-                        logger.error("[ERROR] Wrong crc for calibration values got: {:08x} expected: {:08x} ❌".format(int(resp_lines[10], 16), crc))
+                    # --- CRC + calibration load (minimal change with sentinel guard) ---
+                    if len(lines) >= 11:
+                        b_str = "".join(lines[0:10])
+                        crc_calc = binascii.crc32(b_str.encode("ascii")) & 0xFFFFFFFF
+
+                        crc_str = lines[10].strip()  # device's CRC line
+
+                        # NEW: skip compare if device reports a sentinel/no-CRC
+                        if crc_str.upper() in ("FFFFFFFF", "00000000"):
+                            logger.info("   ✅ Device reports no CAL CRC (got %r); skipping compare (after cmd=%r)",
+                                         crc_str, getattr(shproto.dispatcher, "_last_cmd_sent", "?"))
+                        else:
+                            try:
+                                crc_dev = int(crc_str, 16)
+                            except ValueError:
+                                logger.info("👆 CAL: no CRC provided by device (sentinel %s) — skipping validation (cmd=%r)", crc_str, last_cmd)
+
+                            else:
+                                if crc_calc == crc_dev:
+                                    with shproto.dispatcher.calibration_lock:
+                                        shproto.dispatcher.calibration[0] = unpack('d', int((lines[0] + lines[1]), 16).to_bytes(8, 'little'))[0]
+                                        shproto.dispatcher.calibration[1] = unpack('d', int((lines[2] + lines[3]), 16).to_bytes(8, 'little'))[0]
+                                        shproto.dispatcher.calibration[2] = unpack('d', int((lines[4] + lines[5]), 16).to_bytes(8, 'little'))[0]
+                                        shproto.dispatcher.calibration[3] = unpack('d', int((lines[6] + lines[7]), 16).to_bytes(8, 'little'))[0]
+                                        shproto.dispatcher.calibration[4] = unpack('d', int((lines[8] + lines[9]), 16).to_bytes(8, 'little'))[0]
+                                        shproto.dispatcher.calibration_updated = 1
+                                    logger.info(f"   ✅ Got calibration: {shproto.dispatcher.calibration} ")
+                                else:
+                                    logger.error("  ❌ Wrong crc for calibration values got: %08x expected: %08x (after cmd=%r)",
+                                        crc_dev, crc_calc, getattr(shproto.dispatcher, "_last_cmd_sent", "?"),
+                                    )
+
+                    # VERSION blob (unchanged)
+                    if re.search(r'^VERSION', resp_text):
+                        shproto.dispatcher.inf_str = resp_text
+                        logger.info("   ✅ Got MAX settings ")
+
+                    # Serial number detection:
+                    sn = None
+                    # primary: line 40 if available
+                    if len(lines) >= 40 and lines[39].strip():
+                        cand = lines[39].strip()
+                        if re.fullmatch(r"\d{6,12}", cand):  # adjust width if your SN length differs
+                            sn = cand
+                    # fallback: scan from bottom for a pure digits line (6–12)
+                    if sn is None:
+                        for ln in reversed(lines):
+                            tok = ln.strip()
+                            if re.fullmatch(r"\d{6,12}", tok):
+                                sn = tok
+                                break
+                    if sn:
+                        serial_number = sn
+                        logger.info(f"   ✅ Found MAX serial # {serial_number} ")
+                    # else:
+                    #     logger.warning(f"[WARN] Serial number not found in MODE_TEXT (nlines={len(lines)})")
+
+                except Exception as e:
+                    logger.warning(f"👆 MODE_TEXT decode issue: {e}")
 
                 response.clear()
+
+
 
             # ===========================================================================
             # MODE_HISTOGRAM
@@ -470,7 +523,7 @@ def start(sn=None):
 # 2D Histogram and cps
 # ========================================================
 def process_01(filename, compression, device, t_interval):
-    logger.info(f'[INFO] process_01({filename}) ✅')
+    logger.info(f'   ✅ process_01({filename}) ')
 
     global counts, last_counts
     counts       = 0
@@ -497,20 +550,27 @@ def process_01(filename, compression, device, t_interval):
     # Drive by device STAT
     last_stat_version = -1
     stats_since_save  = 0
+    timeout_logged = False
+
 
     while True:
         # Stop checks first
         if spec_stopflag or stopflag:
-            logger.info("[INFO] process_01: stop signal ✅")
+            logger.info("   ✅ process_01: stop signal ")
             break
         if counts >= max_counts or elapsed > max_seconds:
-            logger.info("[INFO] process_01: stop condition (counts or time) ✅")
+            logger.info("   ✅ process_01: stop condition (counts or time)")
             break
 
         # === Wait for device STAT (1 Hz) ===
         if not _stat_tick.wait(timeout=max(2.0, t_interval + 0.5)):
-            logger.warning("[WARNING] process_01: STAT wait timeout ⚠️")
+            if not timeout_logged:
+                logger.warning("👆 process_01 waiting for process to complete")
+                timeout_logged = True
             continue
+
+        timeout_logged = False
+
 
         # De-dupe STATs using version
         stat_v = _stat_version
@@ -600,7 +660,7 @@ def process_01(filename, compression, device, t_interval):
 # 3D WATERFALL
 # ========================================================
 def process_02(filename_hmp, compression3d, device, t_interval):
-    logger.info(f'[INFO] received command ({filename_hmp}) ✅')
+    logger.info(f'   ✅ Received cmd ({filename_hmp}) ')
 
     global counts, last_counts, histogram_hmp
 
@@ -628,16 +688,16 @@ def process_02(filename_hmp, compression3d, device, t_interval):
 
     while True:
         if shproto.dispatcher.spec_stopflag or shproto.dispatcher.stopflag:
-            logger.info("[INFO] MAX process_02 received stop signal ✅")
+            logger.info("   ✅ MAX process_02 received stop signal ")
             break
 
         if counts >= max_counts or elapsed > max_seconds:
-            logger.info("[INFO] Stop condition met (counts or time) ✅")
+            logger.info("   ✅ Stop condition met (counts or time) ")
             break
 
         # === Wait for the device STAT tick (1 Hz) ===
         if not shproto.dispatcher._stat_tick.wait(timeout=max(2.0, t_interval + 0.5)):
-            logger.warning("[WARNING] process_02: STAT wait timeout ⚠️")
+            logger.warning("👆 process_02: STAT wait timeout")
             continue
 
         # Read & reset tick; guard duplicates with version
@@ -700,7 +760,7 @@ def process_03(cmd):
 
         shproto.dispatcher.command = cmd
 
-    logger.info(f'[INFO] dispatcher process_03 ("{cmd}") ✅')
+    logger.info(f'   ✅ dispatcher process_03 ("{cmd}") ')
 
 
 
@@ -767,7 +827,7 @@ def save_spectrum_json(filename, device, comp_hst, counts, elapsed, coeffs, spec
 
             json.dump(data, f, separators=(",", ":"))
 
-        logger.info(f"[INFO] Spectrum saved to {json_path} ✅")
+        logger.info(f"   ✅ Spectrum saved to {json_path} ")
 
         cps_data = {
             "filename": filename,
@@ -781,13 +841,13 @@ def save_spectrum_json(filename, device, comp_hst, counts, elapsed, coeffs, spec
         with open(cps_path, "w") as f:
             json.dump(cps_data, f, indent=2)
 
-        logger.info(f"[INFO] CPS saved to {cps_path} ✅")
+        logger.info(f"   ✅ CPS saved to {cps_path} ")
 
     except Exception as e:
-        logger.error(f"[ERROR] Failed to save spectrum: {e} ❌")
+        logger.error(f"  ❌ Failed to save spectrum: {e} ")
 
 def load_json_data(file_path):
-    logger.info(f'[INFO] dispatcher.load_json_data({file_path}) ✅')
+    logger.info(f'   ✅ dispatcher.load_json_data({file_path}) ')
 
     if os.path.exists(file_path):
         with open(file_path, "r") as rjf:
@@ -850,7 +910,7 @@ def save_spectrum_hmp_json(filename_hmp, hst3d, counts, dt_start, dt_now, coeffs
     json_data = json.dumps(data, separators=(",", ":"))
     file_path = os.path.join(USER_DATA_DIR, f'{filename_hmp}_hmp.json')
 
-    logger.info(f'[INFO] Saving HMP JSON: {file_path} ✅')
+    logger.info(f'   ✅ Saving HMP JSON: {file_path}')
     with open(file_path, "w") as wjf:
         wjf.write(json_data)
 
@@ -862,6 +922,6 @@ def stop():
             spec_stopflag = 1
 
         except Exception as e:
-            logger.error(f"[ERROR] dispatcher.stop(): {e} ❌")
+            logger.error(f"  ❌ dispatcher.stop(): {e} ")
 
 
