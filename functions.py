@@ -172,10 +172,10 @@ def write_blank_json_schema_hmp(filename, device):
     try:
         with open(jsonfile, "w") as f:
             json.dump(data, f, separators=(',', ':'))
-        logger.info(f"[INFO] JSON schema created: {jsonfile} ✅")
+        logger.info(f"   ✅ fn JSON schema created: {jsonfile} ")
 
     except Exception as e:
-        logger.error(f"[ERROR] writing blank JSON file: {e} ❌")
+        logger.error(f"  ❌ fn writing blank JSON file: {e} ")
 
 
 def update_json_hmp_file(t0, t1, bins, counts, elapsed, filename_hmp, last_histogram, coeff_1, coeff_2, coeff_3, device):
@@ -191,7 +191,7 @@ def update_json_hmp_file(t0, t1, bins, counts, elapsed, filename_hmp, last_histo
             with open(jsonfile, "r") as f:
                 data = json.load(f)
         except Exception as e:
-            logger.error(f"[ERROR] reading JSON file: {e} ❌")
+            logger.error(f"  ❌ fn reading JSON file: {e} ")
             return
         
         # Update other fields
@@ -206,7 +206,7 @@ def update_json_hmp_file(t0, t1, bins, counts, elapsed, filename_hmp, last_histo
         result_data['energySpectrum']['spectrum'].append(last_histogram)
 
     else:
-        logger.info(f"[INFO]creating new json file: {jsonfile} ✅")
+        logger.info(f"   ✅ fn creating new json file: {jsonfile} ")
         
         data = {
             "schemaVersion": "NPESv2",
@@ -243,10 +243,10 @@ def update_json_hmp_file(t0, t1, bins, counts, elapsed, filename_hmp, last_histo
     try:
         with open(jsonfile, "w") as f:
             json.dump(data, f, separators=(',', ':'))
-        logger.info(f"[INFO] 3D file created: {filename_hmp}_hmp.json ✅")
+        logger.info(f"   ✅ fn 3D file created: {filename_hmp}_hmp.json ")
 
     except Exception as e:
-        logger.error(f"[ERROR] writing json file: {e} ❌")
+        logger.error(f"  ❌ fn writing json file: {e} ")
 
 # This function writes counts per second to JSON
 def write_cps_json(filename, count_history, elapsed, valid_counts, dropped_counts):
@@ -264,7 +264,7 @@ def write_cps_json(filename, count_history, elapsed, valid_counts, dropped_count
         with open(cps_file_path, 'w') as file:
             json.dump(cps_data, file, separators=(',', ':'))
     except Exception as e:
-        logger.error(f"[ERROR] saving CPS data to {cps_file_path}: {e} ❌")
+        logger.error(f"  ❌ fn saving CPS data to {cps_file_path}: {e} ")
      
     return    
 
@@ -364,7 +364,7 @@ def restart_program():
     subprocess.Popen(['python', 'app.py'])
 
 def shutdown():
-    logger.info('[INFO] Shutting down server... ✅')
+    logger.info("   ✅ fn Shutting down server")
     os._exit(0)
 
 def rolling_average(data, window_size):
@@ -413,18 +413,18 @@ def start_recording(mode, device_type):
         return start_pro_recording(mode)
 
     else:
-        logger.error(f"[ERROR] Unsupported device_type: {device_type} ❌")
+        logger.error(f"  ❌ fn Unsupported device_type: {device_type} ")
         return None
 
 def start_max_recording(mode):
     # Try to stop any previous process
     if hasattr(shared, "max_process_thread") and shared.max_process_thread.is_alive():
 
-        logger.warning("[WARNING] Previous MAX thread still running. Attempting to stop 👆")
+        logger.warning("👆 fn MAX thread still running, attempting to stop ")
 
         shproto.dispatcher.spec_stopflag = 1
         shared.max_process_thread.join(timeout=2)
-        logger.info("[INFO] Previous MAX thread stopped ✅")
+        logger.info("   ✅ fn Previous MAX thread stopped ")
 
     with shared.write_lock:
         shared.dropped_counts = 0
@@ -437,7 +437,7 @@ def start_max_recording(mode):
         device       = shared.device
         t_interval   = shared.t_interval
 
-    logger.info(f"[INFO] Starting MAX recording ({filename}) in mode {mode} ✅")
+    logger.info(f"   ✅ fn Starting MAX recording ({filename}) in mode {mode} ")
 
     # Reset dispatcher stop flag
     shproto.dispatcher.spec_stopflag = 0
@@ -457,17 +457,17 @@ def start_max_recording(mode):
     def run_dispatcher():
         try:
             if mode == 3:
-                logger.info("[INFO] Launching MAX 3D process_02 ✅")
+                logger.info("   ✅ fn Launching MAX 3D process_02 ")
 
                 shproto.dispatcher.process_02(filename_hmp, compression, device, t_interval)
 
             else:
-                logger.info("[INFO] Launching MAX 2D process_01 ✅")
+                logger.info("   ✅ fn Launching MAX 2D process_01 ")
 
                 shproto.dispatcher.process_01(filename, compression, device, t_interval)
 
         except Exception as e:
-            logger.error(f"[ERROR] MAX process thread crashed: {e} ❌")
+            logger.error(f"  ❌ fn MAX process thread crashed: {e} ")
 
     process_thread = threading.Thread(target=run_dispatcher, daemon=True)
     process_thread.start()
@@ -478,15 +478,15 @@ def start_max_recording(mode):
     def run_dispatcher():
         try:
             if mode == 3:
-                logger.info("[INFO] Launching MAX 3D process_02 ✅")
+                logger.info("   ✅ fn Launching MAX 3D process_02 ")
                 shproto.dispatcher.process_02(filename_hmp, compression3d, device, t_interval)
 
             else:
-                logger.info("[INFO] Launching MAX 2D process_01 ✅")
+                logger.info("   ✅ fn Launching MAX 2D process_01 ")
                 shproto.dispatcher.process_01(filename, compression, device, t_interval)
 
         except Exception as e:
-            logger.error(f"[ERROR] fn.run_dispatcher: {e} ✅")
+            logger.error(f"   ✅ fn run_dispatcher: {e}")
 
     process_thread = threading.Thread(target=run_dispatcher, daemon=True)
     process_thread.start()
@@ -503,7 +503,7 @@ def start_pro_recording(mode):
         shared.recording = True
 
     if mode == 2 or mode == 4:
-        logger.info(f"[INFO] Start recording ✅")
+        logger.info(f"   ✅ fn Start recording ")
 
         try:
             thread = threading.Thread(target=pulsecatcher, args=(mode, run_flag, run_flag_lock))
@@ -511,11 +511,11 @@ def start_pro_recording(mode):
             return thread
         except Exception as e:
 
-            logger.error(f"[ERROR] starting 2D spectrum thread: {e} ❌")
+            logger.error(f"  ❌ fn starting 2D spectrum thread: {e} ")
 
     elif mode == 3:
 
-        logger.info("[INFO] Start recording (3D) ✅")
+        logger.info("   ✅ fn Start recording (3D) ")
 
         write_blank_json_schema_hmp(filename_hmp, device)
 
@@ -527,10 +527,10 @@ def start_pro_recording(mode):
 
         except Exception as e:
 
-            logger.error(f"[ERROR] 3D spectrum thread: {e} ❌")
+            logger.error(f"  ❌ fn 3D spectrum thread: {e} ")
 
     else:
-        logger.error(f"[ERROR] Unsupported mode for PRO device: {mode} ❌")
+        logger.error(f"  ❌ fn Unsupported mode for PRO device: {mode}")
         return None
 
 def stop_recording():
@@ -543,7 +543,7 @@ def stop_recording():
         shproto.dispatcher.spec_stopflag = 1
         shproto.dispatcher.stop()
         
-    logger.info(f"[INFO] Recording stopped [{device_type}] ✅")
+    logger.info(f"   ✅ fn Recording stopped [{device_type}] ")
 
 # clear variables
 def clear_shared(mode):
@@ -558,7 +558,7 @@ def clear_shared(mode):
             shared.histogram       = [0] * shared.bins
             shared.spec_notes      = ""
 
-        logger.info(f"[INFO] Data cleared mode({mode}) ✅")    
+        logger.info(f"   ✅ fn Data cleared mode({mode}) ")    
 
     if mode == 3:
 
@@ -567,14 +567,14 @@ def clear_shared(mode):
         try:
             if os.path.exists(file_path):
                 os.remove(file_path)
-                logger.info(f"[INFO] Deleting: {file_path} ✅")
+                logger.info(f"   ✅ fn Deleting: {file_path} ")
 
             else:
-                logger.warning(f"[WARNING] File does not exist: {file_path}")
+                logger.warning(f"👆 fn File does not exist: {file_path}")
 
         except Exception as e:
 
-            logger.error(f"[ERROR] Deleting: {file_path}: {e} ❌")
+            logger.error(f"  ❌ fn Deleting: {file_path}: {e}")
 
         
         with shared.write_lock:
@@ -585,7 +585,7 @@ def clear_shared(mode):
             shared.dropped_counts  = 0
             shared.histogram_hmp    = []
 
-        logger.info(f"[INFO] Cleared data mode({mode})")  
+        logger.info(f"   ✅ fn Cleared data mode({mode})")  
 
     return
 
@@ -618,7 +618,7 @@ def export_csv(filename, data_directory, calib_switch):
         with open(os.path.join(data_directory, f'{filename}.json')) as f:
             data = json.load(f)
     except FileNotFoundError:
-        logger.error(f"[ERROR] {filename}.json not found in {data_directory} ❌")
+        logger.error(f"  ❌ fn {filename}.json not found in {data_directory} ")
         return
 
     if data.get("schemaVersion") == "NPESv2":
@@ -628,7 +628,7 @@ def export_csv(filename, data_directory, calib_switch):
         spectrum = data["resultData"]["energySpectrum"]["spectrum"]
         coefficients = data["resultData"]["energySpectrum"]["energyCalibration"]["coefficients"]
     except KeyError:
-        logger.error(f"[ERROR] Missing expected keys in {filename}.json ❌")
+        logger.error(f"  ❌ fn Missing expected keys in {filename}.json ")
         return
 
     # Ensure the download folder exists
@@ -663,7 +663,7 @@ def get_api_key():
     try:
         user_file_path = get_path(f'{data_directory}/_user.json')
         if not os.path.exists(user_file_path):
-            logger.error(f"[ERROR] User file not found: {user_file_path} ❌")
+            logger.error(f"  ❌ fn User file not found: {user_file_path} ")
             return None
 
         with open(user_file_path, 'r') as file:
@@ -672,7 +672,7 @@ def get_api_key():
         return api_key
 
     except Exception as e:
-        logger.error(f"[ERROR] code/functions/get_api_key() failed: {e} ❌")
+        logger.error(f"  ❌ fn code/functions/get_api_key() failed: {e} ")
 
         return None
 
@@ -681,11 +681,11 @@ def publish_spectrum(filename):
     with shared.write_lock:
         data_directory = shared.DATA_DIR
         
-    logger.info(f'[INFO] functions.publish_spectrum {filename} ✅')
+    logger.info(f"   ✅ fn functions.publish_spectrum {filename} ")
 
     url = "https://gammaspectacular.com/spectra/publish_spectrum"
     api_key = get_api_key()
-    logger.info(f'[INFO] Api key obtained {api_key} ✅')
+    logger.info(f"  ✅ fn Api key obtained {api_key}")
 
     spectrum_file_path = f'{data_directory}/{filename}.json'
     try:
@@ -694,23 +694,23 @@ def publish_spectrum(filename):
             data = {'api_key': api_key}
             response = req.post(url, files=files, data=data)
             if response.status_code == 200:
-                logger.info(f'[INFO] {filename} Published ok ✅')
+                logger.info(f"   ✅ fn {filename} Published ok ")
                 return f'{filename}\npublished:\n{response}'
             else:
-                logger.error(f'[ERROR] {response.text} ❌')
+                logger.error(f"  ❌ fn {response.text} ")
 
                 return f'Error from /code/functions/publish_spectrum: {response.text}'
     except req.exceptions.RequestException as e:
-        logger.error(f'[ERROR] publish failed {e} ❌')
+        logger.error(f"  ❌ fn publish failed {e}")
 
         return f'code/functions/publish_spectrum: {e}'
     except FileNotFoundError:
-        logger.error(f'[ERROR] from /code/functions/publish_spectrum: {spectrum_file_path} ❌')
+        logger.error(f"  ❌ fn publish_spectrum: {spectrum_file_path} ")
 
-        return f'Error from /code/functions/publish_spectrum: {spectrum_file_path}'
+        return f"error from /code/functions/publish_spectrum: {spectrum_file_path}"
 
     except Exception as e:
-        logger.error(f'[ERROR] from /code/functions/publish_spectrum: {e} ❌')
+        logger.error(f"  ❌ fn from /code/functions/publish_spectrum: {e} ")
         return f'Error from /code/functions/publish_spectrum: {e}'
 
 
@@ -732,30 +732,73 @@ def fetch_json(file_id):
             return response.json()
         return None
     except req.exceptions.RequestException as e:
-        logger.error(f"[ERROR] fetching JSON: {e} ❌")
+        logger.error(f"  ❌ fn fetching JSON: {e} ")
         return None
 
-# Check if commands sent to processor is safe
-def allowed_command(cmd):
-    allowed_command_patterns = [
-        r"^-U[0-9]{1,3}$",
-        r"^-V[0-9]{1,3}$",
-        r"^-sto$",
-        r"^-sta$",
-        r"^-inf$",
-        r"^-cal$",
-        r"^-nos[0-9]{1,3}$",
-        r"^-ris[0-9]{1,3}$",
-        r"^-fall[0-9]{1,3}$"
-    ]
-    if cmd is None or not isinstance(cmd, str):
+# Check for dangerous commands
+
+ALLOWED = {
+    "-sto": None,
+    "-sta": None,
+    "-inf": None,
+    "-cal": None,
+    "-rst": None,
+    "status": None,         
+    "-U":   (0, 255), 
+    "-V":   (0, 255),
+    "-nos": (0, 255),
+    "-ris": (0, 255),
+    "-fall": (0, 255),
+    "-max": (0, 100000),     
+    "-tc":  ("on", "off"),  
+}
+
+def allowed_command(cmd: str) -> bool:
+    if not isinstance(cmd, str):
         return False
-    if cmd.startswith("+"):
+    s = cmd.strip()
+    if not s:
+        return False
+
+    # Admin override passes anything
+    if s.startswith("+"):
         return True
-    for pattern in allowed_command_patterns:
-        if re.match(pattern, cmd):
-            return True
+
+    # Try to match against each allowed literal
+    for literal, rule in ALLOWED.items():
+        # No-arg: exact literal match (case-insensitive)
+        if rule is None:
+            if re.fullmatch(re.escape(literal), s, flags=re.IGNORECASE):
+                return True
+            continue
+
+        # Numeric range: literal + optional space + digits
+        if isinstance(rule, tuple) and len(rule) == 2 and all(isinstance(x, int) for x in rule):
+            m = re.fullmatch(re.escape(literal) + r"\s*(\d+)", s, flags=re.IGNORECASE)
+            if not m:
+                continue
+            try:
+                n = int(m.group(1))
+            except ValueError:
+                continue
+            lo, hi = rule
+            if lo <= n <= hi:
+                return True
+            continue
+
+        # Enumerated string: literal + optional space + word
+        if isinstance(rule, tuple) and rule and all(isinstance(x, str) for x in rule):
+            m = re.fullmatch(re.escape(literal) + r"\s*([A-Za-z]+)", s, flags=re.IGNORECASE)
+            if not m:
+                continue
+            val = m.group(1).lower()
+            if val in {v.lower() for v in rule}:
+                return True
+            continue
+
     return False
+
+
 
 def is_valid_json(file_path):
     try:
@@ -850,7 +893,7 @@ def get_filename_2_options():
             })
         iso_options.sort(key=lambda x: x['sort_key'])
     except Exception as e:
-        logger.info(f"[INFO] No isotopes.json found or failed to load: {e}")
+        logger.info(f"   ✅ fn No isotopes.json found or failed to load: {e}")
         iso_options = []
 
     # Remove sort keys
@@ -946,7 +989,7 @@ def load_histogram(filename):
             shared.counts          = sum(shared.histogram)
 
 
-        logger.info(f"[INFO] Loaded histogram {filename} ✅")    
+        logger.info(f"   ✅ fn Loaded histogram {filename} ")    
 
         return True
 
@@ -982,13 +1025,13 @@ def load_histogram_2(filename):
             shared.counts_2        = sum(shared.histogram_2)
 
 
-        logger.info(f"[INFO] Loaded comparison {filename} ✅") 
+        logger.info(f"   ✅ fn Loaded comparison {filename} ") 
 
         return True
 
     except Exception as e:
         
-        logger.info(f"[ERROR] failed loading comparison {filename}: {e} ❌")
+        logger.info(f"  ❌ fn failed loading comparison {filename}: {e} ")
 
         return False
 
@@ -998,14 +1041,14 @@ def load_histogram_hmp(stem):
     file_path  = Path(USER_DATA_DIR) / f"{clean_stem}_hmp.json"
 
     if not file_path.exists():
-        logger.warning(f"[WARNING] file not found: {file_path} ❌")
+        logger.warning(f"👆 fn file not found: {file_path} ")
         with shared.write_lock:
             shared.histogram_hmp = [[0] * 512] * 10
         return
 
     try:
         with open(file_path, "r", encoding="utf-8") as file:
-            logger.info("[INFO] loading 3d file ✅")
+            logger.info("   ✅ fn loading 3d file ")
 
             data = json.load(file)
 
@@ -1030,17 +1073,17 @@ def load_histogram_hmp(stem):
             shared.compression = int(shared.bins_abs / shared.bins)
 
 
-        logger.info(f"[INFO] shared updated from {file_path} ✅")
+        logger.info(f"   ✅ fn shared updated from {file_path} ")
 
     except Exception as e:
 
-        logger.error(f"[ERROR] Exception loading 3D histogram: {e} ❌")
+        logger.error(f"  ❌ fn Exception loading 3D histogram: {e} ")
 
 def load_cps_file(filepath):
     
     if not os.path.exists(filepath):
 
-        logging.info(f"[INFO] File does not exist: {filepath} ✅")
+        logging.info(f"   ✅ fn File does not exist: {filepath} ")
 
         return
 
@@ -1091,7 +1134,7 @@ def start_max_pulse():
         process_03('-sta')  # Start recording
         time.sleep(0.1)
     except Exception as e:
-        logger.error(f"[ERROR] in process_03 command: {e} ❌")
+        logger.error(f"  ❌ fn process_03 command: {e} ")
         return True  # Signal that the interval should remain disabled
 
     if not stop_thread.is_set():  # Check if the thread is already running
@@ -1107,7 +1150,7 @@ def start_max_oscilloscope():
         process_03('-sta')     # Start process
         time.sleep(0.1)
     except Exception as e:
-        logger.error(f"[ERROR] in process_03 command: {e} ❌")
+        logger.error(f"  ❌ fn process_03 command: {e} ")
         return True  # Signal that the interval should remain disabled
 
     if not stop_thread.is_set():  # Check if the thread is already running
@@ -1121,7 +1164,7 @@ def stop_max_pulse_check():
         time.sleep(0.1)
         process_03('-mode 0')  # Reset mode to default
     except Exception as e:
-        logger.error(f"[ERROR] in process_03 command: {e} ❌")
+        logger.error(f"  ❌ fn process_03: {e} ")
     
     stop_thread.set()  # Signal the thread to stop
     return True  # Signal that the interval should be disabled
@@ -1134,7 +1177,7 @@ def capture_pulse_data():
                 break
             pulse_data_queue.put(pulse_data)  # Add the list to the queue
     except Exception as e:
-        logger.error(f"[ERROR] while capturing pulse data: {e} ❌")
+        logger.error(f"  ❌ fn capture_pulse_data: {e} ")
 
 
 
@@ -1160,7 +1203,7 @@ def get_flag_options():
             label = f.stem.replace('-', ' ').replace('_', ' ').title()
             options.append({'label': label, 'value': f.name})
     except Exception as e:
-        logger.error(f"[ERROR] Failed to list flag files in {path}: {e} ❌")
+        logger.error(f"[  ❌ fn Fget_flag_options {path}: {e} ")
         return []
 
     return options   
@@ -1187,7 +1230,7 @@ def get_serial_device_information():
         return dev_info if dev_info else "No response from device"
 
     except Exception as e:
-        logger.error(f"[ERROR] retrieving device information: {e} ❌")
+        logger.error(f"  ❌ fn get_serial_device_information {e} ")
         return "[ERROR] retrieving device information"
 
 def _wait_for_change(getter, timeout=0.8, poll=0.02):
@@ -1344,19 +1387,19 @@ def generate_synthetic_histogram(isotope_key: str, include_xray: bool = False) -
         db  = _load_isotope_db()
         key = _resolve_iso_key(isotope_key, db)
         if key not in db:
-            logger.info(f"[INFO] Isotope '{isotope_key}' not found in isotopes.json")
+            logger.info(f"👆 fn Isotope '{isotope_key}' not found in isotopes.json")
             return False
 
         bins = int(shared.bins_abs / shared.compression)
         if bins <= 0:
-            logger.error("[ERROR] bins <= 0; ensure primary spectrum & compression are set.")
+            logger.error("  ❌ fn bins <= 0; ensure primary spectrum & compression are set.")
             return False
 
         # choose lines, compute total intensity
         lines = [ln for ln in db[key]["lines"] if include_xray or ln["label"] != "x-ray"]
         I_sum = sum(ln["intensity"] for ln in lines)
         if I_sum <= 0:
-            logger.info(f"[INFO] No usable lines for '{key}'")
+            logger.info(f"   ✅ fn No usable lines for '{key}'")
             return False
 
         scale = TARGET_COUNTS / I_sum
@@ -1420,9 +1463,9 @@ def generate_synthetic_histogram(isotope_key: str, include_xray: bool = False) -
             except Exception:
                 shared.compression_2 = 1
 
-        logger.info(f"[INFO] Synthetic comparison '{key}': bins={bins}, peaks={added}, total={shared.counts_2}, dE={dE:.4f} keV/bin ✅")
+        logger.info(f"   ✅ fn Synthetic spec '{key}': bins={bins}, peaks={added}, total={shared.counts_2}, dE={dE:.4f} keV/bin ")
         return True
 
     except Exception as e:
-        logger.error(f"[ERROR] generate_synthetic_histogram('{isotope_key}'): {e} ❌")
+        logger.error(f"  ❌ fn generate_synthetic_histogram('{isotope_key}'): {e} ")
         return False
