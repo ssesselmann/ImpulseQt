@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# install-mac.spec
+# build-mac.spec
 
 import os
 from pathlib import Path
