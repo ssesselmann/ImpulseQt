@@ -267,7 +267,7 @@ def save_data(save_queue):
             full_histogram  = data['full_histogram']
             fn.write_histogram_npesv2(t0, t1, bins, local_counts, dropped_counts, local_elapsed, filename, full_histogram, coeff_1, coeff_2, coeff_3, device, location, spec_notes)
             fn.write_cps_json(filename, local_count_history, local_elapsed, local_counts, dropped_counts)
-            logger.info(f'[INFO] histogram and cps saved {t1}')
+            logger.info(f'   ✅ pc histogram and cps saved {t1}')
 
         if 'filename_hmp' in data and 'last_minute' in data:
             filename_hmp = data['filename_hmp']
@@ -294,7 +294,7 @@ def update_mode_3_data(mode, shared, full_histogram, last_histogram, hmp_buffer,
             hmp_buffer.append(interval_hist)
 
         else:
-            logger.debug("[ERROR] no data.")
+            logger.debug("   ✅ pc no data.")
 
         interval_counter += 1
 
@@ -315,7 +315,7 @@ def update_mode_3_data(mode, shared, full_histogram, last_histogram, hmp_buffer,
                 hmp_buffer.clear()
                 interval_counter = 0
             else:
-                logger.debug("[ERROR] hmp_buffer was empty")
+                logger.debug("  ❌ pc hmp_buffer was empty")
 
     return interval_counter, last_histogram
 
