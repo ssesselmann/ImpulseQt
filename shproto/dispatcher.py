@@ -646,21 +646,20 @@ def process_01(filename, compression, device, t_interval):
         with stopflag_lock:
             stopflag = 1
             spec_stopflag = 1
-
         try:
-            process_03('-sto')  # ask device to stop
+            process_03('-sto')  # tell device to stop
         except Exception as e:
-            logger.error(f"  ❌ dispatcher.stop(): {e} ")
+            logger.error(f"dispatcher.stop(): {e}")
 
-        # Wait briefly for the dispatcher thread to exit and close the port
         t = _dispatcher_thread
         if t and t.is_alive():
             t.join(timeout=2.0)
 
-        # Reset for the next run
+        # reset flags for next run
         with stopflag_lock:
             stopflag = 0
             spec_stopflag = 0
+
 
 
 
