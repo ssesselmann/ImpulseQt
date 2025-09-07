@@ -22,10 +22,10 @@ class FeedbackPopup(QDialog):
         label.setAlignment(Qt.AlignCenter)
         layout.addWidget(label)
 
-        btn_layout = QHBoxLayout()
-        btn_good = QPushButton("👍 Good")
-        btn_bad = QPushButton("👎 Bad")
-        btn_ignore = QPushButton("❌ Ignore")
+        btn_layout  = QHBoxLayout()
+        btn_good    = QPushButton("👍 Good")
+        btn_bad     = QPushButton("👎 Bad")
+        btn_ignore  = QPushButton("❌ Ignore")
 
         btn_good.clicked.connect(lambda: self.handle_feedback("Good"))
         btn_bad.clicked.connect(lambda: self.handle_feedback("Bad"))
