@@ -1022,6 +1022,7 @@ class Tab2(QWidget):
             epb_switch  = shared.epb_switch
             coi_switch  = shared.coi_switch
             log_switch  = shared.log_switch
+            slb_switch  = shared.slb_switch
 
 
         if sigma > 0 and peakfinder > 0 and cal_switch:
@@ -1054,8 +1055,11 @@ class Tab2(QWidget):
         elif cal_switch:
             logger.info(f"   ✅ {name} turned on")
 
+        elif slb_switch:
+            logger.info(f"   ✅ {name} turned on")    
+
         else:
-            logger.info(" ")
+            logger.info(f"   ✅{name} turned off")
 
         
         self.update_histogram()
