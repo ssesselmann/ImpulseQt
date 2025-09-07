@@ -150,7 +150,7 @@ class Tab3(QWidget):
         if index != -1:
             self.bins_selector.setCurrentIndex(index)
         else:
-            logger.warning(f"[WARNING] Compression {current_compression} not found in BIN_OPTIONS 👆")
+            logger.warning(f"👆 Compression {current_compression} not found in BIN_OPTIONS ")
 
         self.bins_selector.currentIndexChanged.connect(self.on_select_bins_changed)
 
@@ -300,7 +300,7 @@ class Tab3(QWidget):
             logo_label.setAlignment(Qt.AlignCenter)
             bottom_layout.addWidget(logo_label)
         else:
-            logger.warning(f"[WARNING] Logo image not found at: {logo_path} 👆\n")
+            logger.warning(f"👆 Logo image not found at: {logo_path}")
 
         # Add all 3 sections to left side panel with equal stretch
         left_panel_layout.addWidget(top_section, stretch=1)
@@ -366,7 +366,7 @@ class Tab3(QWidget):
             if index != -1:
                 self.bins_selector.setCurrentIndex(index)
             else:
-                logger.warning(f"[WARNING] Compression {compression} not found in BIN_OPTIONS 👆\n")
+                logger.warning(f"👆 Compression {compression} not found in BIN_OPTIONS")
 
             self.has_loaded = True
 
@@ -409,12 +409,12 @@ class Tab3(QWidget):
                 shared.save_settings()
 
         except Exception as e:
-            logger.warning(f"[WARNING] Invalid input for {key}: {text} ({e}) 👆\n")
+            logger.warning(f"👆 Invalid input for {key}: {text} ({e})")
 
     def on_checkbox_toggle(self, key, state):
         with shared.write_lock:
             setattr(shared, key, bool(state))
-            logger.info(f"shared.{key} = {state}")
+            logger.info(f"   ✅ shared.{key} = {state}")
             shared.save_settings()
 
         self.update_graph()    
@@ -450,7 +450,7 @@ class Tab3(QWidget):
         if index != -1:
             self.bins_selector.setCurrentIndex(index)
         else:
-            logger.warning(f"[WARNING] Compression {shared.compression} not found in BIN_OPTIONS 👆\n")
+            logger.warning(f"👆 Compression {shared.compression} not found in BIN_OPTIONS")
 
         self.filename_input.setText(selected_name)
 
@@ -476,7 +476,7 @@ class Tab3(QWidget):
 
 
         except Exception as e:
-            logger.warning(f"[WARNING] Failed to load 3D file: {e} 👆\n")
+            logger.warning(f"👆 Failed to load 3D file: {e}")
             with write_lock:
                 self.ready_to_plot = False
                 run_flag = False
@@ -566,7 +566,7 @@ class Tab3(QWidget):
             index = next(i for i, (_, value) in enumerate(BIN_OPTIONS) if value == shared.compression)
             self.bins_selector.setCurrentIndex(index)
         except StopIteration:
-            logger.warning(f"[WARNING] Compression {compression} not found in BIN_OPTIONS 👆\n")
+            logger.warning(f"👆 Compression {compression} not found in BIN_OPTIONS")
             self.bins_selector.setCurrentIndex(len(BIN_OPTIONS) - 1) 
 
         self.update_graph()
@@ -580,9 +580,9 @@ class Tab3(QWidget):
             with shared.write_lock:
                 shared.compression = compression
                 shared.bins = shared.bins_abs // compression
-            logger.info(f"[INFO] Compression set to {compression}, bins = {shared.bins} ✅ \n")
+            logger.info(f"   ✅ Compression set to {compression}, bins = {shared.bins}")
         else:
-            logger.warning(f"[WARNING] No compression data found for index {index} 👆\n")
+            logger.warning(f"👆 No compression data found for index {index}")
 
 
     def download_array_csv(self):
@@ -635,7 +635,7 @@ class Tab3(QWidget):
             QMessageBox.information(self, "Download Complete", f"CSV saved to:\n{csv_path}")
 
         except Exception as e:
-            logger.error(f"[ERROR] saving CSV: {e} ❌\n")
+            logger.error(f"  ❌ saving CSV: {e} ")
             QMessageBox.critical(self, "Error", f"Failed to save CSV:\n{e}")
 
     # ------------------------------------------------------------------
@@ -661,11 +661,11 @@ class Tab3(QWidget):
 
             # ── Ensure data is valid ────────────────────────────────────────
             if not hist3d or not isinstance(hist3d[-1], list):
-                logger.warning("[WARNING] No valid histogram row to display 👆\n")
+                logger.warning("👆 No valid histogram row to display ")
                 return
 
             if len(hist3d[-1]) != bins:
-                logger.warning(f"[WARNING] Invalid bin length: {len(hist3d[-1])} expected {bins} 👆\n")
+                logger.warning(f"👆 Invalid bin length: {len(hist3d[-1])} expected {bins}")
                 return
 
             # ── Append and maintain buffer ──────────────────────────────────
@@ -674,7 +674,7 @@ class Tab3(QWidget):
 
 
             if not self.plot_data:
-                logger.warning("[WARNING] Plot data is empty 👆\n")
+                logger.warning("👆 Plot data is empty ")
                 return
 
             # ── Build Z matrix ──────────────────────────────────────────────
@@ -694,7 +694,7 @@ class Tab3(QWidget):
 
 
             if Z.ndim != 2 or Z.shape[1] != bins:
-                logger.error(f"[ERROR] Z shape mismatch: {Z.shape}, expected (n_rows, {bins}) ❌\n")
+                logger.error(f"  ❌ Z shape mismatch: {Z.shape}, expected (n_rows, {bins}) ")
                 return
 
             bin_indices = np.arange(bins)
@@ -778,4 +778,4 @@ class Tab3(QWidget):
                 self.elapsed_display.setText(str(elapsed))
 
         except Exception as exc:
-            logger.error(f"[ERROR] update_graph() error: {exc} ❌\n", exc_info=True)
+            logger.error(f"  ❌ update_graph() error: {exc} ", exc_info=True)
