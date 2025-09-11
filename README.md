@@ -34,7 +34,7 @@ Just be respectful, and remember the **hundreds of hours** I spent designing, co
 
 ### **Feedback**
 
-Each time you exit the program, you’ll see a quick 👍 or 👎 feedback popup. Please don’t ignore it — it’s not annoying, it’s helpful. Your feedback directly shapes future versions!
+Your feedback is appreciated, it shapes future versions!
 
 ---
 
