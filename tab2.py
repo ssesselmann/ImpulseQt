@@ -658,19 +658,41 @@ class Tab2(QWidget):
             self.on_select_flag_table_changed(self.select_flag_table.currentIndex())
 
     def load_on_show(self):
-        # always refresh quickly (no settings involved)
+        # quick refresh you already have
         try:
             self._reload_flag_combo()
         except Exception as e:
             logger.error(f"  ❌ refreshing flag options: {e}")
 
-        # heavy stuff only once
+        # Always pull live settings from shared
+        with shared.write_lock:
+            ms          = int(shared.max_seconds)
+            mc          = int(shared.max_counts)
+            compression = int(shared.compression)
+            filename    = shared.filename
+
+        # Update the two inputs (assuming you have the same line edits on Tab2)
+        self.max_seconds_input.blockSignals(True)
+        self.max_seconds_input.setText(str(ms))
+        self.max_seconds_input.blockSignals(False)
+
+        self.max_counts_input.blockSignals(True)
+        self.max_counts_input.setText(str(mc))
+        self.max_counts_input.blockSignals(False)
+
+        # Update bins selector to current compression (same BIN_OPTIONS/itemData)
+        idx = self.bins_selector.findData(compression)
+        if idx != -1 and idx != self.bins_selector.currentIndex():
+            self.bins_selector.blockSignals(True)
+            self.bins_selector.setCurrentIndex(idx)
+            self.bins_selector.blockSignals(False)
+
+        # Heavy stuff only once
         if not getattr(self, "has_loaded", False):
-            with shared.write_lock:
-                filename = shared.filename
             if filename:
                 load_histogram(filename)
             self.has_loaded = True
+
 
 
     def load_switches(self):
