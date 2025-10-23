@@ -689,6 +689,9 @@ def process_02(filename_hmp, compression3d, device, t_interval):
             break
 
         if counts >= max_counts or elapsed > max_seconds:
+            _elapsed_stop()
+            shproto.dispatcher.stopflag == True
+
             logger.info("   ✅ Stop condition met (counts or time) ")
             break
 
@@ -738,7 +741,7 @@ def process_02(filename_hmp, compression3d, device, t_interval):
                 device=device
             )
             rows_since_save = 0
-            hst3d = []
+            #hst3d = []
 
         last_counts = counts
         elapsed     = int(time.time() - et_start)  # host elapsed; UI shows device seconds above
