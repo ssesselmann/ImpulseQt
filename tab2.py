@@ -526,9 +526,8 @@ class Tab2(QWidget):
 
         # Col 7 Row 2
         self.peakfinder_slider = QSlider(Qt.Horizontal)
-        self.peakfinder_values = [0] + list(range(100, 0, -1))  # [0, 100, 99, ..., 1]
-        self.peakfinder_slider.setRange(0, 100)
-        self.peakfinder_slider.setSingleStep(1)
+        self.peakfinder_slider.setRange(0, 100)       # Min = 0, Max = 100
+        self.peakfinder_slider.setValue(int(peakfinder))
         self.peakfinder_slider.setValue(int(peakfinder))
         self.peakfinder_slider.setFocusPolicy(Qt.StrongFocus)
         self.peakfinder_slider.setFocus()
@@ -1016,7 +1015,6 @@ class Tab2(QWidget):
             sigma       = shared.sigma
             iso_switch  = shared.iso_switch
             cal_switch  = shared.cal_switch
-            peakfinder  = shared.peakfinder
             comp_switch = shared.comp_switch
             diff_switch = shared.diff_switch
             epb_switch  = shared.epb_switch
@@ -1203,15 +1201,16 @@ class Tab2(QWidget):
         self.sigma_label.setText(f"Sigma: {sigma:.1f}")
         self.update_histogram()
 
-    def on_peakfinder_changed(self, position):
-        value = self.peakfinder_values[position]
+
+    def on_peakfinder_changed(self, val):
         with shared.write_lock:
-            shared.peakfinder = value
-        if value == 0:
-            self.peakfinder_label.setText(f"Peaks Off")
-        elif value > 0:
-            self.peakfinder_label.setText(f"More peaks >>")
+            shared.peakfinder = val  # save the raw slider value
+        if val == 0:
+            self.peakfinder_label.setText("Peaks Off")
+        elif val > 0:
+            self.peakfinder_label.setText(f"Peakfinder: {val}")
         self.update_histogram()
+        
 
     def open_calibration_popup(self):
         self.calibration_popup = CalibrationPopup(
