@@ -231,6 +231,7 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
     p.terminate()  # Closes stream when done
 
     with shared.write_lock:
+        shared.run_flag.clear()
         shared.save_done.set()
     return
 
@@ -271,52 +272,94 @@ def save_data(save_queue):
 
         if 'filename_hmp' in data and 'last_minute' in data:
             filename_hmp = data['filename_hmp']
-            last_minute  = [data['last_minute']]
+            last_minute  = data['last_minute']
             fn.update_json_hmp_file(t0, t1, bins, local_counts, local_elapsed, filename_hmp, last_minute, coeff_1, coeff_2, coeff_3, device)
             fn.write_cps_json(filename_hmp, local_count_history, local_elapsed, local_counts, dropped_counts)
 
 
-# Appends 1-second slices to shared.histogram_hmp
-def update_mode_3_data(mode, shared, full_histogram, last_histogram, hmp_buffer,
-                     interval_counter, t_interval, bins, now,
-                     save_queue, meta, filename_hmp):
+# Appends 1-second slices to shared.histogram_hmp (mode 3 = waterfall)
+def update_mode_3_data(
+    mode,
+    shared,
+    full_histogram,         # absolute counts per bin (running total)
+    last_histogram,         # same length as full_histogram; mutated in place
+    hmp_buffer,             # list of per-second delta rows (lists)
+    interval_counter,       # int: seconds accumulated since last flush
+    t_interval,             # int: aggregate period in seconds
+    bins,                   # int: expected number of bins (after compression)
+    now,                    # (unused here; kept for signature compatibility)
+    save_queue,             # queue for JSON saver thread
+    meta,                   # dict with metadata for save thread
+    filename_hmp            # base name for JSON file (without _hmp.json)
+):
+    """
+    Returns: (interval_counter, last_histogram)
 
+    Behavior:
+      - Build a 1s delta row from the absolute counters.
+      - Buffer each 1s row.
+      - Every t_interval seconds, aggregate buffered rows into one slice,
+        push to shared.histogram_hmp (UI ring), and enqueue a save job:
+          data["filename_hmp"] = filename_hmp
+          data["last_minute"]  = aggregated      # keeps existing save_data contract
+    """
+
+    # Only active for waterfall mode
     if mode != 3:
-
         return interval_counter, last_histogram
 
-    with shared.write_lock:
-        # Compute delta histogram for the last second
-        interval_hist = [full_histogram[i] - last_histogram[i] for i in range(bins)]
-        last_histogram[:] = full_histogram
+    # --- Defensive shape handling (bins may change if compression changed) ---
+    if len(full_histogram) < bins:
+        # pad right if the device produced fewer bins unexpectedly
+        full_histogram = list(full_histogram) + [0] * (bins - len(full_histogram))
+    elif len(full_histogram) > bins:
+        full_histogram = full_histogram[:bins]
 
-        if any(interval_hist):
-            hmp_buffer.append(interval_hist)
+    if len(last_histogram) != bins:
+        # Reset delta baseline if bins changed
+        last_histogram[:] = [0] * bins
+        hmp_buffer.clear()
+        interval_counter = 0
 
-        else:
-            logger.debug("   ✅ pc no data.")
+    # --- Build 1-second delta row (no locks; clamp negatives to 0) ---
+    interval_hist = [max(full_histogram[i] - last_histogram[i], 0) for i in range(bins)]
+    last_histogram[:] = full_histogram
 
-        interval_counter += 1
+    # Buffer only if there was activity
+    if any(interval_hist):
+        hmp_buffer.append(interval_hist)
+    # else: stay quiet (no data this second)
 
-        if interval_counter >= t_interval:
+    interval_counter += 1
 
-            if hmp_buffer:
-                # Sum across seconds (columns) to get one t_interval slice
-                aggregated = [sum(col) for col in zip(*hmp_buffer)]
-                # Append to live memory
+    # --- Flush every t_interval seconds ---
+    if interval_counter >= max(1, int(t_interval)):
+        if hmp_buffer:
+            # Aggregate N seconds into one slice (per-bin sums)
+            aggregated = [sum(col) for col in zip(*hmp_buffer)]
+
+            # Publish to UI ring buffer (create deque lazily, keep same object)
+            from collections import deque
+            with shared.write_lock:
+                if not hasattr(shared, "histogram_hmp") or not hasattr(shared.histogram_hmp, "append"):
+                    shared.histogram_hmp = deque(maxlen=getattr(shared, "ring_len_hmp", 3600))
                 shared.histogram_hmp.append(aggregated)
-                # Append to JSON via save thread
-                data = meta.copy()
-                data["filename_hmp"] = filename_hmp
-                data["last_minute"] = aggregated
-                # Add data to save queue
-                save_queue.put(data)
-                # clear buffer and retet counter
-                hmp_buffer.clear()
-                interval_counter = 0
-            else:
-                logger.debug("  ❌ pc hmp_buffer was empty")
+
+            # Enqueue save job (keeps your existing saver contract)
+            payload = meta.copy()
+            payload["filename_hmp"] = filename_hmp
+            payload["last_minute"]  = aggregated
+            save_queue.put(payload)
+
+            # Reset buffer and counter
+            hmp_buffer.clear()
+            interval_counter = 0
+        else:
+            # Nothing buffered in this window; just reset the counter
+            interval_counter = 0
 
     return interval_counter, last_histogram
+
+
 
 #====================================================================================================
