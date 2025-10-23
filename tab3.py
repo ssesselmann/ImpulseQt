@@ -33,6 +33,8 @@ from qt_compat import Signal
 from qt_compat import Slot
 from qt_compat import QGroupBox
 from qt_compat import QIcon
+from viewer_full_hmp import FullRecordingDialog, load_full_hmp_from_json
+
 
 from pathlib import Path
 from mpl_toolkits.mplot3d import Axes3D 
@@ -64,12 +66,17 @@ class Tab3(QWidget):
         self.ax               = None 
         self.bins             = 0
         self.bin_size         = 0
-        self.scroll_offset    = 0 
         self.init_ui()
         self.refresh_timer    = QTimer()
         self.refresh_timer.timeout.connect(self.update_graph)
 
     def init_ui(self):
+
+        with shared.write_lock:
+            bins        = shared.bins
+            max_counts  = shared.max_counts
+            max_seconds = shared.max_seconds 
+
         # Main layout for the entire widget
         main_layout = QVBoxLayout(self)
 
@@ -88,10 +95,7 @@ class Tab3(QWidget):
         top_left_col    = QVBoxLayout()
         top_right_col   = QVBoxLayout()
         top_layout.addLayout(top_left_col)
-        top_layout.addLayout(top_right_col)
-
-        with shared.write_lock:
-            bins = shared.bins
+        top_layout.addLayout(top_right_col)           
 
         self.bins = bins    
         self.Z = np.zeros((self.plot_window_size, bins), dtype=int)
@@ -203,12 +207,6 @@ class Tab3(QWidget):
         top_left_col.addWidget(self.cal_switch)        
 
 
-        # Scroll up button
-        self.scroll_up_btn = QPushButton("Scroll ↑")
-        self.scroll_up_btn.setProperty("btn", "muted")
-        self.scroll_up_btn.clicked.connect(self.scroll_up)
-        top_left_col.addWidget(self.scroll_up_btn)
-
 
         # END LEFT COL
         #==================================================================
@@ -268,12 +266,11 @@ class Tab3(QWidget):
         self.dld_array_button.clicked.connect(self.download_array_csv)
         top_right_col.addWidget(self.dld_array_button)
 
-
-        # Scroll down button
-        self.scroll_down_btn = QPushButton("Scroll ↓")
-        self.scroll_down_btn.setProperty("btn", "muted")
-        self.scroll_down_btn.clicked.connect(self.scroll_down)
-        top_right_col.addWidget(self.scroll_down_btn)
+        # View full recording button
+        self.view_full_btn = QPushButton("View full heatmap")
+        self.view_full_btn.setProperty("btn", "primary")
+        self.view_full_btn.clicked.connect(self.on_view_full_clicked)
+        top_right_col.addWidget(self.view_full_btn)
 
         # 2. Middle Section — Instructions
         middle_section = QWidget()
@@ -349,24 +346,35 @@ class Tab3(QWidget):
     #    FUNCTIONS
     # ======================================================================
     def load_on_show(self):
+        # 1) Always pull live settings from shared (no matter has_loaded)
+        with shared.write_lock:
+            ms          = int(shared.max_seconds)
+            mc          = int(shared.max_counts)
+            compression = int(shared.compression)
+            filename_hmp= shared.filename_hmp
 
+        # Update inputs without firing signals
+        self.max_seconds_input.blockSignals(True)
+        self.max_seconds_input.setText(str(ms))
+        self.max_seconds_input.blockSignals(False)
+
+        self.max_counts_input.blockSignals(True)
+        self.max_counts_input.setText(str(mc))
+        self.max_counts_input.blockSignals(False)
+
+        # Update bins selector to current compression
+        idx = self.bins_selector.findData(compression)
+        if idx != -1 and idx != self.bins_selector.currentIndex():
+            self.bins_selector.blockSignals(True)
+            self.bins_selector.setCurrentIndex(idx)
+            self.bins_selector.blockSignals(False)
+
+        # 2) Do heavy loads only once
         if not self.has_loaded:
-            with shared.write_lock:
-                filename_hmp    = shared.filename_hmp
-                compression = shared.compression
-
             load_histogram_hmp(filename_hmp)
-
-            self.refresh_bin_selector()
-
-            index = self.bins_selector.findData(compression)
-
-            if index != -1:
-                self.bins_selector.setCurrentIndex(index)
-            else:
-                logger.warning(f"👆 Compression {compression} not found in BIN_OPTIONS")
-
+            self.refresh_bin_selector()  # if this repopulates, keep it
             self.has_loaded = True
+
 
     def load_switches(self):
 
@@ -380,19 +388,12 @@ class Tab3(QWidget):
         self.epb_switch.setChecked(epb_state)
 
 
-    def scroll_up(self):
-        self.scroll_offset = min(self.scroll_offset + 30, len(self.plot_data) - self.plot_window_size)
-        self.update_graph()
-
-    def scroll_down(self):
-        self.scroll_offset = max(self.scroll_offset - 30, 0)
-        self.update_graph()
-
     def on_text_changed(self, text, key):
         try:
             if key in {"max_counts", "t_interval", "max_seconds"}:
                 with shared.write_lock:
                     setattr(shared, key, int(text))
+                    shared.save_settings()   # <-- persist
 
             elif key == "filename":
                 base = text.strip()
@@ -496,6 +497,56 @@ class Tab3(QWidget):
 
         self.start_recording_hmp(filename)
 
+        
+    @Slot()
+    def on_view_full_clicked(self):
+        # Check run_flag first
+        rf = shared.run_flag
+        running = rf.is_set() if hasattr(rf, "is_set") else bool(rf)
+
+        if running:
+            logger.warning("Can not open full view while running !")
+            QMessageBox.warning(
+                self,
+                "Not Allowed",
+                "Can not open full view while running !"
+            )
+            return
+
+        # Otherwise, proceed normally
+        try:
+            json_path = USER_DATA_DIR / f"{shared.filename_hmp}_hmp.json"
+            if not json_path.exists():
+                from qt_compat import QFileDialog
+                picked, _ = QFileDialog.getOpenFileName(
+                    self, "Open HMP JSON", str(USER_DATA_DIR), "HMP JSON (*.json)"
+                )
+                if not picked:
+                    return
+                json_path = Path(picked)
+
+            Z, x_axis, coeffs, t_interval = self._load_full_hmp_from_json(json_path)
+
+            dlg = FullRecordingDialog(
+                parent=self,
+                Z=Z,
+                x_axis=x_axis,
+                coeffs=coeffs,
+                t_interval=t_interval,
+                cal_switch=shared.cal_switch,
+                log_switch=shared.log_switch,
+                epb_switch=shared.epb_switch,
+                filename_hmp=shared.filename_hmp
+            )
+            dlg.showMaximized()
+            dlg.exec()
+
+        except Exception as e:
+            logger.error(f"❌ Failed to open full recording: {e}", exc_info=True)
+            QMessageBox.critical(self, "Error", f"Failed to open full recording:\n{e}")
+
+
+
     def confirm_overwrite(self, file_path, filename_display=None):
         if filename_display is None:
             filename_display = os.path.basename(file_path)
@@ -524,7 +575,6 @@ class Tab3(QWidget):
         return reply == QMessageBox.Yes
 
 
-
     def start_recording_hmp(self, filename):
         try:
             base = filename.strip()
@@ -534,29 +584,37 @@ class Tab3(QWidget):
                 base = base[:-4]
 
             with shared.write_lock:
-                shared.filename_hmp  = base                 # ← use the arg
-                coi                  = shared.coi_switch
-                device_type          = shared.device_type
-                t_interval           = int(shared.t_interval)
-                shared.histogram_hmp = []                   # ← clear the shared buffer
+                shared.filename_hmp = base
+                device_type = shared.device_type
+                t_interval  = int(shared.t_interval)
 
-            self._last_hist_len      = 0
+                # Ensure we keep the same deque object; clear for a fresh run
+                if hasattr(shared, "histogram_hmp") and hasattr(shared.histogram_hmp, "clear"):
+                    shared.histogram_hmp.clear()
+                    # Optionally update maxlen if you support changing it:
+                    # if hasattr(shared, "ring_len_hmp"):
+                    #     shared.histogram_hmp = deque(shared.histogram_hmp, maxlen=max(60, shared.ring_len_hmp))
+                else:
+                    # Create ring buffer; 3600 ≈ 1 hour at 1 Hz
+                    shared.histogram_hmp = deque(maxlen=getattr(shared, "ring_len_hmp", 3600))
 
-            # --- Reset plotting ---
+            # --- Reset plotting/UI state ---
+            self.scroll_offset = 0
             self.refresh_timer.stop()
             self.figure.clear()
             self.ax = self.figure.add_subplot(111)
             self.canvas.draw()
-            self.plot_data.clear()
 
+            # Start periodic UI refresh
             self.refresh_timer.start(t_interval * 1000)
 
+            # Kick off recorder thread
             thread = start_recording(3, device_type)
             if thread:
                 self.process_thread = thread
-
         except Exception as e:
             QMessageBox.critical(self, "Start Error", f"Error starting: {str(e)}")
+
 
 
     def on_stop_clicked(self):
@@ -665,116 +723,102 @@ class Tab3(QWidget):
             return
 
         try:
-            # ── Snapshot shared state ───────────────────────────────────────
+            # Snapshot shared state
             with shared.write_lock:
-                run_flag    = shared.run_flag
-                hist3d      = list(shared.histogram_hmp)
-                filename_hmp    = shared.filename_hmp
-                t_interval  = shared.t_interval
-                log_switch  = shared.log_switch
-                epb_switch  = shared.epb_switch
-                cal_switch  = shared.cal_switch
-                counts      = shared.counts
-                elapsed     = shared.elapsed
-                bins        = shared.bins
-                coeffs      = [shared.coeff_1, shared.coeff_2, shared.coeff_3]
+                run_flag     = shared.run_flag
+                data         = list(shared.histogram_hmp)
+                filename_hmp = shared.filename_hmp
+                t_interval   = shared.t_interval
+                log_switch   = shared.log_switch
+                epb_switch   = shared.epb_switch
+                cal_switch   = shared.cal_switch
+                counts       = shared.counts
+                elapsed      = shared.elapsed
+                bins         = shared.bins
+                coeffs       = [shared.coeff_1, shared.coeff_2, shared.coeff_3]
+               
 
-
-            # ── Ensure data is valid ────────────────────────────────────────
-            if not hist3d or not isinstance(hist3d[-1], list):
-                logger.warning("👆 No valid histogram row to display ")
+            # Ensure we have something to display
+            if not data or bins <= 0:
+                logger.warning("👆 Plot data empty or bins <= 0")
                 return
 
-            if len(hist3d[-1]) != bins:
-                logger.warning(f"👆 Invalid bin length: {len(hist3d[-1])} expected {bins}")
+            # Always show the live tail (last N rows)
+            total_rows   = len(data)
+            visible_rows = self.plot_window_size  # e.g., 60
+            rows = data[-visible_rows:] if total_rows > 0 else []
+            n_rows = len(rows)
+            if n_rows == 0:
                 return
 
-            # ── Append and maintain buffer ──────────────────────────────────
-
-
-            # Handle resets (e.g., new run cleared the buffer)
-            if len(hist3d) < self._last_hist_len:
-                self._last_hist_len = 0
-                self.plot_data.clear()
-
-            new_rows = len(hist3d) - self._last_hist_len
-            if new_rows > 0:
-                for row in hist3d[-new_rows:]:
-                    self.plot_data.append(row[:])  # append only the newly arrived rows
-                self._last_hist_len += new_rows
-            # if no new rows, just re-render without appending
-
-            if not self.plot_data:
-                logger.warning("👆 Plot data is empty ")
-                return
-
-            # ── Build Z matrix ──────────────────────────────────────────────
-            # Get visible portion of the data, scrolling backward in time
-            visible_rows = self.plot_window_size
-            total_rows = len(self.plot_data)
-
-            if self.scroll_offset == 0:
-                offset = max(0, total_rows - visible_rows)
-            else:
-                offset = max(0, total_rows - visible_rows - self.scroll_offset)
-
-            Z = np.asarray(list(self.plot_data)[offset:offset + visible_rows], dtype=float)
-
-            # Y-axis in seconds
-            y_axis = np.arange(offset, offset + Z.shape[0]) * t_interval
-
+            # Build Z (pad/trim defensively if bins changed)
+            Z = np.zeros((n_rows, bins), dtype=float)
+            for i, r in enumerate(rows):
+                if isinstance(r, (list, tuple)):
+                    rlen = len(r)
+                    if rlen >= bins:
+                        Z[i, :] = r[:bins]
+                    elif rlen > 0:
+                        Z[i, :rlen] = r
+                else:
+                    logger.warning(f"👆 Unexpected row type: {type(r)}")
+                    return
 
             if Z.ndim != 2 or Z.shape[1] != bins:
                 logger.error(f"  ❌ Z shape mismatch: {Z.shape}, expected (n_rows, {bins}) ")
                 return
 
+            # Axes mappings
             bin_indices = np.arange(bins)
-            x_axis      = bin_indices                
+            x_axis      = bin_indices
 
+            # Energy-per-bin weighting (apply in bin space)
             if epb_switch:
-                weights = x_axis / np.mean(x_axis) 
-                Z *= weights[np.newaxis, :] 
+                meanx = np.mean(x_axis)
+                denom = meanx if meanx != 0 else 1.0
+                Z *= (x_axis / denom)[np.newaxis, :]
 
+            # Log scaling
             if log_switch:
                 Z[Z <= 0] = 0.1
-                Z = np.log10(Z)    
+                Z = np.log10(Z)
 
+            # Calibration for x-axis (convert positions to energy)
             if cal_switch:
                 x_axis = coeffs[0] * bin_indices**2 + coeffs[1] * bin_indices + coeffs[2]
 
-            num_rows = Z.shape[0]
-            y_axis = np.arange(offset, offset + Z.shape[0]) * t_interval
+            # Absolute y-axis in seconds since run start (no lag; last row = elapsed)
+            tint   = max(1, int(t_interval))
+            y_last  = float(elapsed)
+            y_first = y_last - (n_rows - 1) * tint
+            y_axis  = y_first + np.arange(n_rows) * tint
 
-            y_min = y_axis.min()
-            y_max = y_axis.max()
-
+            # Bounds for imshow extent
+            y_min = float(y_axis.min())
+            y_max = float(y_axis.max())
             if y_min == y_max:
                 y_min -= 0.5
                 y_max += 0.5
 
-            # ── Create fresh 2D plot ────────────────────────────────────────
+            # Create fresh 2D plot
             self.figure.clf()
             self.ax = self.figure.add_subplot(111, facecolor="#0b1d38")  # DARK_BLUE
 
-            # ── Compute color limits safely ─────────────────────────────────────
+            # Compute color limits safely
             z_min = np.nanmin(Z)
             z_max = np.nanmax(Z)
-
-            # Avoid vmin == vmax which causes color scale bugs
             if np.isclose(z_max, z_min):
-                z_max = z_min + 1e-3  
-
-            # Optional: Always anchor 0 to blue in turbo colormap
+                z_max = z_min + 1e-3
             if not log_switch:
                 z_min = min(0, z_min)
 
-            # ── Display the image ───────────────────────────────────────────────
+            # Display the image
             img = self.ax.imshow(
                 Z,
                 aspect='auto',
                 origin='lower',
                 cmap='turbo',
-                extent=[x_axis.min(), x_axis.max(), y_min, y_max],
+                extent=[float(np.min(x_axis)), float(np.max(x_axis)), y_min, y_max],
                 vmin=z_min,
                 vmax=z_max
             )
@@ -786,27 +830,73 @@ class Tab3(QWidget):
             self.ax.tick_params(axis='x', colors='white')
             self.ax.tick_params(axis='y', colors='white')
             self.ax.grid(True, color="white", alpha=0.2)
-
             for spine in self.ax.spines.values():
                 spine.set_color("white")
 
             cbar = self.figure.colorbar(img, ax=self.ax, label="log₁₀(Counts)" if log_switch else "Counts")
-
-            # Make ticks and label white
             cbar.ax.yaxis.set_tick_params(color='white')
             plt.setp(cbar.ax.yaxis.get_ticklabels(), color='white')
             cbar.set_label(cbar.ax.get_ylabel(), color='white')
 
-
-            # Optional: scrolls upward like a spectrogram
+            # Scroll upward like a spectrogram
             self.ax.invert_yaxis()
 
             self.canvas.draw()
 
-            # ── Update UI readouts ───────────────────────────────────────────
+            # Update UI readouts
             if run_flag:
                 self.counts_display.setText(str(counts))
                 self.elapsed_display.setText(str(elapsed))
 
         except Exception as exc:
             logger.error(f"  ❌ update_graph() error: {exc} ", exc_info=True)
+
+    def _load_full_hmp_from_json(self, path: Path):
+        """
+        Returns (Z, x_axis, coeffs, t_interval) where:
+          Z is (T, bins) float array
+          x_axis is 'bin indices' (you'll map to energy if cal_switch)
+          coeffs are INTERNAL order [c1, c2, c3] (a2, a1, a0)
+          t_interval is inferred if present, else falls back to shared.t_interval
+        """
+        import json
+        with open(path, "r") as jf:
+            data = json.load(jf)
+
+        if not (isinstance(data, dict)
+                and "data" in data
+                and isinstance(data["data"], list)
+                and data["data"]
+                and "resultData" in data["data"][0]):
+            raise ValueError("Unexpected JSON structure — not NPESv2 format")
+
+        result     = data["data"][0]["resultData"]
+        energy_spec= result["energySpectrum"]
+        hist_data  = energy_spec["spectrum"]
+        bins       = energy_spec.get("numberOfChannels", len(hist_data[0]) if hist_data else 0)
+        npes_coeffs= energy_spec.get("energyCalibration", {}).get("coefficients", [0, 1, 0])
+        # Convert NPES [c3,c2,c1] -> internal [c1,c2,c3]
+        coeff_1    = npes_coeffs[2] if len(npes_coeffs) > 2 else 0.0
+        coeff_2    = npes_coeffs[1] if len(npes_coeffs) > 1 else 1.0
+        coeff_3    = npes_coeffs[0] if len(npes_coeffs) > 0 else 0.0
+        coeffs     = [coeff_1, coeff_2, coeff_3]
+
+        # measurementTime is total seconds; infer t_interval if possible
+        total_secs = energy_spec.get("measurementTime", None)
+        T          = len(hist_data)
+        if total_secs and T > 1:
+            t_interval = max(1, int(round(total_secs / T)))
+        else:
+            with shared.write_lock:
+                t_interval = int(shared.t_interval)
+
+        # Build Z (pad/trim rows defensively)
+        Z = np.zeros((T, bins), dtype=float)
+        for i, r in enumerate(hist_data):
+            if len(r) >= bins:
+                Z[i, :] = r[:bins]
+            elif len(r) > 0:
+                Z[i, :len(r)] = r
+
+        x_axis = np.arange(bins)
+        return Z, x_axis, coeffs, t_interval
