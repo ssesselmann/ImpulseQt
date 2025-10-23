@@ -594,57 +594,69 @@ class Tab3(QWidget):
 
 
     def download_array_csv(self):
-        # ── Any data to save? ───────────────────────────────────────────────
-        if not self.plot_data:
-            QMessageBox.warning(self, "No Data", "There is no spectrum data to download.")
-            return
+        import json
 
-        # ── File name & key shared values ──────────────────────────────────
         with shared.write_lock:
             filename = Path(shared.filename_hmp).stem or "spectrum3d"
-            csv_path = shared.DLD_DIR / f"{filename}_hmp.csv"
-            bins     = shared.bins
-            coeff_1  = shared.coeff_1
-            coeff_2  = shared.coeff_2
-            coeff_3  = shared.coeff_3
+        json_path = USER_DATA_DIR / f"{filename}_hmp.json"
+        csv_path  = DLD_DIR / f"{filename}_hmp.csv"
 
-        # ── Confirm overwrite if the file is already there ────────────────
+        if not json_path.exists():
+            QMessageBox.warning(self, "Missing File", f"No JSON file found:\n{json_path}")
+            return
+
         if csv_path.exists():
             if QMessageBox.question(
-                self, "Overwrite Confirmation",
-                f"{csv_path.name} exists – overwrite?",
+                self, "Overwrite?",
+                f"{csv_path.name} exists — overwrite?",
                 QMessageBox.Yes | QMessageBox.No
             ) != QMessageBox.Yes:
                 return
 
         try:
+            with open(json_path, "r") as jf:
+                data = json.load(jf)
+
+            # ── Detect NPESv2 format ───────────────────────────────────────────────
+            if (
+                isinstance(data, dict)
+                and "data" in data
+                and isinstance(data["data"], list)
+                and "resultData" in data["data"][0]
+            ):
+                result = data["data"][0]["resultData"]
+                energy_spec = result["energySpectrum"]
+                hist_data = energy_spec["spectrum"]
+                bins = energy_spec.get("numberOfChannels", len(hist_data[0]))
+                coeffs = energy_spec.get("energyCalibration", {}).get("coefficients", [0, 1, 0])
+                coeff_1, coeff_2, coeff_3 = coeffs[:3] if len(coeffs) >= 3 else (0, 1, 0)
+            else:
+                raise ValueError("Unexpected JSON structure — not NPESv2 format")
+
+            # ── Write CSV ───────────────────────────────────────────────────────────
             with open(csv_path, "w", newline="") as fh:
                 writer = csv.writer(fh)
 
-                # ── Header line ────────────────────────────────────────────
-                if self.cal_switch.isChecked():  # Calibrated
+                if self.cal_switch.isChecked():
                     poly = np.poly1d([coeff_1, coeff_2, coeff_3])
                     energies = poly(np.arange(bins))
                     header = [f"{e:.3f}" for e in energies]
                     writer.writerow(["Time Step"] + header)
-                else:  # Raw bin numbers
+                else:
                     writer.writerow(["Time Step"] + [f"Bin {i}" for i in range(bins)])
 
-                # ── Data rows ───────────────────────────────────────────────
-                for t, row in enumerate(self.plot_data):
-                    # Ensure each row is exactly bins long
+                for t, row in enumerate(hist_data):
                     if len(row) < bins:
                         row = list(row) + [0] * (bins - len(row))
                     elif len(row) > bins:
-                        row = row[:bins]
-
+                        row = list(row)[:bins]
                     writer.writerow([t] + row)
 
             QMessageBox.information(self, "Download Complete", f"CSV saved to:\n{csv_path}")
 
         except Exception as e:
-            logger.error(f"  ❌ saving CSV: {e} ")
-            QMessageBox.critical(self, "Error", f"Failed to save CSV:\n{e}")
+            logger.error(f"❌ CSV export failed: {e}", exc_info=True)
+            QMessageBox.critical(self, "Error", f"Failed to export CSV:\n{e}")
 
     # ------------------------------------------------------------------
 
@@ -667,6 +679,7 @@ class Tab3(QWidget):
                 bins        = shared.bins
                 coeffs      = [shared.coeff_1, shared.coeff_2, shared.coeff_3]
 
+
             # ── Ensure data is valid ────────────────────────────────────────
             if not hist3d or not isinstance(hist3d[-1], list):
                 logger.warning("👆 No valid histogram row to display ")
@@ -677,6 +690,7 @@ class Tab3(QWidget):
                 return
 
             # ── Append and maintain buffer ──────────────────────────────────
+
 
             # Handle resets (e.g., new run cleared the buffer)
             if len(hist3d) < self._last_hist_len:
