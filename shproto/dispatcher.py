@@ -19,7 +19,7 @@ from struct import *
 from datetime import datetime
 from collections import deque
 from array import array
-from shared import USER_DATA_DIR, logger
+from shared import USER_DATA_DIR, logger, run_flag
 
 max_bins            = 8192
 
@@ -656,80 +656,48 @@ def process_01(filename, compression, device, t_interval):
 # ========================================================
 # 3D WATERFALL
 # ========================================================
+
 def process_02(filename_hmp, compression3d, device, t_interval):
     logger.info(f'   ✅ Received cmd ({filename_hmp}) ')
 
     global counts, last_counts, histogram_hmp
 
-    et_start = time.time()
-    counts = 0
+    et_start    = time.time()
+    counts      = 0
     last_counts = 0
-    elapsed = 0
+
+    # full history for JSON saves
     hst3d = []
-    compressed_bins = int(8192 / compression3d)
-    last_hst = [0] * compressed_bins
 
+    max_bins        = 8192
+    compressed_bins = int(max_bins / compression3d)
+    last_hst        = [0] * compressed_bins
+
+    # If your STAT is 1 Hz, saving every 60 rows ≈ once per minute.
+    SAVE_EVERY_ROWS = 60
+
+    # --- load shared settings, prep ring buffer, set run flag ---
     with shared.write_lock:
-        t_interval = shared.t_interval
-        max_counts = shared.max_counts
-        max_seconds = shared.max_seconds
-        coeffs = [shared.coeff_3, shared.coeff_2, shared.coeff_1]
+        shared.run_flag.is_set()
+        t_interval  = int(shared.t_interval)      # seconds between spectrum rows
+        max_counts  = int(shared.max_counts)
+        max_seconds = int(shared.max_seconds)
+        # NPES expects [c3,c2,c1]; your internal is [c1,c2,c3]; we pass NPES order into saver
+        coeffs      = [shared.coeff_3, shared.coeff_2, shared.coeff_1]
 
-    hst = [0] * max_bins
+        RING_LEN = max(60, getattr(shared, "ring_len_hmp", 3600))  # e.g. 1 hr @ 1 Hz
+        if not isinstance(getattr(shared, "histogram_hmp", None), deque):
+            shared.histogram_hmp = deque(maxlen=RING_LEN)
+        else:
+            shared.histogram_hmp.clear()
+
     dt_start = datetime.fromtimestamp(et_start)
-    dt_now = dt_start
 
-    # STAT de-jitter guard
     last_stat_version = -1
     rows_since_save   = 0
 
-    while True:
-        if shproto.dispatcher.spec_stopflag or shproto.dispatcher.stopflag:
-            logger.info("   ✅ MAX process_02 received stop signal ")
-            break
-
-        if counts >= max_counts or elapsed > max_seconds:
-            _elapsed_stop()
-            shproto.dispatcher.stopflag == True
-
-            logger.info("   ✅ Stop condition met (counts or time) ")
-            break
-
-        # === Wait for the device STAT tick (1 Hz) ===
-        if not shproto.dispatcher._stat_tick.wait(timeout=max(2.0, t_interval + 0.5)):
-            logger.warning("👆 process_02: STAT wait timeout")
-            continue
-
-        # Read & reset tick; guard duplicates with version
-        stat_v = shproto.dispatcher._stat_version
-        if stat_v == last_stat_version:
-            # Already processed this STAT; clear just in case and continue
-            shproto.dispatcher._stat_tick.clear()
-            continue
-        last_stat_version = stat_v
-        shproto.dispatcher._stat_tick.clear()
-
-        # === Atomic snapshot of full histogram ===
-        with shproto.dispatcher.histogram_lock:
-            hst = shproto.dispatcher.histogram.copy()
-            tt  = shproto.dispatcher.total_time  # device time (ticks)
-
-        # === Build compressed current totals and delta row ===
-        comp_hst = [sum(hst[i:i + compression3d]) for i in range(0, max_bins, compression3d)]
-        counts   = sum(comp_hst)
-        this_hst = [a - b for a, b in zip(comp_hst, last_hst)]
-        hst3d.append(this_hst)
-        last_hst = comp_hst
-        rows_since_save += 1
-
-        # === Publish a scrolling window to UI (e.g., last 60 rows) ===
-        with shared.write_lock:
-            shared.counts         = counts
-            shared.histogram_hmp  = hst3d[-60:]
-            shared.elapsed        = int(shproto.dispatcher.total_time)  # keep UI elapsed in device seconds
-
-        # === Periodic save based on STAT rows (about once per minute) ===
-        if rows_since_save >= 60 or shproto.dispatcher.spec_stopflag or shproto.dispatcher.stopflag:
+    def _save_checkpoint():
+        try:
             dt_now = datetime.fromtimestamp(time.time())
             save_spectrum_hmp_json(
                 filename_hmp=filename_hmp,
@@ -737,18 +705,78 @@ def process_02(filename_hmp, compression3d, device, t_interval):
                 counts=counts,
                 dt_start=dt_start,
                 dt_now=dt_now,
-                coeffs=coeffs,
+                coeffs=coeffs,   # NPES order supplied by caller per your saver
                 device=device
             )
-            rows_since_save = 0
-            #hst3d = []
+        except Exception as e:
+            logger.error(f"❌ Failed to save JSON checkpoint: {e}", exc_info=True)
 
-        last_counts = counts
-        elapsed     = int(time.time() - et_start)  # host elapsed; UI shows device seconds above
+    try:
+        while True:
+            # external stop?
+            if shproto.dispatcher.spec_stopflag or shproto.dispatcher.stopflag:
+                logger.info("   ✅ process_02 received stop signal ")
+                break
 
-    return
+            # wait for next STAT tick (device says “new data ready”)
+            if not shproto.dispatcher._stat_tick.wait(timeout=max(2.0, t_interval + 0.5)):
+                logger.warning("👆 process_02: STAT wait timeout")
+                continue
 
+            # dedupe STAT by version
+            stat_v = shproto.dispatcher._stat_version
+            if stat_v == last_stat_version:
+                shproto.dispatcher._stat_tick.clear()
+                continue
+            last_stat_version = stat_v
+            shproto.dispatcher._stat_tick.clear()
 
+            # 1) snapshot device state
+            with shproto.dispatcher.histogram_lock:
+                hst = shproto.dispatcher.histogram.copy()
+                tt  = shproto.dispatcher.total_time  # device seconds, monotonic
+
+            # 2) compress and compute delta row
+            comp_hst = [sum(hst[i:i+compression3d]) for i in range(0, max_bins, compression3d)]
+            counts   = sum(comp_hst)
+            this_hst = [a - b for a, b in zip(comp_hst, last_hst)]
+            last_hst = comp_hst
+
+            # 3) stop conditions (now that counts & tt are known)
+            if counts >= max_counts or tt >= max_seconds:
+                _elapsed_stop()
+                shproto.dispatcher.stopflag = True
+                logger.info("   ✅ Stop condition met (counts or time) ")
+                break
+
+            # 4) publish latest row to UI ring buffer and update stats
+            hst3d.append(this_hst)
+            rows_since_save += 1
+
+            with shared.write_lock:
+                shared.counts       = counts
+                shared.elapsed      = int(tt)           # UI uses device time
+                shared.histogram_hmp.append(this_hst)
+
+            # 5) periodic JSON checkpoint
+            if rows_since_save >= SAVE_EVERY_ROWS:
+                _save_checkpoint()
+                rows_since_save = 0
+
+            last_counts = counts
+
+    except Exception as e:
+        logger.error(f"❌ process_02 crashed: {e}", exc_info=True)
+    finally:
+        # ensure UI sees stopped state in ALL exit paths
+        with shared.write_lock:
+            shared.run_flag.clear()
+        # optional: reset dispatcher flags so next run starts clean
+        shproto.dispatcher.spec_stopflag = False
+        shproto.dispatcher.stopflag      = False
+        # final save
+        _save_checkpoint()
+        logger.info("   ✅ process_02 stopped; shared.run_flag=False")
 
 
 # This process is used for sending commands to the Nano device
