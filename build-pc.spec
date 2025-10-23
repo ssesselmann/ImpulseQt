@@ -13,7 +13,7 @@ project_root    = Path(".").resolve()
 app_name        = "ImpulseQt"
 
 # --- Collect PySide6 runtime (modules, plugins, translations, etc.) ---
-hiddenimports    = collect_submodules("PySide6")
+#hiddenimports    = collect_submodules("PySide6")
 pyside6_datas    = collect_data_files("PySide6")            # Qt plugins, translations, qml (if present)
 pyside6_binaries = collect_dynamic_libs("PySide6")          # Qt *.dlls and shims
 
@@ -33,9 +33,114 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes = [
+        # GUI/tooling not used
+        "tkinter", "PyQt5",
+
+        # Dev / REPL / tests
+        "IPython", "jupyter", "ipywidgets", "traitlets", "notebook",
+        "matplotlib.tests", "pandas.tests", "numpy.tests", "pytest",
+
+        # Build/distribution helpers
+        "setuptools", "distutils", "wheel",
+
+        # Heavy Qt subsystems rarely needed for your app
+        "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.QtWebEngineQuick",
+        "PySide6.QtPdf", "PySide6.QtPdfWidgets",
+        "PySide6.QtQml", "PySide6.QtQuick", "PySide6.QtQuickControls2",
+        "PySide6.QtCharts", "PySide6.QtDataVisualization",
+        "PySide6.Qt3DCore", "PySide6.Qt3DRender", "PySide6.Qt3DInput",
+        "PySide6.QtLocation", "PySide6.QtPositioning",
+        "PySide6.QtSensors", "PySide6.QtBluetooth", "PySide6.QtNfc",
+
+        # Optional: if you do audio via PyAudio/sounddevice (not Qt)
+        "PySide6.QtMultimedia", "PySide6.QtMultimediaWidgets",
+
+        # Optional: if you don’t load SVG icons
+        "PySide6.QtSvg", "PySide6.QtSvgWidgets",
+
+        # Optional: if you use pyserial (not Qt serial)
+        "PySide6.QtSerialPort",
+    ],
+
     noarchive=False,  # keep archive inside the onefile bundle
 )
+
+#------------ Pruning stuff ---------------
+
+# --- Conservative Qt pruning for Windows / PySide6 (self-contained) ---
+
+def _toc_src(entry):
+    # Works for both 3-tuple TOC (dest_name, src_path, typecode) and 2-tuple (src, dest)
+    if isinstance(entry, (list, tuple)):
+        if len(entry) >= 3:
+            return entry[1]
+        elif len(entry) == 2:
+            return entry[0]
+    return ""
+
+def _norm(p):
+    return str(p).replace("\\", "/").lower()
+
+# 1) Drop all Qt translations (English UI strings are in code, not translations)
+def _is_qt_translation(entry):
+    p = _norm(_toc_src(entry))
+    return "/qt/translations/" in p
+
+a.datas = [d for d in a.datas if not _is_qt_translation(d)]
+
+# 2) Prune heavy plugin families we certainly don't use
+#    (Deliberately *not* touching 'multimedia' here; you already excluded the modules.)
+_PRUNE_KEYS = [
+    "qtwebengine", "qml", "quick", "datavisualization", "charts",
+    "3d", "location", "positioning", "sensors", "bluetooth", "nfc",
+    "virtualkeyboard",
+]
+
+# Essentials to keep on Windows
+_ESSENTIAL_KEEP = [
+    "platforms/qwindows",            # platform plugin
+    "imageformats/qjpeg",            # common image formats
+    "imageformats/qpng",
+    "imageformats/qico",             # Windows icons
+    "styles/qwindowsvistastyle",     # optional but small; safe to keep
+]
+
+def _keep_binary(entry):
+    p = _norm(_toc_src(entry))
+    if any(k in p for k in _ESSENTIAL_KEEP):
+        return True
+    # prune only Qt plugins by keyword
+    if "/qt/plugins/" in p and any(k in p for k in _PRUNE_KEYS):
+        return False
+    return True
+
+a.binaries = [b for b in a.binaries if _keep_binary(b)]
+
+# 3) Trim imageformats to jpeg/png/ico only
+def _is_unwanted_imageformat(entry):
+    p = _norm(_toc_src(entry))
+    if "/qt/plugins/imageformats/" not in p:
+        return False
+    return not any(x in p for x in ("imageformats/qjpeg", "imageformats/qpng", "imageformats/qico"))
+
+a.binaries = [b for b in a.binaries if not _is_unwanted_imageformat(b)]
+
+# 4) If unwanted plugin trees slipped into datas (rare), prune by path too
+def _is_unwanted_plugin_data(entry):
+    p = _norm(_toc_src(entry))
+    return ("/qt/plugins/" in p) and any(k in p for k in _PRUNE_KEYS)
+
+a.datas = [d for d in a.datas if not _is_unwanted_plugin_data(d)]
+
+print(f"[prune] datas: {len(a.datas)}  binaries: {len(a.binaries)}")
+
+
+
+
+# ---------- End pruning here -------------
+
+
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=None)
 
@@ -43,14 +148,23 @@ exe = EXE(
     pyz,
     a.scripts,
     a.binaries,
+    a.zipfiles,
     a.datas,
-    exclude_binaries=False,
     name=app_name,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=False,                                 # UPX can break Qt DLLs on Windows
+    upx=True,
     console=False,
     icon=str(project_root / "assets" / "favicon.ico"),
-    singlefile=True,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    upx=True,
+    upx_exclude=["vcruntime*.dll", "python3*.dll"],  # avoid compressing CRT/Python
+    name=app_name,
 )
