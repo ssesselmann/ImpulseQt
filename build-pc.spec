@@ -168,3 +168,5 @@ coll = COLLECT(
     upx_exclude=["vcruntime*.dll", "python3*.dll"],  # avoid compressing CRT/Python
     name=app_name,
 )
+
+# ----END
