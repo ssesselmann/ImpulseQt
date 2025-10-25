@@ -5,6 +5,7 @@
 
 dist/*
 build/*
+MSIX/*
 
 shproto/__pycache__/*
 shproto/.DS_Store/*
