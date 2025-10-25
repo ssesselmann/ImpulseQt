@@ -6,6 +6,7 @@
 dist/*
 build/*
 MSIX/*
+stage/*
 
 shproto/__pycache__/*
 shproto/.DS_Store/*
