@@ -82,7 +82,7 @@ class Tab4(QWidget):
         control_layout.addWidget(self.slider_label, 0, 0, 1, 3)
 
         # --- Slider with margins, white tick marks ---
-        self.slider.setMinimum(0)
+        self.slider.setMinimum(1)
         self.slider.setMaximum(300)
         self.slider.setValue(1)
         self.slider.setTickInterval(50)
@@ -98,19 +98,71 @@ class Tab4(QWidget):
         slider_layout.addWidget(self.slider)
         control_layout.addWidget(slider_container, 1, 0, 1, 3)
 
-        # --- Left column: Checkbox + CPS ---
+        # --- Left column: "Show All" + "Log" checkboxes ---
+        checkbox_container = QWidget()
+        checkbox_layout = QVBoxLayout(checkbox_container)
+        checkbox_layout.setContentsMargins(10, 0, 0, 0)   # small left margin
+        checkbox_layout.setSpacing(4)
+
         self.checkbox_show_all = QCheckBox("Show All")
         self.checkbox_show_all.setChecked(False)
         self.checkbox_show_all.stateChanged.connect(self.update_plot)
-        control_layout.addWidget(self.checkbox_show_all, 4, 0, 4, 1)
 
-        self.cps_label = QLabel("cps")
-        self.cps_label.setProperty("typo", "p1")
-        control_layout.addWidget(self.cps_label, 3, 1)
+        self.checkbox_log = QCheckBox("Show Log")
+        self.checkbox_log.setChecked(False)
+        self.checkbox_log.stateChanged.connect(self.update_plot)
+
+        checkbox_layout.addWidget(self.checkbox_show_all)
+        checkbox_layout.addWidget(self.checkbox_log)
+
+        # put this widget group in (2, 0, 2, 1)
+        control_layout.addWidget(checkbox_container, 3, 0, 2, 1)
+
+
+        # # --- Left column: Checkbox + CPS ---
+        # self.checkbox_show_all = QCheckBox("Show All")
+        # self.checkbox_show_all.setChecked(False)
+        # self.checkbox_show_all.stateChanged.connect(self.update_plot)
+        # # --- Left column: Checkbox with small left margin ---
+        # checkbox_container = QWidget()
+        # checkbox_layout = QHBoxLayout(checkbox_container)
+        # checkbox_layout.setContentsMargins(20, 0, 0, 0) 
+        # checkbox_layout.setSpacing(0)
+        # checkbox_layout.addWidget(self.checkbox_show_all)
+
+        # control_layout.addWidget(checkbox_container, 4, 0, 1, 1)
+
+
+        # --- Center column: live metrics (CPS + Smooth) ---
+        center_metrics = QWidget()
+        center_layout = QVBoxLayout(center_metrics)
+        center_layout.setContentsMargins(0, 0, 0, 0)
+        center_layout.setSpacing(2)
+
+        self.cps_title = QLabel("cps instant")
+        self.cps_title.setProperty("typo", "p1")
+        self.cps_title.setAlignment(Qt.AlignLeft)
 
         self.cps_live = QLabel("0")
         self.cps_live.setProperty("typo", "h1")
-        control_layout.addWidget(self.cps_live, 4, 1)
+        self.cps_live.setAlignment(Qt.AlignLeft)
+
+        self.smooth_title = QLabel("cps smooth")
+        self.smooth_title.setProperty("typo", "p1")
+        self.smooth_title.setAlignment(Qt.AlignLeft)
+
+        self.smooth_live = QLabel("0")
+        self.smooth_live.setProperty("typo", "h1")
+        self.smooth_live.setAlignment(Qt.AlignLeft)
+
+        center_layout.addWidget(self.cps_title)
+        center_layout.addWidget(self.cps_live)
+        center_layout.addWidget(self.smooth_title)
+        center_layout.addWidget(self.smooth_live)
+
+        # put this widget into the middle column (row 2–4)
+        control_layout.addWidget(center_metrics, 2, 1, 3, 1)
+
 
         # --- Right column: Select file + Download ---
         self.select_file_label = QLabel("Select File")
@@ -173,7 +225,6 @@ class Tab4(QWidget):
             load_cps_file(full_path)
 
             self.last_loaded_filename = Path(rel_path).stem
-            self.selected_label.setText(f"{self.last_loaded_filename}")
             self.update_plot()
 
             logger.info(f"   ✅ fileneme selected {rel_path}")
@@ -183,6 +234,23 @@ class Tab4(QWidget):
             logger.error(f"   ❌ error {e}")
 
         QTimer.singleShot(0, lambda: self.select_file.setCurrentIndex(0))
+
+    
+    def compute_smooth_cps(self, decimals: int = 0):
+        try:
+            with shared.write_lock:
+                counts = shared.count_history
+            n = max(1, int(self.sum_n))
+            if not counts:
+                return 0 if decimals == 0 else 0.0
+            window = counts[-n:] if len(counts) >= n else counts
+            avg = sum(window) / len(window)
+            return int(round(avg)) if decimals == 0 else round(avg, decimals)
+        except Exception:
+            return 0 if decimals == 0 else 0.0
+
+
+
 
     @Slot()
     def on_download_clicked(self, filename=None):
@@ -233,57 +301,74 @@ class Tab4(QWidget):
             with shared.write_lock:
                 cps = int(shared.cps)
             self.cps_live.setText(f"{cps}")
+            # update smooth alongside cps
+            smooth = self.compute_smooth_cps()
+            self.smooth_live.setText(f"{self.compute_smooth_cps(1):.1f}")  
+
         except Exception as e:
-            logger.warning(f"👆 Failed to update CPS label: {e}")
+            logger.warning(f"👆 Failed to update CPS/smooth labels: {e}")
+
 
     def update_plot(self):
         try:
             with shared.write_lock:
                 filename = shared.filename
-                counts   = shared.count_history.copy()
+                counts = shared.count_history.copy()
 
-            # --- Show only the last 300 seconds unless "Show All" is checked ---
+            # --- Trim history if needed ---
             if not self.checkbox_show_all.isChecked() and len(counts) > 300:
                 counts = counts[-300:]
 
+            # --- Prepare data ---
+            counts = np.array(counts, dtype=float)
+            counts[counts < 0] = np.nan  # defensive guard
+
+            # --- Clear axis first ---
             self.ax.clear()
             self.ax.set_facecolor(shared.DARK_BLUE)
 
-            # Grid lines and ticks in white
-            self.ax.grid(True, which='both', linestyle='--', linewidth=0.5, color='white')
-            self.ax.tick_params(axis='x', colors='white')
-            self.ax.tick_params(axis='y', colors='white')
+            # --- Set scale (must be AFTER clear) ---
+            if self.checkbox_log.isChecked():
+                self.ax.set_yscale("log")
+                # Avoid log(0)
+                counts[counts <= 0] = np.nan
+            else:
+                self.ax.set_yscale("linear")
 
+            # --- Style and grid ---
+            self.ax.grid(True, which="both", linestyle="--", linewidth=0.5, color="white")
+            self.ax.tick_params(axis="x", colors="white")
+            self.ax.tick_params(axis="y", colors="white")
             for spine in self.ax.spines.values():
-                spine.set_color('white')
+                spine.set_color("white")
 
-            self.ax.set_xticks(range(0, max(300, len(counts)) + 1, 10))
+            # --- Plot data ---
+            if len(counts) > 0:
+                self.ax.plot(counts, label="Counts/sec", color=shared.LIGHT_GREEN, linewidth=1.0)
 
-            # --- Base trace (Left or Mono) ---
-            self.ax.plot(counts, label="Counts/sec", color=shared.LIGHT_GREEN, linewidth=1.0)
+                n = max(1, int(self.sum_n))
+                if n > 1 and len(counts) >= n:
+                    rolling_avg = np.convolve(counts, np.ones(n)/n, mode="valid")
+                    self.ax.plot(
+                        range(n - 1, len(counts)),
+                        rolling_avg,
+                        label=f"Avg {n}s",
+                        color=shared.PINK,
+                        linewidth=1.0
+                    )
 
-            # --- Rolling average trace ---
-            n = self.sum_n
-            if n > 1 and len(counts) >= n:
-                rolling_avg = [
-                    sum(counts[i:i+n]) / n for i in range(len(counts) - n + 1)
-                ]
-                self.ax.plot(
-                    range(n-1, len(counts)),
-                    rolling_avg,
-                    label=f"Avg {n}s",
-                    color=shared.PINK,
-                    linewidth=1.0
-                )
-
-            self.ax.set_title(f"Count Rate - ({filename})", color='white')
-            self.ax.set_xlabel("Seconds", color='white')
-            self.ax.set_ylabel("Counts per second", color='white')
+            # --- Labels & limits ---
+            self.ax.set_title(f"Count Rate - ({filename})", color="white")
+            self.ax.set_xlabel("Seconds", color="white")
+            self.ax.set_ylabel("Counts per second", color="white")
             self.ax.set_xlim(left=0, right=max(300, len(counts)))
-            self.ax.set_ylim(bottom=0)
-            self.ax.legend(facecolor=shared.DARK_BLUE, edgecolor="white", labelcolor="white")
 
+            # only set bottom limit for linear scale
+            if not self.checkbox_log.isChecked():
+                self.ax.set_ylim(bottom=0)
+
+            self.ax.legend(facecolor=shared.DARK_BLUE, edgecolor="white", labelcolor="white")
             self.canvas.draw()
 
         except Exception as e:
-            logger.error(f"  ❌ update_plot error: {e} ")
+            logger.error(f"❌ update_plot error: {e}")
