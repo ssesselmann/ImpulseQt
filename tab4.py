@@ -4,6 +4,7 @@ import numpy as np
 import shared 
 import json
 import os
+import matplotlib as mpl
 
 from qt_compat import QWidget
 from qt_compat import QVBoxLayout
@@ -38,6 +39,12 @@ class Tab4(QWidget):
 
     def __init__(self):
         super().__init__()
+
+        mpl.rcParams["xtick.color"] = "white"
+        mpl.rcParams["ytick.color"] = "white"
+        mpl.rcParams["axes.labelcolor"] = "white"
+        mpl.rcParams["axes.edgecolor"] = "white"
+
         # Timer function
         self.ui_timer = QTimer(self)
         self.ui_timer.setInterval(1000)
@@ -66,7 +73,6 @@ class Tab4(QWidget):
         self.figure.set_facecolor(shared.DARK_BLUE)
 
         self.ax = self.figure.add_subplot(111)
-        self.tab4_layout.addWidget(self.canvas)
 
         # === Unified Control Section (under the plot) ===
         control_box = QGroupBox()
@@ -330,10 +336,15 @@ class Tab4(QWidget):
             # --- Set scale (must be AFTER clear) ---
             if self.checkbox_log.isChecked():
                 self.ax.set_yscale("log")
-                # Avoid log(0)
                 counts[counts <= 0] = np.nan
             else:
                 self.ax.set_yscale("linear")
+
+            # --- Ensure white tick labels even after rescaling ---
+            self.ax.tick_params(axis="x", colors="white")
+            self.ax.tick_params(axis="y", colors="white")
+            for label in self.ax.get_xticklabels() + self.ax.get_yticklabels():
+                label.set_color("white")
 
             # --- Style and grid ---
             self.ax.grid(True, which="both", linestyle="--", linewidth=0.5, color="white")
