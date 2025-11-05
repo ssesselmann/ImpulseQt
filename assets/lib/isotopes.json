@@ -7545,6 +7545,22 @@
       }
     ]
   },
+
+  "pb210": {
+      "lines": [
+        {
+          "energy": 46.54,
+          "intensity": 4.24,
+          "label": "gamma"
+        },
+        {
+          "energy": 671.45,
+          "intensity": 1.79,
+          "label": "gamma"
+        }
+      ]
+    },
+  
   "bi207": {
     "lines": [
       {
