@@ -103,7 +103,7 @@ def get_pro_manual_html():
         <p>Buffers incoming audio data for processing. Larger sample rates need proportionally larger buffers (modern PC's can handle large buffers).</p>
 
         <h3>Pulse Shape Plot</h3>
-        <p>Plots the mean pulse shape which is derived from audio input and used during data acquisition for filtering (distortion rejection).</p>
+        <p>Plots the mean pulse shape which is derived from audio input and used during data acquisition for filtering (distortion rejection). Note: The pulse height is calculated as the difference between the lowest and highest sample point of a pulse.</p>
 
         <h3>Distortion Plot</h3>
         <p>This plot is helpful for visualising pulse distortion. It normalises and compares a set number of pulses to the mean shape and calculates a distortion number for each pulse in the set, the set is sorted by distotion lowest to highest and presented as a line plot. It's purpose is to determine a value for the "shape tolerance". Typically the distortion tolerance is set just above the point where the distortion curve goes vertical. Setting the tolerance too tight will reult in a loss of counts.</p>
@@ -111,14 +111,14 @@ def get_pro_manual_html():
         <h2>2D Histogram Tab</h2>
         <p>This is the main gamma spectrum or histogram tab and its main feature is the large histogram plot. The plot update frequency can be manually set to any integer number of seconds. The histogram chart has several hidden features that are not immediately obvious, hover over the chart and you will see cross hairs that hep you pinpoint the values or use the mouse right click button to capture an image or zoom in on the scale. A small [A] will apear in the bottom right hand corner which can reset the plot to auto.</p>
 
-        <h3>Functions below the plot</h3>
+        <h3>Functions related to the plot</h3>
         <p>ImpulseQt was designed to have easy access and high visibility of all settings, somthing which is sadly missing in many commersial MCA programs where settings are hidden in hard to find windows. Following are the main settings the user will need.</p>
 
         <li><strong>START</strong>
-        <br>Click to start histogram recording </li><br>
+        <br>Click to start histogram recording -- this start button also controls the Count Rate histogram on tab-4</li><br>
 
         <li><strong>STOP</strong>
-        <br>Click to stop histogram recording </li><br>
+        <br>Click to stop histogram recording -- this stop button also controls the Count Rate histogram on tab-4</li><br>
 
         <li><strong>Stop at counts</strong>
         <br>This is a stop condition, the spectrometer will automatically stop after n counts.</li><br>
@@ -161,11 +161,30 @@ def get_pro_manual_html():
         <li><strong>Show Isotopes</strong>
         <br>Shows matching isotope flags, this functions only works with calibration and sigma turned on</li><br>
 
-        <li><strong>Sigma</strong>
-        <br>Produces a gaussian curve overlay, sigma wide for easy identification of smaller peaks.</li><br>
 
-        <li><strong>Peaks slider</strong>
-        <br>Turns peak notation on and adjusts sensitivity</li><br>
+        <li><strong>Sigma</strong>
+        <br>Produces a gaussian curve overlay, sigma wide for easy identification of smaller peaks. 
+        <br>This slider also sets the peak detection tolerance for the Auto peaks function</li><br>
+
+        <li><strong>Auto Select Width Slider</strong>
+        <br>This slider sets the peak width for the Auto Peaks function, moving the slider to the right decreases the number of peaks detected (less sensitive)</li><br>
+
+        <li><strong>Auto Peaks</strong>
+        <br>Clicking this button will auto select peaks up to a maximum of 12 peaks. The sensitivity can be set using the Sigma slider and the Auto Select Width slider.
+        </li><br>
+
+        <li><strong>Manual Peak Selection</strong>
+        <br>Double click on any peak to select a region of interest (ROI).
+        <br>Click and drag the edges of the yellow highlight to adjust the ROI.
+        </li><br>
+
+        <li><strong>Clear Peaks</strong>
+        <br>Click to remove all highlighted regions of interest.
+        </li><br>
+
+        <li><strong>Pop Out Table</strong>
+        <br>Pop out the peaks table into a separate window to declutter the screen. The table can now be moved off to the side and resized if required. 
+        </li><br>
 
         <li><strong>Notes</strong>
         <br>Input for spectrum specific notes (saves immediately to spectrum file).</li><br>
@@ -196,8 +215,11 @@ def get_pro_manual_html():
         <p>This tab displays the gamma spectrum as a heatmap over time, also known as a waterfall plot. It provides an intuitive way to visualize radiation and makes it easy to spot ‘hot zones’ at a glance. This plot gets most of it's settings like bins, bin size, calibration etc. from the main histogram tab2. It is highly recommended to set up and calibrate the regular histogram before running the waterfall plot. 
             The screen plot can hold up to one hour of data before it starts purging history, but all data is being saved to json file in the user directory and can also be downloaded as a csv file. 
  
-        <h2>Count rate Tab</h2>
-        <p>This window contains a large count rate chart with seconds on the x axis and counts on the y axis, it is associated with the main histogram and plots continuously during data recording. The window has a maximum width of 300 seconds moving, but the check box can be ticked to show all.  There is also a convenient slider which allows for averaging of the plot data. Once again the data can be downloaded for further analysis.</p>
+        <h2>Count Rate Tab</h2>
+        <p>This window contains a large count rate chart with seconds on the x axis and counts on the y axis, it is associated with the main histogram and plots continuously during data recording. The window has a maximum width of 300 seconds moving, but the check box can be ticked to show all.  There is also a convenient slider which allows for averaging of the plot data.</p>
+            <li>Show Log checkbox will show the y-axis in log scale.</li>
+            <li>The complete count rate data can be downloaded in csv format for further analysis.</li>
+            </p>
         
         <hr>
         <center>
