@@ -94,8 +94,6 @@ class Tab2(QWidget):
         # === Plot ===
         self.process_thread = None
         self.has_loaded     = False
-        self._last_peaks_t  = 0
-        self._last_x_span   = None
         self.filename_2     = ""
 
         # ---- Title Setup ----
@@ -117,8 +115,6 @@ class Tab2(QWidget):
         plot_layout = QVBoxLayout()
         plot_layout.addWidget(self.plot_title)
         plot_layout.addWidget(self.plot_widget)
-
-        self._peak_regions = []   # holds current LinearRegionItem overlays
 
         # --- ROI Controls (buttons) ---
         self.roi_controls = QHBoxLayout()
@@ -167,10 +163,6 @@ class Tab2(QWidget):
         self.roi_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.roi_table.setFixedHeight(75)
         tab2_layout.addWidget(self.roi_table)
-
-        self._in_table_update = False   # guard: we're writing cells
-        self._resort_pending  = False   # debounce resort
-
 
         # --- ROI signals ---
         self.btn_auto_roi.clicked.connect(self._on_auto_roi_clicked)
@@ -243,7 +235,6 @@ class Tab2(QWidget):
             epb_switch  = shared.epb_switch
             log_switch  = shared.log_switch
             cal_switch  = shared.cal_switch
-            iso_switch  = shared.iso_switch
             sigma       = shared.sigma
             peakfinder  = shared.peakfinder
             coeff_1     = shared.coeff_1
@@ -556,11 +547,6 @@ class Tab2(QWidget):
         grid.addWidget(self.cal_switch, 2, 5)
 
         # Col 6 Row 4
-        self.iso_switch = QCheckBox("Isotopes")
-        self.iso_switch.setChecked(iso_switch)
-        self.iso_switch.stateChanged.connect(lambda state, key="iso_switch": self.on_checkbox_toggle(key, state))
-
-        grid.addWidget(self.iso_switch, 3, 5)
 
 
         # Col 7 Row 1
@@ -1111,28 +1097,6 @@ class Tab2(QWidget):
         self.on_select_comparison_changed(self.select_comparison.currentData() or "")
 
 
-
-        def populate_combo(combo, file_options, label="— Select file —"):
-            combo.blockSignals(True)
-            combo.clear()
-            combo.addItem(label, "")
-            for opt in file_options:
-                combo.addItem(opt['label'], opt['value'])
-            combo.setCurrentIndex(0)
-            combo.blockSignals(False)
-
-        # Refresh with different lists
-        populate_combo(self.select_file, options)
-        populate_combo(self.select_comparison, options2)
-
-        with shared.write_lock:
-            filename_2 = shared.filename_2 or ""
-
-        self.select_comparison.blockSignals(True)
-        idx = self.select_comparison.findData(filename_2) if filename_2 else 0
-        self.select_comparison.setCurrentIndex(idx if idx >= 0 else 0)
-        self.select_comparison.blockSignals(False)
-
     def on_select_comparison_changed(self, value: str):
         value = (value or "").strip()
 
@@ -1169,7 +1133,6 @@ class Tab2(QWidget):
         with shared.write_lock:
             setattr(shared, name, value)
             sigma       = shared.sigma
-            iso_switch  = shared.iso_switch
             cal_switch  = shared.cal_switch
             comp_switch = shared.comp_switch
             diff_switch = shared.diff_switch
@@ -1182,9 +1145,6 @@ class Tab2(QWidget):
 
         if sigma > 0 and peakfinder > 0 and cal_switch:
             logger.info(f"   ✅ {name} set to {value} ")
-
-        elif iso_switch and not cal_switch:
-            logger.warning(f"👆 {name} needs calibration on ")
 
         elif comp_switch:
             logger.info(f"   ✅ {name} turned {value} ")
