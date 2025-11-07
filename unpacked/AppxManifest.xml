@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap10="http://schemas.microsoft.com/appx/manifest/uap/windows10/10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities">
+
+  <Identity
+    Name="StevenSesselmann.ImpulseQt"
+    Publisher="CN=14005534-7E89-4B87-AF78-8BF52D151431"
+    Version="3.1.2.0"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>ImpulseQt</DisplayName>
+    <PublisherDisplayName>Steven Sesselmann</PublisherDisplayName>
+    <Description>Gamma spectrometry interface and analysis tool.</Description>
+    <!-- Store logo should be the 50x50 base -->
+    <Logo>assets\storelogo.scale-100.png</Logo>
+  </Properties>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0"/>
+  </Dependencies>
+
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust"/>
+  </Capabilities>
+
+  <Applications>
+    <Application
+      Id="ImpulseQt"
+      Executable="ImpulseQt.exe"
+      uap10:RuntimeBehavior="packagedClassicApp"
+      uap10:TrustLevel="mediumIL">
+      <uap:VisualElements
+        DisplayName="ImpulseQt"
+        Description="Gamma spectrometry interface and analysis tool."
+        BackgroundColor="#2B2B2B"
+        Square44x44Logo="assets\icon44.scale-100.png"
+        Square150x150Logo="assets\icon150.scale-100.png">
+        <!-- Optional: supply a 310x310 tile later if you have artwork
+        <uap:DefaultTile Square310x310Logo="assets\icon310.png"/>
+        -->
+      </uap:VisualElements>
+    </Application>
+  </Applications>
+</Package>
