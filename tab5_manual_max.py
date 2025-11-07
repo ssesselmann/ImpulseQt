@@ -182,7 +182,8 @@ def get_max_manual_html():
 
 
             <li><strong>Sigma</strong>
-            <br>Produces a gaussian curve overlay, sigma wide for easy identification of smaller peaks. This slider also sets the peak detection tolerance for the Auto peaks function</li><br>
+            <br>Produces a gaussian curve overlay, sigma wide for easy identification of smaller peaks. 
+            <br>This slider also sets the peak detection tolerance for the Auto peaks function</li><br>
 
             <li><strong>Auto Select Width Slider</strong>
             <br>This slider sets the peak width for the Auto Peaks function, moving the slider to the right increases the number of bins required for a peak to be detected (less sensitive)</li><br>
