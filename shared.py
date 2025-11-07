@@ -176,6 +176,7 @@ histogram    = []
 histogram_2  = []
 histogram_hmp = []
 
+peak_list = []  # list[dict] like {'i0': int, 'i1': int}
 
 # --- Calibration ---
 calib_bin_1 = 0
