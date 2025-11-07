@@ -125,7 +125,7 @@ def get_max_manual_html():
             <p>The pulse plot is needed for fine tunin the spectrometer to your detector. If you have a monoblock style detector with an inbuilt MCA, it is most likely optimized from the factory and will not require further adjustment, but if you have a stand alone spectrometer and want to use it with different scintillators, adjustments may be required. Simply click the [Pulse View] button and wait a few seconds for the pulses to appear. Now count how many dots (samples) from the baseline up to and including the peak, and how many in the tail of the pulse. Use the command [-ris] and [-fall] to update the settings.</p>
             
             <h3>Oscilloscope</h3>
-            <p>Click the oscilloscope button to get a wider view of the pulses, this function us useful for confirming that a detector is working.</p>
+            <p>Click the oscilloscope button to get a wider view of the pulses, this function us useful for confirming that a detector is working and for adjusting the baseline.</p>
             <h2>2D Histogram Tab</h2>
             <p>This is the main gamma spectrum or histogram page and its main feature is the large histogram plot. The plot updates once per second when running and displays the spectrum as a line plot. The chart has several hidden features that are not immediately obvious, hover over the chart and you will see cross hairs that hep you pinpoint the values or use the mouse right click button to capture an image or zoom in on the scale. A small [A] will apear in the bottom right hand corner which can reset the plot to auto.</p>
             
@@ -134,10 +134,11 @@ def get_max_manual_html():
             <p>ImpulseQt was designed to have easy access and high visibility of all settings, somthing which is sadly missing in many commersial MCA programs where settings are hidden in hard to find windows. Following are the main settings the user will need.</p>
 
             <li><strong>START</strong>
-            <br>Click to start histogram recording </li><br>
+            <br>Click to start histogram recording -- this start button also controls the Count Rate histogram on tab-4</li><br>
 
             <li><strong>STOP</strong>
-            <br>Click to stop histogram recording </li><br>
+            <br>Click to stop histogram recording -- this stop button also controls the Count Rate histogram on tab-4</li><br>
+
 
             <li><strong>Stop at counts</strong>
             <br>This is a stop condition, the spectrometer will automatically stop after n counts.</li><br>
@@ -179,11 +180,29 @@ def get_max_manual_html():
             <li><strong>Show Isotopes</strong>
             <br>Shows matching isotope flags, this functions only works with calibration and sigma turned on</li><br>
 
-            <li><strong>Sigma</strong>
-            <br>Produces a gaussian curve overlay, sigma wide for easy identification of smaller peaks.</li><br>
 
-            <li><strong>Peaks slider</strong>
-            <br>Turns peak notation on and adjusts sensitivity</li><br>
+            <li><strong>Sigma</strong>
+            <br>Produces a gaussian curve overlay, sigma wide for easy identification of smaller peaks. This slider also sets the peak detection tolerance for the Auto peaks function</li><br>
+
+            <li><strong>Auto Select Width Slider</strong>
+            <br>This slider sets the peak width for the Auto Peaks function, moving the slider to the right increases the number of bins required for a peak to be detected (less sensitive)</li><br>
+
+            <li><strong>Auto Peaks</strong>
+            <br>Clicking this button will auto select peaks up to a maximum of 12 peaks. The sensitivity can be set using the Sigma slider and the Auto Select Width slider.
+            </li><br>
+
+            <li><strong>Manual Peak Selection</strong>
+            <br>Double click on any peak to select a region of interest (ROI).
+            <br>Click and drag the edges of the yellow highlight to adjust the ROI.
+            </li><br>
+
+            <li><strong>Clear Peaks</strong>
+            <br>Click to remove all highlighted regions of interest.
+            </li><br>
+
+            <li><strong>Pop Out Table</strong>
+            <br>Pop out the peaks table into a separate window to declutter the screen. The table can now be moved off to the side and resized if required. 
+            </li><br>
 
             <li><strong>Notes</strong>
             <br>Input for spectrum specific notes (saves immediately to spectrum file).</li><br>
@@ -198,8 +217,10 @@ def get_max_manual_html():
                 The screen plot can hold up to one hour of data before it starts purgin history, but all data is being saved to json file in the user directory and can also be downloaded as a csv file. 
             
             <h2>Count Rate Tab</h2>
-            <p>This window contains a large count rate chart with seconds on the x axis and counts on the y axis, it is associated with the main histogram and plots continuously during data recording. The window has a maximum width of 300 seconds moving, but the check box can be ticked to show all.  There is also a convenient slider which allows for averaging of the plot data. 
-            Once again the data can be downloaded for further analysis.</p>
+            <p>This window contains a large count rate chart with seconds on the x axis and counts on the y axis, it is associated with the main histogram and plots continuously during data recording. The window has a maximum width of 300 seconds moving, but the check box can be ticked to show all.  There is also a convenient slider which allows for averaging of the plot data.</p>
+                <li>Show Log checkbox will show the y-axis in log scale.</li>
+                <li>The complete count rate data can be downloaded in csv format for further analysis.</li>
+                </p>
             <hr>
             
             <h3>Author</h3>
