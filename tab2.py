@@ -3,15 +3,12 @@ import pyqtgraph as pg
 import shared  
 import os
 import csv
-import platform
 import json
 import numpy as np
 import shproto
-import threading
 import time
 
 from datetime import datetime
-
 from qt_compat import QWidget
 from qt_compat import QVBoxLayout
 from qt_compat import QGridLayout
@@ -30,12 +27,10 @@ from qt_compat import Qt
 from qt_compat import QTimer
 from qt_compat import Slot
 from qt_compat import QFont
-from qt_compat import QBrush
-from qt_compat import QColor
 from qt_compat import QIntValidator
 from qt_compat import QPixmap
-from qt_compat import QIcon
 from qt_compat import QDoubleValidator
+from qt_compat import QDialog
 
 from functions import (
     start_recording, 
@@ -51,10 +46,11 @@ from functions import (
     sanitize_for_log,
     generate_synthetic_histogram
     )
-from audio_spectrum import play_wav_file
-from shared import logger, device_type, MONO, FOOTER, DLD_DIR, USER_DATA_DIR, BIN_OPTIONS, LIGHT_GREEN, PINK, RED, WHITE, DARK_BLUE, ICON_PATH
+
+from shared import logger, MONO, FOOTER, DLD_DIR, USER_DATA_DIR, BIN_OPTIONS, LIGHT_GREEN, PINK, RED, WHITE, DARK_BLUE, ICON_PATH
 from pathlib import Path
 from calibration_popup import CalibrationPopup
+from PySide6.QtWidgets import QTableWidget, QTableWidgetItem, QHeaderView, QAbstractScrollArea
 
 
 class Tab2(QWidget):
@@ -84,11 +80,6 @@ class Tab2(QWidget):
 
         return container
 
-    def safe_float(val):
-        try:
-            return float(val)
-        except:
-            return 0.0
 
     def __init__(self):
         super().__init__()
@@ -105,9 +96,7 @@ class Tab2(QWidget):
         self.has_loaded     = False
         self._last_peaks_t  = 0
         self._last_x_span   = None
-        self.diff_switch    = False
         self.filename_2     = ""
-       
 
         # ---- Title Setup ----
         self.plot_title = QLabel("Histogram")  
@@ -117,25 +106,90 @@ class Tab2(QWidget):
         # --- Create the PlotWidget first ----------
         self.plot_widget = pg.PlotWidget()
 
+        # Guard so we connect only once
+        self._scene_hooked = False
+        scene = self.plot_widget.scene()
+        if not self._scene_hooked:
+            scene.sigMouseClicked.connect(self._on_scene_clicked)
+            self._scene_hooked = True
+
+
         plot_layout = QVBoxLayout()
         plot_layout.addWidget(self.plot_title)
         plot_layout.addWidget(self.plot_widget)
+
+        self._peak_regions = []   # holds current LinearRegionItem overlays
+
+        # --- ROI Controls (buttons) ---
+        self.roi_controls = QHBoxLayout()
+        self.btn_auto_roi  = QPushButton("Auto Peaks")
+        self.btn_clear_roi = QPushButton("Clear Peaks")
+
+        for b in (self.btn_auto_roi, self.btn_clear_roi):
+            b.setProperty("btn", "primary")
+
+        self.roi_controls.addWidget(self.btn_auto_roi)
+        self.roi_controls.addWidget(self.btn_clear_roi)
+        self.roi_controls.addStretch()
+
+        # Pop-out button
+        self.btn_pop_roi = QPushButton("Pop-out table")
+        self.btn_pop_roi.setProperty("btn", "primary")
+        self.btn_pop_roi.clicked.connect(self._toggle_roi_table_window)
+        self.roi_controls.addWidget(self.btn_pop_roi)
+
+        tab2_layout.addLayout(self.roi_controls)
+        self._roi_dialog = None
+
+        # --- ROI Table ---
+        self.roi_table = QTableWidget(0, 6)
+        self.roi_table.keyPressEvent = self._table_keypress_delete
+
+        self.roi_table.setHorizontalHeaderLabels([
+            "Centroid",          # 0
+            "Resolution (%)",    # 1
+            "Width",             # 2  <-- added
+            "Net counts",        # 3
+            "Gross counts",      # 4
+            "Isotope"            # 5
+        ])
+        self.roi_table.setWordWrap(True)
+        self.roi_table.setTextElideMode(Qt.ElideNone)
+        self.roi_table.verticalHeader().setVisible(False)
+
+        hdr = self.roi_table.horizontalHeader()
+        # Size columns to contents, but let Isotope breathe
+        for c in range(5):
+            hdr.setSectionResizeMode(c, QHeaderView.ResizeToContents)
+        hdr.setSectionResizeMode(5, QHeaderView.Stretch)  # Isotope column stretches
+
+        # Compact height while docked
+        self.roi_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.roi_table.setFixedHeight(75)
+        tab2_layout.addWidget(self.roi_table)
+
+        self._in_table_update = False   # guard: we're writing cells
+        self._resort_pending  = False   # debounce resort
+
+
+        # --- ROI signals ---
+        self.btn_auto_roi.clicked.connect(self._on_auto_roi_clicked)
+        self.btn_clear_roi.clicked.connect(self._on_clear_rois_clicked)
+
+        # holds ROI widgets mapped by uid
+        self._peak_regions = {}     # uid -> LinearRegionItem
+        self._roi_uid_counter = 0
+
+
+        #---- END ROI stuff ---------------------------------------
 
         plot_container = QWidget()
         plot_container.setLayout(plot_layout)
 
         tab2_layout.addWidget(plot_container)
 
-
         # Appearance / labels
         self.plot_widget.setLabel('left', 'Counts')
-        #self.plot_widget.setLabel('bottom', 'Bins')
-        self.plot_widget.getPlotItem().showGrid(x=True, y=True, alpha=0.3)
-
-        # in __init__ after creating self.plot_widget
-        self.plot_widget.enableAutoRange('y', False)
-        self.plot_widget.enableAutoRange('x', False)  
-
 
         # --- Curves (add main first, then others) -----------------
         self.style_plot_canvas(self.plot_widget)
@@ -145,7 +199,6 @@ class Tab2(QWidget):
         self.hist_curve  = self.plot_widget.plot([], pen=pg.mkPen(LIGHT_GREEN, width=2), fillLevel=0, brush=(0, 0, 0, 40))
         self.comp_curve  = self.plot_widget.plot([], pen=pg.mkPen(PINK,        width=2))
         self.gauss_curve = self.plot_widget.plot([], pen=pg.mkPen(RED,         width=2), fillLevel=0, brush=(255, 0, 0, 125))
-
 
         # Z-order so crosshairs/markers sit above lines, backgrounds below lines
         self.hist_curve.setZValue(10)
@@ -162,10 +215,9 @@ class Tab2(QWidget):
         self.plot_widget.addItem(self.hline, ignoreBounds=True)
         self.plot_widget.scene().sigMouseMoved.connect(self.on_mouse_moved)
 
-        # Finally add to layout
-        tab2_layout.addWidget(self.plot_widget)
-        # ======================================================
 
+        # tab2_layout.addWidget(self.plot_widget)
+        # ======================================================
         # === 9x4 Grid ==========================================
         grid = QGridLayout()
 
@@ -217,6 +269,7 @@ class Tab2(QWidget):
         self.max_counts_input = QLineEdit(str(int(max_counts)))
         self.max_counts_input.setAlignment(Qt.AlignCenter)
         self.max_counts_input.setValidator(QIntValidator(0, 9999999))
+        self.max_counts_input.textChanged.connect(lambda text: self.on_text_changed(text, "max_counts"))
         grid.addWidget(self.labeled_input("Stop at counts.", self.max_counts_input), 2, 0)
 
         # Col 1 Row 4
@@ -241,6 +294,7 @@ class Tab2(QWidget):
         self.max_seconds_input = QLineEdit(str(int(max_seconds)))
         self.max_seconds_input.setAlignment(Qt.AlignCenter)
         self.max_seconds_input.setValidator(QIntValidator(0, 9999999))  
+        self.max_seconds_input.textChanged.connect(lambda text: self.on_text_changed(text, "max_seconds"))
         grid.addWidget(self.labeled_input("Stop at seconds", self.max_seconds_input), 2, 1)
 
         # Col 2 Row 4
@@ -254,11 +308,9 @@ class Tab2(QWidget):
         self.filename_input.textChanged.connect(lambda text: self.on_text_changed(text, "filename"))
         grid.addWidget(self.labeled_input("Filename", self.filename_input), 0, 2)
 
-        # Col 3 Row 3
-        # Initialize widget lists for visibility control
         self.pro_only_widgets = []
         self.max_only_widgets = []
-        
+
         # =====================================================
         # PRO wrapper
         # =====================================================
@@ -327,14 +379,6 @@ class Tab2(QWidget):
         # ===================================================
         # OPEN MAX WRAPPER
         # ===================================================
-        self.interval_input = QLineEdit(str(t_interval))
-        self.interval_input.setAlignment(Qt.AlignCenter)
-        self.interval_input.setValidator(QIntValidator(1, 86400, self))
-        self.interval_input.textChanged.connect(lambda text: self.on_text_changed(text, "t_interval"))
-
-        interval_field = self.labeled_input("Interval (s)", self.interval_input)
-        grid.addWidget(interval_field, 0, 3)
-        self.max_only_widgets.append(interval_field)
 
         # --- Serial Command (MAX-only) at (3,3)
         self.cmd_selector = QComboBox()
@@ -342,7 +386,7 @@ class Tab2(QWidget):
         self.cmd_selector.addItem("Pause MCA",   "-sto")
         self.cmd_selector.addItem("Restart MCA", "-sta")
         self.cmd_selector.addItem("Reset Histogram", "-rst")
-        self.cmd_selector.currentIndexChanged.connect(self.send_selected_command)
+        self.cmd_selector.currentIndexChanged.connect(lambda _idx: self.send_selected_command())
         cmd_field = self.labeled_input("Serial Command:", self.cmd_selector)
         grid.addWidget(cmd_field, 1, 3)
         self.max_only_widgets.append(cmd_field)
@@ -358,7 +402,7 @@ class Tab2(QWidget):
         self.select_file.currentIndexChanged.connect(self.on_select_filename_changed)
         grid.addWidget(self.labeled_input("Open spectrum file", self.select_file), 3, 2)
 
-        # Col 4 Row 1 ==================================================================
+        # ==== Col 4 Row 1 =============================================================
         # OPEN PRO wrapper for LLD + Interval
         # ==============================================================================
         self.threshold_container = QWidget()
@@ -368,23 +412,36 @@ class Tab2(QWidget):
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(8)
 
-        # --- LLD (left) ---
+        # ==== interval_input_max (at row 0, col 3) ===============
+        self.interval_input_max = QLineEdit(str(t_interval))
+        self.interval_input_max.setAlignment(Qt.AlignCenter)
+        self.interval_input_max.setValidator(positive_int_validator)
+        self.interval_input_max.textChanged.connect(
+            lambda text: self.on_text_changed(text, "t_interval")
+        )
+        interval_field_max = self.labeled_input("Interval (s)", self.interval_input_max)
+        grid.addWidget(interval_field_max, 0, 3)
+        self.max_only_widgets.append(interval_field_max)
+
+        # ==== LLD threshold PRO ONLY (left box) ==================
         self.threshold = QLineEdit(str(threshold))
         self.threshold.setAlignment(Qt.AlignCenter)
         self.threshold.setValidator(positive_int_validator)
         self.threshold.textChanged.connect(lambda text: self.on_text_changed(text, "threshold"))
         lld_widget = self.labeled_input("LLD (bins)", self.threshold)
 
-        # --- Interval (right) ---
-        self.interval_input = QLineEdit(str(t_interval))  # replace "1" with your interval value if you have one
-        self.interval_input.setAlignment(Qt.AlignCenter)
-        self.interval_input.setValidator(positive_int_validator)
-        self.interval_input.textChanged.connect(lambda text: self.on_text_changed(text, "t_interval"))
-        interval_widget = self.labeled_input("Interval (s)", self.interval_input)
+        # ==== interval_input_pro (right box) =====================
+        self.interval_input_pro = QLineEdit(str(t_interval))
+        self.interval_input_pro.setAlignment(Qt.AlignCenter)
+        self.interval_input_pro.setValidator(positive_int_validator)
+        self.interval_input_pro.textChanged.connect(
+            lambda text: self.on_text_changed(text, "t_interval")
+        )
+        interval_field_pro = self.labeled_input("Interval (s)", self.interval_input_pro)
 
         # Side-by-side, 50/50 split
         row.addWidget(lld_widget, 1)
-        row.addWidget(interval_widget, 1)
+        row.addWidget(interval_field_pro, 1)
 
         grid.addWidget(self.threshold_container, 0, 3)
         self.pro_only_widgets.append(self.threshold_container)
@@ -528,10 +585,9 @@ class Tab2(QWidget):
         self.peakfinder_slider = QSlider(Qt.Horizontal)
         self.peakfinder_slider.setRange(0, 100)       # Min = 0, Max = 100
         self.peakfinder_slider.setValue(int(peakfinder))
-        self.peakfinder_slider.setValue(int(peakfinder))
         self.peakfinder_slider.setFocusPolicy(Qt.StrongFocus)
         self.peakfinder_slider.setFocus()
-        self.peakfinder_label = QLabel(f"Peakfinder: {peakfinder}")
+        self.peakfinder_label = QLabel(f"Select peak width: {peakfinder}")
         self.peakfinder_label.setAlignment(Qt.AlignCenter)
         font = QFont("Courier New")
         font.setPointSize(9)
@@ -564,7 +620,6 @@ class Tab2(QWidget):
         self.open_calib_btn = QPushButton("Calibrate")
         self.open_calib_btn.clicked.connect(self.open_calibration_popup)
         self.open_calib_btn.setProperty("btn", "primary")
-        self.poly_label.setProperty("typo", "p1")
         grid.addWidget(self.open_calib_btn, 3, 6)
 
         # Col 8: Notes input (spanning rows 0–3)
@@ -597,14 +652,6 @@ class Tab2(QWidget):
         # Add to grid layout at row 3, column 7, rowspan 2, colspan 2
         grid.addWidget(logo_label, 2, 8, 2, 2)
 
-        # hide/show pro widget
-        self.pro_only_widgets = [
-        self.bins_container,
-        self.threshold_container,
-        self.tolerance_container,
-        self.bin_size_container,
-        self.coi_switch
-        ]
         self.update_widget_visibility()
 
         tab2_layout.addLayout(grid)
@@ -622,10 +669,129 @@ class Tab2(QWidget):
         self.refresh_file_dropdowns()
         self.setLayout(tab2_layout)
 
-    # === Timer to update live data ===
+        # === Timer to update live data ===
         self.ui_timer = QTimer()
         self.ui_timer.timeout.connect(self.update_ui)  
         self.ui_timer.start(1000)
+
+
+    def _configure_roi_table_for_dialog(self):
+        table = self.roi_table
+        header = table.horizontalHeader()
+        for c in range(5):
+            header.setSectionResizeMode(c, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(5, QHeaderView.Stretch)
+        table.setWordWrap(True)
+        table.setTextElideMode(Qt.ElideNone)
+        table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        table.setMinimumWidth(900)
+        table.setColumnWidth(5, 350)
+
+        # expand with the window
+        table.setSizeAdjustPolicy(QAbstractScrollArea.AdjustIgnored)
+        table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        table.setMinimumHeight(0)
+        table.setMaximumHeight(16777215)
+
+        # 👇 add this
+        self._compact_table_style(table)
+
+
+    def _compact_table_style(self, table: QTableWidget):
+        # 1) Slightly smaller font (by one step), robust to pixel/point fonts
+        base = table.font()
+        small = QFont(base)
+        if base.pointSize() > 0:
+            small.setPointSize(max(6, base.pointSize() - 1))
+        else:
+            # fall back for pixel-sized fonts / high-DPI
+            small.setPixelSize(max(10, base.pixelSize() - 1))
+        table.setFont(small)
+        table.horizontalHeader().setFont(small)
+        table.verticalHeader().setFont(small)
+
+        # 2) Tighter padding for cells and header sections
+        #    (keeps ResizeToContents responsive but less tall)
+        table.setStyleSheet("""
+            QTableWidget::item { padding: 2px 6px; }   /* was typically ~4–6px */
+            QHeaderView::section { padding: 2px 6px; }
+        """)
+
+        # 3) Hint a compact default row height (ResizeToContents still wins,
+        #    but uses this as a floor). Tie it to font metrics for stability.
+        fm = table.fontMetrics()
+        compact_row = fm.height() + 4   # small breathing room
+        table.verticalHeader().setDefaultSectionSize(compact_row)
+
+
+
+    def _configure_roi_table_for_docked(self):
+        table = self.roi_table
+        header = table.horizontalHeader()
+        for c in range(5):
+            header.setSectionResizeMode(c, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(5, QHeaderView.Stretch)
+        table.setWordWrap(True)
+        table.setTextElideMode(Qt.ElideNone)
+        table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        table.setSizeAdjustPolicy(QAbstractScrollArea.AdjustToContents)
+        table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        table.setFixedHeight(100)
+
+        # 👇 add this (so the docked view is compact too)
+        self._compact_table_style(table)
+
+        
+    def _toggle_roi_table_window(self):
+
+        # If already popped out, dock it back
+        if self._roi_dialog and self._roi_dialog.isVisible():
+            self._dock_roi_table_back()
+            return
+
+        # Create the dialog and keep it on top
+        self._roi_dialog = QDialog(self)
+        self._roi_dialog.setWindowTitle("ROI Table")
+        self._roi_dialog.setWindowFlags(
+            Qt.Window |
+            Qt.WindowStaysOnTopHint |
+            Qt.WindowCloseButtonHint |
+            Qt.WindowTitleHint |
+            Qt.WindowMinMaxButtonsHint
+        )
+        self._roi_dialog.setModal(False)
+
+        lay = QVBoxLayout()
+        self._roi_dialog.setLayout(lay)
+
+        # Reparent the table into the dialog and make it expansive
+        self.roi_table.setParent(self._roi_dialog)
+        self._configure_roi_table_for_dialog()
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.addWidget(self.roi_table, 1)  # stretch factor so it grows vertically
+          
+
+        self._roi_dialog.resize(980, 100)
+        self._roi_dialog.finished.connect(self._dock_roi_table_back)
+        self._roi_dialog.show()
+        self._roi_dialog.raise_()
+        self._roi_dialog.activateWindow()
+        self.btn_pop_roi.setText("Dock table")
+
+
+    def _dock_roi_table_back(self):
+        self.roi_table.setParent(None)
+        self.layout().insertWidget(1, self.roi_table)
+        self._configure_roi_table_for_docked()
+
+        if self._roi_dialog:
+            self._roi_dialog.deleteLater()
+            self._roi_dialog = None
+
+        self.btn_pop_roi.setText("Pop-out table")
+
+    def clear_rois_and_reset(self):
+        self._on_clear_rois_clicked()
 
     def update_ui(self):
         if not self.isVisible():      
@@ -731,14 +897,6 @@ class Tab2(QWidget):
         self.dropped_label.setText(str(dropped))
         self.cps_label.setText(f"{cps}")
 
-        try:
-            with shared.write_lock:
-                shared.max_counts = int(self.max_counts_input.text())
-                shared.max_seconds = int(self.max_seconds_input.text())
-                shared.tolerance = float(self.tolerance_input.text())
-
-        except ValueError:
-            pass 
 
     def update_bins_selector(self):
         # Read shared.compression under lock
@@ -754,24 +912,6 @@ class Tab2(QWidget):
         self.bins_selector.setCurrentIndex(index)
         self.update_histogram()
 
-    def on_select_bins_changed(self, index):
-        """Write selection back to shared and log it."""
-        self.plot_data.clear()
-
-        data = self.bins_selector.itemData(index)
-        if data is None:
-            logger.warning(f"👆 No compression data for index {index}")
-            return
-
-        compression = int(data)
-
-        with shared.write_lock:
-            shared.compression = compression
-            shared.bins = shared.bins_abs // compression
-
-        logger.info(f"   ✅ Compression set to {compression}, bins = {shared.bins}")
-        # If Tab needs an immediate redraw beyond update_bins_selector():
-        self.update_graph()
 
     def make_cell(self, text):
         label = QLabel(text)
@@ -863,6 +1003,7 @@ class Tab2(QWidget):
 
         # --- Reset plotting ---
         self.clear_session()
+        self.clear_rois_and_reset()
 
         try:
             # Call the centralized recording logic
@@ -944,25 +1085,30 @@ class Tab2(QWidget):
             self.plot_widget.setToolTip(f"Bin: {ch_idx}\ncts: {y}")
 
     def refresh_file_dropdowns(self):
-        # Get latest file options
-        options  = get_filename_options()      # user files
-        options2 = get_filename_2_options()    # isotopes
+        options  = get_filename_options()
+        options2 = get_filename_2_options()
 
         with shared.write_lock:
             want2 = shared.filename_2 or ""
 
-        cb = self.select_comparison
+        def populate_combo(combo, file_options, label="— Select file —", want=None):
+            combo.blockSignals(True)
+            combo.clear()
+            combo.addItem(label, "")
+            for opt in file_options:
+                combo.addItem(opt['label'], opt['value'])
+            # restore selection if possible
+            if want:
+                idx = combo.findData(want)
+                combo.setCurrentIndex(idx if idx >= 0 else 0)
+            else:
+                combo.setCurrentIndex(0)
+            combo.blockSignals(False)
 
-        # Let the signal fire so the histogram loads
-        idx = cb.findData(want2) if want2 else 0
-        if idx < 0 and want2:
-            # If the saved item isn't in the list, add it and select it
-            import os
-            label = f"Library: {want2.split('/',1)[1]}" if want2.startswith("lib/") else (os.path.basename(want2) or want2)
-            cb.addItem(label, want2)
-            idx = cb.findData(want2)
-
-        cb.setCurrentIndex(idx if idx >= 0 else 0)  # this will trigger on_select_comparison_changed(...)
+        populate_combo(self.select_file, options)
+        populate_combo(self.select_comparison, options2, want=want2)
+        # Manually notify comparison change once
+        self.on_select_comparison_changed(self.select_comparison.currentData() or "")
 
 
 
@@ -1017,18 +1163,6 @@ class Tab2(QWidget):
             self.update_histogram()
 
 
-    def _persist_selection_in_combo(self, value: str):
-        """Ensure the combo shows 'value' as selected, without firing signals."""
-        with QSignalBlocker(self.select_comparison):
-            idx = self.select_comparison.findData(value)
-            if idx < 0 and value:
-                # add it if it's not present (e.g., file opened from elsewhere)
-                label = f"Library: {value.split('/',1)[1]}" if value.startswith("lib/") else (os.path.basename(value) or value)
-                self.select_comparison.addItem(label, value)
-                idx = self.select_comparison.findData(value)
-            self.select_comparison.setCurrentIndex(idx if idx >= 0 else 0)
-
-
     def on_checkbox_toggle(self, name, state):
         value = bool(state)
 
@@ -1043,6 +1177,7 @@ class Tab2(QWidget):
             coi_switch  = shared.coi_switch
             log_switch  = shared.log_switch
             slb_switch  = shared.slb_switch
+            peakfinder  = shared.peakfinder 
 
 
         if sigma > 0 and peakfinder > 0 and cal_switch:
@@ -1050,12 +1185,6 @@ class Tab2(QWidget):
 
         elif iso_switch and not cal_switch:
             logger.warning(f"👆 {name} needs calibration on ")
-
-        elif iso_switch and sigma == 0:
-            logger.warning(f"👆 {name} needs sigma on")
-
-        elif iso_switch and peakfinder == 0:
-            logger.warning(f"👆 {name} needs peakfinder on")
 
         elif comp_switch:
             logger.info(f"   ✅ {name} turned {value} ")
@@ -1081,8 +1210,8 @@ class Tab2(QWidget):
         else:
             logger.info(f"   ✅{name} turned off")
 
-        
         self.update_histogram()
+
 
     def on_text_changed(self, text, key):
         try:
@@ -1101,14 +1230,32 @@ class Tab2(QWidget):
 
     @Slot(int)
     def on_select_bins_changed(self, index):
-        compression = self.bins_selector.itemData(index)
-        if compression is not None:
-            with shared.write_lock:
-                shared.compression = compression
-                shared.bins = shared.bins_abs // compression
-                logger.info(f"   ✅ Compression set to {compression}, bins = {shared.bins}")
+        """Write selection back to shared and refresh the view."""
+        data = self.bins_selector.itemData(index)
+        if data is None:
+            logger.warning(f"👆 No compression data for index {index}")
+            return
+
+        try:
+            compression = int(data)
+        except (TypeError, ValueError):
+            logger.error(f"❌ Invalid compression data: {data!r}")
+            return
+
+        with shared.write_lock:
+            shared.compression = compression
+            # guard against divide-by-zero and nonsense
+            shared.bins = max(1, int(shared.bins_abs) // max(1, compression))
+
+        logger.info(f"   ✅ Compression set to {compression}, bins = {shared.bins}")
+
+        self.update_histogram()
+
+
 
     def on_select_filename_changed(self, index):
+
+        self.clear_rois_and_reset()
 
         filepath = self.select_file.itemData(index)
 
@@ -1135,58 +1282,6 @@ class Tab2(QWidget):
 
 
 
-    def on_select_filename_2_changed(self, index: int):
-        # Always use the item's "data" (what you passed as addItem(..., userData))
-        value = (self.select_comparison.currentData() or "").strip()
-
-        def _clear_comparison():
-            with shared.write_lock:
-                shared.filename_2    = ""
-                shared.histogram_2   = []
-                shared.bins_2        = 0
-                shared.comp_coeff_1  = 0.0
-                shared.comp_coeff_2  = 0.0
-                shared.comp_coeff_3  = 0.0
-                shared.counts_2      = 0
-                shared.compression_2 = 1
-            self.filename_2 = ""
-            logger.info("   ✅ Cleared comparison selection")
-
-        # 1) No selection → clear everything
-        if not value:
-            _clear_comparison()
-            self.update_histogram()
-            return
-
-        # 2) Synthetic library: "lib/<isotope>"
-        if value.startswith("lib/"):
-            iso = value.split("/", 1)[1]
-            ok = generate_synthetic_histogram(iso)
-            if ok:
-                with shared.write_lock:
-                    shared.filename_2 = value              # record the logical selection
-                self.filename_2 = value
-                logger.info(f"   ✅ Built synthetic comparison: {value}")
-            else:
-                logger.error(f"  ❌ Failed to build synthetic comparison: {value}")
-                # keep previous selection; do not clobber filename_2 on failure
-            self.update_histogram()
-            return
-
-        # 3) Real file on disk
-        ok = load_histogram_2(value)
-        if ok:
-            with shared.write_lock:
-                shared.filename_2 = value
-            self.filename_2 = value
-            logger.info(f"   ✅ Loaded comparison spectrum: {value}")
-        else:
-            logger.error(f"  ❌ Failed to load comparison spectrum: {value}")
-            # optional: _clear_comparison() if you want to drop previous on failure
-
-        self.update_histogram()
-
-
     def on_select_flag_table_changed(self, index: int):
         """Load the selected flag file and update shared.isotope_flags"""
         if index < 0:
@@ -1208,7 +1303,7 @@ class Tab2(QWidget):
                 shared.isotope_flags = flags
 
             logger.info(f"   ✅ Loaded isotope flags from: {fname} ")
-            self.update_peak_markers()  # optional: force marker update on file change
+            #self.update_peak_markers()  # optional: force marker update on file change
 
         except Exception as e:
             logger.error(f"  ❌ reading flag file '{flag_path}': {e} ")
@@ -1228,9 +1323,9 @@ class Tab2(QWidget):
         with shared.write_lock:
             shared.peakfinder = val  # save the raw slider value
         if val == 0:
-            self.peakfinder_label.setText("Peaks Off")
+            self.peakfinder_label.setText("Auto select Width Default")
         elif val > 0:
-            self.peakfinder_label.setText(f"Peakfinder: {val}")
+            self.peakfinder_label.setText(f"Auto select Width: {val}")
         self.update_histogram()
         
 
@@ -1323,41 +1418,7 @@ class Tab2(QWidget):
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to save CSV:\n{str(e)} ❌")
-            logger.error(f"  ❌ Save failed: {str(e)} ")
-
-    def apply_calibration(self, x_vals, coeffs):
-        if any(coeffs):
-            return np.polyval(np.poly1d(coeffs), x_vals)
-        return x_vals
-
-    def apply_epb(self, x_vals, y_vals):
-
-        with shared.write_lock:
-            epb_switch = shared.epb_switch
-
-        if epb_switch:
-            return [y * x for x, y in zip(x_vals, y_vals)]
-        return y_vals
-
-    def apply_log_scale(self, y_vals, min_val=0.1):
-
-        with shared.write_lock:
-            log_switch = shared.log_switch
-
-        self.plot_widget.setLogMode(x=False, y=log_switch)
-
-        if log_switch:
-            return [max(min_val, y) for y in y_vals]
-        return y_vals
-
-    def update_compression_setting(self):
-        if device_type == "MAX":
-            value = self.channel_selector.currentData()
-            with shared.write_lock:
-                shared.compression = value
-                shared.bins = int(shared.bins_abs/value)
-                logger.info(f"   ✅ Compression set to {value} (i.e., {shared.bins_abs // value} bins) ")
-        return    
+            logger.error(f"  ❌ Save failed: {str(e)} ") 
 
     def send_selected_command(self):
 
@@ -1372,10 +1433,6 @@ class Tab2(QWidget):
 
         # Reset to default (index 0)
         self.cmd_selector.setCurrentIndex(0)
-
-    def update_plot(self):
-        self.update_histogram()
-        self.update_peak_markers()
 
     
     def style_plot_canvas(self, pw: pg.PlotWidget):
@@ -1405,152 +1462,378 @@ class Tab2(QWidget):
             return None
         return valid[0]
 
-    def update_peak_markers(self):
-
+    def _on_auto_roi_clicked(self):
         with shared.write_lock:
-            peakfinder  = shared.peakfinder
-            sigma       = shared.sigma
-            coeff_1     = shared.coeff_1
-            coeff_2     = shared.coeff_2
-            coeff_3     = shared.coeff_3
-            cal_switch  = shared.cal_switch
-            iso_switch  = shared.iso_switch
-            log_switch  = shared.log_switch
-            isotope_flags = shared.isotope_flags
+            y = list(shared.histogram)
+            sigma = float(shared.sigma)
+            prom  = max(1, int(shared.peakfinder))
 
-        # Always clear old markers first
-        for item in getattr(self, "peak_markers", []):
-            self.plot_widget.removeItem(item)
-        self.peak_markers = []
-
-        if peakfinder == 0:
+        if not y or len(y) < 5:
             return
-        if not hasattr(self, "x_vals") or not hasattr(self, "y_vals_raw") or not hasattr(self, "y_vals_plot"):
-            return
-
-        x_vals      = self.x_vals
-        y_vals_raw  = self.y_vals_raw   
-        y_vals_plot = self.y_vals_plot   
 
         try:
-            peaks, fwhm = peak_finder(
-                y_values=y_vals_raw,
-                prominence=peakfinder,
-                min_width=sigma,
-                smoothing_window=3
-            )
-        except Exception as e:
-            logger.error(f"  ❌ peak_finder failed: {e} ")
+            peaks, widths = peak_finder(y_values=np.asarray(y, float),
+                                        prominence=prom,
+                                        min_width=max(1e-3, sigma),
+                                        smoothing_window=3)
+        except Exception:
+            peaks, widths = [], []
+
+        # append up to, say, 12 peaks
+        N = len(y)
+        added = 0
+        for k in range(min(len(peaks), 12)):
+            p = int(peaks[k])
+            w = int(max(2, round(float(widths[k])))) if len(widths) > k else 4
+            i0 = max(0, p - w)
+            i1 = min(N-1, p + w)
+            self._append_peak_indices(i0, i1)
+            added += 1
+
+        if added:
+            self._recompute_all_peaks()
+
+    def _on_clear_rois_clicked(self):
+        with shared.write_lock:
+            shared.peak_list = []
+        self.roi_table.setRowCount(0)
+        self.update_histogram()  # redraw lines etc if you later add them
+
+    
+    def _append_peak_indices(self, i0: int, i1: int, uid: int | None = None):
+        if i1 <= i0:
+            return
+        if uid is None:
+            uid = self._next_uid()
+        with shared.write_lock:
+            shared.peak_list.append({'i0': int(i0), 'i1': int(i1), 'uid': int(uid)})
+
+
+    def _append_peak_around(self, center_i: int):
+        # Find a small FWHM-like window around local max near center_i
+        with shared.write_lock:
+            y = list(shared.histogram)
+        if not y:
+            return
+        N = len(y)
+        i = int(max(0, min(center_i, N-1)))
+
+        # walk to nearest local max
+        left = max(0, i-1)
+        right= min(N-1, i+1)
+        if y[right] > y[i]: i = right
+        if y[left]  > y[i]: i = left
+
+        peak = float(y[i])
+        if not np.isfinite(peak) or peak <= 0:
+            return
+        half = 0.5*peak
+
+        L = i
+        while L > 0 and y[L] > half:
+            L -= 1
+        R = i
+        while R < N-1 and y[R] > half:
+            R += 1
+
+        # ensure non-zero width
+        if R <= L:
+            L = max(0, i-2)
+            R = min(N-1, i+2)
+
+        self._append_peak_indices(L, R)
+        self._recompute_all_peaks()
+
+    def _table_keypress_delete(self, ev):
+        if ev.key() in (Qt.Key_Delete, Qt.Key_Backspace):
+            rows = sorted({idx.row() for idx in self.roi_table.selectedIndexes()}, reverse=True)
+            if not rows:
+                return
+            uids = []
+            for r in rows:
+                it0 = self.roi_table.item(r, 0)
+                if it0 is None:
+                    continue
+                uid = it0.data(Qt.UserRole + 1)
+                if uid is not None:
+                    uids.append(int(uid))
+            if not uids:
+                return
+
+            with shared.write_lock:
+                shared.peak_list = [pk for pk in shared.peak_list if int(pk.get('uid', -1)) not in uids]
+
+            # remove corresponding regions
+            for uid in uids:
+                reg = self._peak_regions.pop(uid, None)
+                if reg:
+                    try:
+                        self.plot_widget.removeItem(reg)
+                    except Exception:
+                        pass
+
+            self._recompute_all_peaks()
+        else:
+            QTableWidget.keyPressEvent(self.roi_table, ev)
+
+
+    def _recompute_all_peaks(self):
+        # snapshot
+        with shared.write_lock:
+            y        = list(shared.histogram)
+            coeffs   = [shared.coeff_1, shared.coeff_2, shared.coeff_3]
+            cal_on   = bool(shared.cal_switch)
+        # make sure each peak has a uid
+        peak_list = self._ensure_peak_uids()
+
+
+        if not y:
+            self.roi_table.setRowCount(0)
             return
 
-        coeffs = [coeff_1, coeff_2, coeff_3]
-        use_cal = cal_switch and any(coeffs)
-        use_iso = iso_switch and isotope_flags and use_cal
+        def ch_to_gui(ch: float) -> float:
+            if cal_on and any(coeffs):
+                return float(np.polyval(coeffs, float(ch)))
+            return float(ch)
 
-        # Remove old markers
-        for item in getattr(self, "peak_markers", []):
-            self.plot_widget.removeItem(item)
-        self.peak_markers = []
-
-        for p, width in zip(peaks, fwhm):
-            if p >= len(y_vals_raw):
+        rows = []
+        for pk in peak_list:
+            i0 = max(0, min(int(pk['i0']), len(y)-1))
+            i1 = max(0, min(int(pk['i1']), len(y)-1))
+            if i1 <= i0:
                 continue
 
+            xv = np.arange(i0, i1+1, dtype=float)
+            yr = np.asarray(y[i0:i1+1], dtype=float)
+
+            gross = float(np.nansum(yr))
+            yL, yR = float(yr[0]), float(yr[-1])
+            m = (yR - yL) / max(1, len(yr)-1)
+            bkg = yL + m*np.arange(len(yr), dtype=float)
+            net = float(np.nansum(yr - bkg))
+
+            denom = float(np.nansum(yr))
+            centroid_ch = float(np.nansum(xv*yr)/denom) if denom>0 else float((i0+i1)/2)
+
+            # FWHM
             try:
-                y_val = float(y_vals_plot[p])
-            except (ValueError, TypeError):
-                continue
-            if not np.isfinite(y_val):
-                continue
+                y_max = float(np.nanmax(yr)); half = 0.5*y_max
+                L = next((k for k in range(1, len(yr)) if yr[k-1] < half <= yr[k]), None)
+                R = next((k for k in range(len(yr)-1, 0, -1) if yr[k] < half <= yr[k-1]), None)
+                if L is None or R is None:
+                    fwhm_ch = float("nan")
+                else:
+                    fracL = (half - yr[L-1]) / max(1e-12, (yr[L] - yr[L-1]))
+                    xL = (i0 + L - 1) + fracL
+                    fracR = (half - yr[R]) / max(1e-12, (yr[R-1] - yr[R]))
+                    xR = (i0 + R) - fracR
+                    fwhm_ch = float(abs(xR - xL))
+            except Exception:
+                fwhm_ch = float("nan")
 
-            x_pos = x_vals[p] -5
-
-            # Slightly lift label above peak
-            if log_switch:
-                y_pos = np.log10(y_val * 1.05)
+            centroid_gui = ch_to_gui(centroid_ch)
+            if cal_on and any(coeffs) and np.isfinite(fwhm_ch):
+                a, b, _ = coeffs
+                dEdx = (2*a*centroid_ch + b) if (a or b) else (ch_to_gui(centroid_ch+1) - ch_to_gui(centroid_ch))
+                fwhm_keV = abs(dEdx) * fwhm_ch
+                res_pct = (fwhm_keV/centroid_gui*100.0) if centroid_gui>0 else float("nan")
+                width_txt = f"{abs(ch_to_gui(i1)-ch_to_gui(i0)):.2f}"
+                cent_txt  = f"{centroid_gui:.2f} keV"
             else:
-                y_pos = y_val * 1.1
+                res_pct   = (fwhm_ch/centroid_ch*100.0) if (np.isfinite(fwhm_ch) and centroid_ch>0) else float("nan")
+                width_txt = f"{abs(i1-i0):.0f}"
+                cent_txt  = f"{centroid_gui:.0f}"
 
-            energy = float(np.polyval(coeffs, p)) if use_cal else p
-            resolution = (width / p) * 100 if p else 0
+            uid = int(pk.get('uid'))
+            rows.append({
+                "uid":            uid,
+                "centroid_sort":  float(centroid_gui),
+                "centroid_txt":   cent_txt,
+                "res_txt":        f"{res_pct:.1f} %" if np.isfinite(res_pct) else "",
+                "width_txt":      width_txt,
+                "net_txt":        str(int(round(net))),
+                "gross_txt":      str(int(round(gross))),
+                "iso_txt":        self._isotope_matches(centroid_ch, fwhm_ch),
+            })
 
-            # ----- Optional isotope match (energy-aware tolerance) -----
-            isotope_lines = []
 
-            if use_iso and sigma > 0 and peaks is not None:
-                # helpers
-                def energy_of_bin(idx: int) -> float:
-                    return float(np.polyval(coeffs, idx))
+        # sort by centroid (keV or channel)
+        rows.sort(key=lambda r: r["centroid_sort"])
 
-                # local slope dE/dx at bin p (keV per bin)
-                # using derivative of ax^2 + bx + c => 2*a*p + b; fall back to finite diff
-                a, b, c = coeffs
-                dEdx = (2 * a * p + b) if (a or b) else (energy_of_bin(p + 1) - energy_of_bin(p))
+        # render
+        self.roi_table.setRowCount(len(rows))
+        for r, row in enumerate(rows):
+            for c, key in enumerate(
+                ("centroid_txt","res_txt","width_txt","net_txt","gross_txt","iso_txt")
+            ):
+                it = self.roi_table.item(r, c)
+                if it is None:
+                    it = QTableWidgetItem("")
+                    self.roi_table.setItem(r, c, it)
+                it.setText(row[key])
+                it.setToolTip(row[key])
+                if c == 0:
+                    it.setData(Qt.UserRole, row["centroid_sort"])   # numeric sort key
+                    it.setData(Qt.UserRole + 1, row["uid"])         # bind uid to the row
 
-                fwhm_bins = float(width) if width else 0.0
-                fwhm_keV = abs(dEdx) * fwhm_bins
 
-                # tunable parameters
-                base_tol_keV = 2.0                 
-                fwhm_mult    = 0.6                 
-                rel_frac     = 0.002              
 
-                tol_keV = max(base_tol_keV, fwhm_mult * fwhm_keV, rel_frac * energy)
+    def _on_scene_clicked(self, ev):
+        try:
+            is_double = ev.double()
+        except Exception:
+            is_double = getattr(ev, "isDoubleClick", False)
 
-                # rank matches by proximity and intensity
-                candidates = []
-                for iso in isotope_flags:
-                    try:
-                        iso_e = float(iso["energy"])
-                        d = abs(iso_e - energy)
-                        if d <= tol_keV:
-                            intensity = float(iso.get("intensity", 0.0))  # 0..1
-                            # simple score: closer and stronger is better
-                            score = (1.0 - (d / tol_keV)) * (0.1 + intensity)
-                            candidates.append((score, iso_e, iso))
-                    except Exception:
-                        continue
+        if ev.button() != Qt.LeftButton or not is_double:
+            return
 
-                if candidates:
-                    # show top few
-                    candidates.sort(reverse=True, key=lambda t: t[0])
-                    top = candidates[:3]
-                    lines = []
-                    for _, iso_e, iso in top:
-                        inten_pct = float(iso.get("intensity", 0.0)) * 100.0
-                        lines.append(
-                            f"\u2B60 {iso['isotope']} {iso_e:.1f} keV "
-                            f"({inten_pct:.1f}%)  Δ={abs(iso_e - energy):.2f} keV"
-                        )
-                    isotope_lines = lines
+        # Map scene X to data X (keV or bin)
+        vb = self.plot_widget.getViewBox()
+        x_gui = float(vb.mapSceneToView(ev.scenePos()).x())
 
-            if isotope_lines:
-                label_text = "\n".join(isotope_lines)
-            elif use_cal:
-                label_text = f"\u2B60 {energy:.1f} keV ({resolution:.1f} %)"
-            else:
-                label_text = f"\u2B60 Bin {p} ({resolution:.1f} %)"
+        # Convert GUI X to channel index
+        with shared.write_lock:
+            n        = len(shared.histogram)
+            cal_on   = bool(shared.cal_switch)
+            coeffs   = [shared.coeff_1, shared.coeff_2, shared.coeff_3]
 
-            from PySide6.QtGui import QFont
+        if n == 0:
+            return
 
-            label = pg.TextItem(label_text, anchor=(0, 0), color="w")
-            font  = QFont("Courier", 10)
-            font.setBold(True)
-            label.setFont(font)
+        if cal_on and any(coeffs):
+            ch = self.inverse_calibration(x_gui, coeffs, n)
+            if ch is None:
+                return
+            ch = int(round(ch))
+        else:
+            ch = int(round(x_gui))
 
-            label.setPos(x_pos, y_pos)
-            self.plot_widget.addItem(label)
-            self.peak_markers.append(label)
+        self._append_peak_around(int(ch))
+
+
+    def _next_uid(self) -> int:
+        self._roi_uid_counter += 1
+        return self._roi_uid_counter
+
+    def _gui_x_to_ch(self, x: float) -> int:
+        with shared.write_lock:
+            n      = len(shared.histogram)
+            cal_on = bool(shared.cal_switch)
+            coeffs = [shared.coeff_1, shared.coeff_2, shared.coeff_3]
+        if n == 0:
+            return 0
+        if cal_on and any(coeffs):
+            ch = self.inverse_calibration(float(x), coeffs, n)
+            ch = 0 if ch is None else ch
+        else:
+            ch = int(round(float(x)))
+        return max(0, min(int(round(ch)), n - 1))
+
+    def _ch_to_gui(self, ch: float) -> float:
+        with shared.write_lock:
+            cal_on = bool(shared.cal_switch)
+            coeffs = [shared.coeff_1, shared.coeff_2, shared.coeff_3]
+        ch = float(ch)
+        if cal_on and any(coeffs):
+            return float(np.poly1d(coeffs)(ch))
+        return ch
+
+    def _ensure_peak_uids(self):
+        """Ensure each entry in shared.peak_list has a unique 'uid'. Return a snapshot."""
+        with shared.write_lock:
+            for pk in shared.peak_list:
+                if 'uid' not in pk:
+                    self._roi_uid_counter += 1
+                    pk['uid'] = self._roi_uid_counter
+            snapshot = list(shared.peak_list)
+        return snapshot
+
+
+    def _on_region_changed(self, uid: int):
+        region = self._peak_regions.get(uid)
+        if region is None:
+            return
+        x0, x1 = region.getRegion()
+        i0 = self._gui_x_to_ch(x0)
+        i1 = self._gui_x_to_ch(x1)
+        if i1 < i0:
+            i0, i1 = i1, i0
+        with shared.write_lock:
+            for pk in shared.peak_list:
+                if pk.get('uid') == uid:
+                    pk['i0'] = int(i0)
+                    pk['i1'] = int(i1)
+                    break
+        self._recompute_all_peaks()
+
+
+
+    def _isotope_matches(self, centroid_ch: float, fwhm_ch: float) -> str:
+        """Return a short, sorted string of isotope matches for the centroid (keV), or '' if unavailable."""
+        with shared.write_lock:
+            isotope_flags = list(getattr(shared, "isotope_flags", []))
+            cal_on = bool(shared.cal_switch)
+            coeffs = [shared.coeff_1, shared.coeff_2, shared.coeff_3]
+
+        if not cal_on or not isotope_flags or not any(coeffs):
+            return ""
+
+        # energy at centroid (keV)
+        energy = float(np.polyval(coeffs, centroid_ch))
+
+        # local slope dE/dx (keV per bin)
+        a, b, _ = coeffs
+        # NEW: finite-difference without helper
+        if any(coeffs):
+            poly = np.poly1d(coeffs)
+            dEdx = float(poly(float(centroid_ch) + 1.0) - poly(float(centroid_ch)))
+        else:
+            dEdx = 1.0  # uncalibrated case: 1 keV per bin equivalent (units cancel anyway)
+
+        # FWHM in keV (if available)
+        fwhm_keV = abs(dEdx) * float(fwhm_ch) if np.isfinite(fwhm_ch) else 0.0
+
+        # same tolerance recipe used in markers
+        base_tol_keV = 2.0
+        fwhm_mult    = 0.6
+        rel_frac     = 0.002
+        tol_keV = max(base_tol_keV, fwhm_mult * fwhm_keV, rel_frac * abs(energy))
+
+        candidates = []
+        for iso in isotope_flags:
+            try:
+                iso_e = float(iso["energy"])
+                d = abs(iso_e - energy)
+                if d <= tol_keV:
+                    intensity = float(iso.get("intensity", 0.0))  # 0..1
+                    score = (1.0 - (d / tol_keV)) * (0.1 + intensity)
+                    candidates.append((score, d, iso_e, iso))
+            except Exception:
+                continue
+
+        if not candidates:
+            return ""
+
+        # sort: best score, then smallest delta
+        candidates.sort(key=lambda t: (-t[0], t[1]))
+
+        # format top few (keep it readable in a table cell)
+        out = []
+        for _, d, iso_e, iso in candidates[:3]:
+            inten_pct = float(iso.get("intensity", 0.0)) * 100.0
+            out.append(f"{iso['isotope']} {iso_e:.1f} keV ({inten_pct:.0f}%), Δ{d:.2f} keV")
+
+        return "\n".join(out)
+
 
     def update_histogram(self):
         # 1) Snapshot shared state
         with shared.write_lock:
-            histogram      = shared.histogram
+            histogram      = list(shared.histogram)
             elapsed        = shared.elapsed
-            histogram_2    = shared.histogram_2 if shared.comp_switch else []
+            histogram_2    = list(shared.histogram_2) if shared.comp_switch else []
             elapsed_2      = shared.elapsed_2
             sigma          = shared.sigma
-            peakfinder     = shared.peakfinder
             coeff_abc      = [shared.coeff_1, shared.coeff_2, shared.coeff_3]
             comp_coeff_abc = [shared.comp_coeff_1, shared.comp_coeff_2, shared.comp_coeff_3]
             epb_switch     = shared.epb_switch
@@ -1560,6 +1843,8 @@ class Tab2(QWidget):
             diff_switch    = shared.diff_switch
             slb_switch     = shared.slb_switch
             filename       = shared.filename
+            raw_hist       = list(shared.histogram)
+
 
         if not histogram:
             logger.warning("👆 No histogram data ")
@@ -1598,9 +1883,10 @@ class Tab2(QWidget):
 
         if sigma > 0:
             try:
-                corr = gaussian_correl(histogram, sigma)
-                x_vals_corr = list(range(len(corr)))
                 y_for_peaks = gaussian_correl(y_for_peaks, sigma)
+                corr = y_for_peaks[:] 
+                x_vals_corr = list(range(len(corr)))
+            
             except Exception as e:
                 logger.error(f"  ❌ Gaussian correlation failed: {e} ")
 
@@ -1622,13 +1908,21 @@ class Tab2(QWidget):
             if y_vals2: y_vals2[-1] = 0
             if corr:    corr[-1]    = 0
 
-        # Sanitize non-finite (keep linear, no log taken here)
-        def _finite(a): 
-            return [float(v) for v in a if np.isfinite(v)]
-        y_vals      = _finite(y_vals)
-        y_vals2     = _finite(y_vals2) if y_vals2 else []
-        corr        = _finite(corr)     if corr     else []
-        y_for_peaks = _finite(y_for_peaks)
+
+        def _finite_same_len(a, repl=0.0):
+            """Return same-length list with non-finite values replaced."""
+            out = []
+            for v in a:
+                if np.isfinite(v):
+                    out.append(float(v))
+                else:
+                    out.append(float(repl))
+            return out
+
+        y_vals      = _finite_same_len(y_vals)
+        y_vals2     = _finite_same_len(y_vals2) if y_vals2 else []
+        corr        = _finite_same_len(corr)     if corr     else []
+        y_for_peaks = _finite_same_len(y_for_peaks)
 
         # In log mode, floor ≤0 to a small positive (let pyqtgraph do the log)
         if log_switch:
@@ -1641,8 +1935,8 @@ class Tab2(QWidget):
 
         # Save arrays used by peak labels
         self.x_vals      = list(x_vals)
-        self.y_vals_raw  = list(y_for_peaks)
         self.y_vals_plot = list(y_vals)
+        self.y_vals_raw  = raw_hist
 
         # Pens (diff → black, otherwise blue)
         self.hist_curve.setPen(pg.mkPen("white" if (diff_switch and comp_switch) else LIGHT_GREEN, width=1.5))
@@ -1653,20 +1947,71 @@ class Tab2(QWidget):
         # main histogram
         self.hist_curve.setData(x_vals, y_vals)
 
+    
+
         # comparison histogram
         if comp_switch and not diff_switch:
             self.comp_curve.setData(x_vals2, y_vals2)
         else:
             self.comp_curve.setData([], [])
 
+    
         # gaussian curve
         if corr and not diff_switch:
             self.gauss_curve.setData(x_vals_corr, corr)
         else:
             self.gauss_curve.setData([], [])
 
+
+        # --- Sync draggable ROI regions from shared.peak_list ---
+
+        peaks = self._ensure_peak_uids()
+
+        # Remove regions that no longer exist in peak_list
+        present = {int(pk['uid']) for pk in peaks}
+        for uid, region in list(self._peak_regions.items()):
+            if uid not in present:
+                try:
+                    self.plot_widget.removeItem(region)
+                except Exception:
+                    pass
+                del self._peak_regions[uid]
+
+        # Create/update regions for current peaks
+        if getattr(self, "x_vals", None):
+            N = len(self.x_vals)
+            for pk in peaks:
+                uid = int(pk['uid'])
+                i0  = max(0, min(int(pk['i0']), N - 1))
+                i1  = max(0, min(int(pk['i1']), N - 1))
+                if i1 < i0:
+                    i0, i1 = i1, i0
+
+                x0 = float(self.x_vals[i0])
+                x1 = float(self.x_vals[i1])
+
+                region = self._peak_regions.get(uid)
+                if region is None:
+                    region = pg.LinearRegionItem(values=(x0, x1), brush=(255, 255, 0, 60))
+                    region.setMovable(True)
+                    for line in region.lines:
+                        line.setPen(pg.mkPen('y', width=1.5))
+                        line.setHoverPen(pg.mkPen('w', width=2))
+                    region.setZValue(12)
+                    # Update peak_list when user stops dragging
+                    region.sigRegionChangeFinished.connect(lambda _=None, u=uid: self._on_region_changed(u))
+                    self.plot_widget.addItem(region)
+                    self._peak_regions[uid] = region
+                else:
+                    try:
+                        region.blockSignals(True)
+                        region.setRegion((x0, x1))
+                    finally:
+                        region.blockSignals(False)
+
+
         if cal_switch:
-            self.plot_widget.setLabel('bottom', 'Energy KeV')
+            self.plot_widget.setLabel('bottom', 'Energy (KeV)')
         else:
             self.plot_widget.setLabel('bottom', 'Bins/Channels')
 
@@ -1680,8 +2025,6 @@ class Tab2(QWidget):
         formatted = now.strftime("%Y-%m-%d %H:%M:%S")
         self.plot_title.setText(f"{formatted}\n {filename}")
 
-        # 5) Peak markers — rate-limited (safe to call; avoid y<=0 in log in that method)
-        now = time.monotonic()
-        if getattr(self, "_last_peaks_t", 0.0) == 0.0 or (now - self._last_peaks_t) > 1.0:
-            self.update_peak_markers()
-            self._last_peaks_t = now
+        self._recompute_all_peaks()
+
+   
