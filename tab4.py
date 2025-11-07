@@ -378,7 +378,10 @@ class Tab4(QWidget):
             if not self.checkbox_log.isChecked():
                 self.ax.set_ylim(bottom=0)
 
-            self.ax.legend(facecolor=shared.DARK_BLUE, edgecolor="white", labelcolor="white")
+            handles, labels = self.ax.get_legend_handles_labels()
+            if labels:  # only build a legend if we actually have labeled artists
+                self.ax.legend(facecolor=shared.DARK_BLUE, edgecolor="white", labelcolor="white")
+
             self.canvas.draw()
 
         except Exception as e:
