@@ -52,7 +52,7 @@ def get_pro_manual_html():
                     margin-left: 20px;
                 }}
                 code {{ 
-                    font-family: monospace;
+                    font-family: 'Courier New';
                     background: #eee;
                     padding: 2px 4px;
                     border-radius: 4px;
