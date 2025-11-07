@@ -91,7 +91,7 @@ class Tab1MaxWidget(QWidget):
         # Temperature calibration data
         left_layout.addWidget(QLabel("Temperature Calibration Data:"))
         self.temp_calibration_box = QTextEdit(placeholderText="Temperature calibration settings")
-        self.temp_calibration_box.setStyleSheet("font-family: monospace;")
+        self.temp_calibration_box.setStyleSheet("font-family: 'Courier New';")
         left_layout.addWidget(self.temp_calibration_box, 1)  # fills remaining vertical space
 
         # Impulse Logo
