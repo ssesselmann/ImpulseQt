@@ -1,5 +1,11 @@
-[
-
+{
+  "meta": {
+    "version": 1,
+    "updated": "2025-11-08",
+    "source": "NIST/IAEA mixed gamma list",
+    "notes": ""
+  },
+ "rows": [
 {"isotope": "K40", "energy": 1460.75, "intensity": 0.107},
 {"isotope": "K40_de", "energy": 438.75, "intensity": 0.107},
 {"isotope": "K40_se", "energy": 949.75, "intensity": 0.107},
@@ -84,3 +90,4 @@
 {"isotope": "Ti208", "energy": 860.56, "intensity": 12.42},
 {"isotope": "Ti208", "energy": 2614.53, "intensity": 99.00}
 ]
+}

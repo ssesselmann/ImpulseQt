@@ -1,4 +1,11 @@
-[
+{
+  "meta": {
+    "version": 1,
+    "updated": "2025-11-08",
+    "source": "NIST/IAEA mixed gamma list",
+    "notes": "Minor addition of Po212"
+  },
+ "rows": [
 {"isotope": "Pd103", "energy": 20.07, "intensity": 0.246},
 {"isotope": "Ru103", "energy": 20.07, "intensity": 0.031},
 {"isotope": "Ru105", "energy": 20.07, "intensity": 0.157},
@@ -1682,3 +1689,4 @@
 {"isotope": "N16__se", "energy": 6604.15, "intensity": 0.048},
 {"isotope": "N16", "energy": 7115.15, "intensity": 0.048}
 ]
+}

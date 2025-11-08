@@ -4,6 +4,7 @@ import sys
 import shutil
 import shared
 import time
+import json
 import platform
 import datetime
 import logging
@@ -60,37 +61,152 @@ def copy_lib_if_needed():
 # One-time setup for user data folders
 # --------------------------------------
 
+
+def _parse_version(v):
+    """Return a tuple of ints for version comparison; empty tuple if unknown."""
+    if v is None:
+        return ()
+    if isinstance(v, (int, float)):
+        return (int(v),)
+    if isinstance(v, str):
+        parts = []
+        for chunk in v.strip().split("."):
+            try:
+                parts.append(int(chunk))
+            except Exception:
+                # stop at first non-numeric chunk (e.g. "1.2.0-beta")
+                break
+        return tuple(parts)
+    return ()
+
+def _parse_updated(s):
+    """Try a few common ISO-ish formats; return datetime or None."""
+    if not s or not isinstance(s, str):
+        return None
+    for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%SZ"):
+        try:
+            return datetime.datetime.strptime(s, fmt)  # <-- module.class.strptime
+        except Exception:
+            pass
+    return None
+
+
+def _read_meta_from_table(path):
+    """
+    Read JSON and return (meta_dict, is_valid_json).
+    Supports:
+      - legacy: [ {...}, ... ]         -> meta {}
+      - new:    { meta:{...}, rows:[...] }
+    """
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            return (data.get("meta") or {}, True)
+        # list-only legacy
+        return ({}, True)
+    except Exception as e:
+        logger.error(f"  ❌ reading meta from '{path}': {e}")
+        return ({}, False)
+
+def _is_source_newer(src_path: Path, dst_path: Path) -> bool:
+    """
+    Decide if src should replace dst using:
+      1) meta.version (tuple compare)
+      2) meta.updated (datetime)
+      3) file mtime as last fallback
+    """
+    src_meta, _ = _read_meta_from_table(src_path)
+    dst_meta, _ = _read_meta_from_table(dst_path)
+
+    sv = _parse_version(src_meta.get("version"))
+    dv = _parse_version(dst_meta.get("version"))
+    if sv and dv and sv != dv:
+        return sv > dv
+    if sv and not dv:
+        return True           # <-- bundled has version, user copy doesn’t
+    if not sv and dv:
+        return False          # <-- user has version, bundled doesn’t
+
+    su = _parse_updated(src_meta.get("updated"))
+    du = _parse_updated(dst_meta.get("updated"))
+    if su and du and su != du:
+        return su > du
+    if su and not du:
+        return True           # <-- bundled has updated date, user copy doesn’t
+    if not su and du:
+        return False          # <-- user has updated date, bundled doesn’t
+
+    # Fallback: mtime
+    try:
+        return src_path.stat().st_mtime > dst_path.stat().st_mtime + 1e-6
+    except Exception:
+        return True  # if in doubt, prefer updating
+
+
+
+
 def initialize_user_data():
     """
     One-time setup for user data folders.
-    Copies all files from assets/lib → USER_DATA_DIR/lib if not already present.
+    Copies/updates files from assets/lib → USER_DATA_DIR/lib.
+
+    Behavior:
+      - If a file is missing in USER_DATA_DIR/lib, copy it.
+      - For core tables (a-gamma.json, b-gamma.json, thorium.json, x-rays.json),
+        replace the user's copy if the bundled asset is newer (by meta.version,
+        then meta.updated, else mtime). Make a timestamped .bak first.
+      - For all other .json files, keep the user's copy if it exists.
     """
     user_dir    = Path(USER_DATA_DIR)
     source_lib  = Path(BASE_DIR) / "assets" / "lib"
     target_lib  = user_dir / "lib"
 
+    CORE_TABLES = {"a-gamma.json", "b-gamma.json", "thorium.json", "x-rays.json"}
+
     # Ensure USER_DATA_DIR/lib exists
     try:
         target_lib.mkdir(parents=True, exist_ok=True)
     except Exception as e:
-        logger.error(f"  ❌creating lib dir at {target_lib}: {e} ")
+        logger.error(f"  ❌ creating lib dir at {target_lib}: {e}")
 
     # Check source directory exists
     if not source_lib.exists():
-        logger.error(f"  ❌source_lib not found at {source_lib} ")
+        logger.error(f"  ❌ source_lib not found at {source_lib}")
         return
 
-    # Copy all .json files if not already present
+    # Copy / update .json files
     try:
         for file in source_lib.glob("*.json"):
             dest = target_lib / file.name
+
+            # If missing → copy
             if not dest.exists():
                 shutil.copy2(file, dest)
-                logger.info(f"   ✅Copied {file.name} → {dest} ")
+                logger.info(f"   ✅ Copied {file.name} → {dest}")
+                continue
+
+            # If in core list → update only if newer
+            if file.name in CORE_TABLES:
+                if _is_source_newer(file, dest):
+                    # Backup then replace
+                    ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+                    backup = dest.with_suffix(dest.suffix + f".bak.{ts}")
+                    try:
+                        shutil.copy2(dest, backup)
+                        logger.info(f"   🛟 Backed up {dest.name} → {backup.name}")
+                    except Exception as e:
+                        logger.warning(f"  ⚠️ backup failed for {dest}: {e}")
+                    shutil.copy2(file, dest)
+                    logger.info(f"   🔄 Updated {file.name} (newer metadata/mtime)")
+                else:
+                    logger.info(f"   ⏭  {file.name} up-to-date, skipping")
             else:
+                # Non-core: keep user's version if it exists
                 logger.info(f"   ✅ {file.name} already exists, skipping")
     except Exception as e:
-        logger.error(f"  ❌ copying lib files from {source_lib}: {e} ")
+        logger.error(f"  ❌ copying lib files from {source_lib}: {e}")
+
 
 
 # ==============================================

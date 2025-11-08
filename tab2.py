@@ -543,7 +543,7 @@ class Tab2(QWidget):
         self.select_flag_table.currentIndexChanged.connect(self.on_select_flag_table_changed)
 
         # Initial populate
-        options = get_flag_options()  # Excludes isotopes.json
+        options = get_flag_options() 
         for opt in options:
             self.select_flag_table.addItem(opt['label'], opt['value'])
 
@@ -1248,34 +1248,66 @@ class Tab2(QWidget):
         QTimer.singleShot(0, lambda: self.select_file.setCurrentIndex(0))
 
 
+    def _load_isotope_table(self, path: Path):
+        """
+        Returns (rows_list, meta_dict).
+        Supports:
+          - legacy: [ {...}, {...} ]
+          - new:    { "meta": {...}, "rows": [ {...}, ... ] }
+        """
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            if isinstance(data, list):
+                return data, {}
+
+            if isinstance(data, dict):
+                rows = data.get("rows") or data.get("data") or data.get("items") or []
+                if not isinstance(rows, list):
+                    rows = []
+                meta = data.get("meta") or {}
+                return rows, meta
+        except Exception as e:
+            logger.error(f"  ❌ reading isotope table '{path}': {e}")
+
+        return [], {}
+
+
+
 
     def on_select_flag_table_changed(self, index: int):
-        """Load the selected flag file and update shared.isotope_flags"""
+        """Load the selected flag file and update shared.isotope_flags (+meta)."""
         if index < 0:
             self.current_flag_file = None
             with shared.write_lock:
-                shared.isotope_flags = []  # clear if nothing selected
+                shared.isotope_flags = []
+                try:
+                    shared.isotope_meta = {}
+                except Exception:
+                    pass
             return
 
         fname = self.select_flag_table.itemData(index)
         self.current_flag_file = fname
         flag_path = Path(shared.LIB_DIR) / fname
 
-        try:
-            with open(flag_path, "r", encoding="utf-8") as f:
-                flags = json.load(f)
+        rows, meta = self._load_isotope_table(flag_path)
 
-            # ✅ Store into shared.isotope_flags so update_peak_markers() can use it
-            with shared.write_lock:
-                shared.isotope_flags = flags
+        with shared.write_lock:
+            shared.isotope_flags = rows
+            try:
+                shared.isotope_meta = meta
+            except Exception:
+                pass
 
-            logger.info(f"   ✅ Loaded isotope flags from: {fname} ")
-            #self.update_peak_markers()  # optional: force marker update on file change
-
-        except Exception as e:
-            logger.error(f"  ❌ reading flag file '{flag_path}': {e} ")
-            with shared.write_lock:
-                shared.isotope_flags = []  # fallback to empty on error
+        ver = meta.get("version")
+        upd = meta.get("updated")
+        extras = []
+        if ver is not None: extras.append(f"v{ver}")
+        if upd:             extras.append(str(upd))
+        tag = f" ({', '.join(extras)})" if extras else ""
+        logger.info(f"   ✅ Loaded isotope flags from: {fname}{tag} [{len(rows)} lines]")
 
 
     def on_sigma_changed(self, val):

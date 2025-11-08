@@ -1,4 +1,11 @@
-[
+{
+  "meta": {
+    "version": 1,
+    "updated": "2025-11-08",
+    "source": "NIST/IAEA mixed gamma list",
+    "notes": "No change"
+  },
+ "rows": [
 {"isotope": "Cs137", "energy": 31.82, "intensity": 0.022},
 {"isotope": "Cs137", "energy": 32.19, "intensity": 0.04},
 {"isotope": "Cs137", "energy": 661.66, "intensity": 0.851},
@@ -163,6 +170,8 @@
 {"isotope": "Pb212", "energy": 1620.5, "intensity": 0.016},
 {"isotope": "Pb212__se", "energy": 2103.53, "intensity": 0.396},
 {"isotope": "Pb212", "energy": 2614.53, "intensity": 0.396},
+{"isotope": "Po212", "energy": 583.191, "intensity": 43.3},
+{"isotope": "Po212", "energy": 2614.533, "intensity": 2.600},
 {"isotope": "Th228", "energy": 39.86, "intensity": 0.011},
 {"isotope": "Th228", "energy": 74.82, "intensity": 0.105},
 {"isotope": "Th228", "energy": 74.97, "intensity": 0.013},
@@ -227,3 +236,4 @@
 {"isotope": "Zn65", "energy": 511.0, "intensity": 0.028},
 {"isotope": "Zn65", "energy": 1115.54, "intensity": 0.506}
 ]
+}
