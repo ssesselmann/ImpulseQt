@@ -31,6 +31,8 @@ from qt_compat import QIntValidator
 from qt_compat import QPixmap
 from qt_compat import QDoubleValidator
 from qt_compat import QDialog
+from qt_compat import QApplication
+
 
 from functions import (
     start_recording, 
@@ -50,7 +52,16 @@ from functions import (
 from shared import logger, MONO, FOOTER, DLD_DIR, USER_DATA_DIR, BIN_OPTIONS, LIGHT_GREEN, PINK, RED, WHITE, DARK_BLUE, ICON_PATH
 from pathlib import Path
 from calibration_popup import CalibrationPopup
-from PySide6.QtWidgets import QTableWidget, QTableWidgetItem, QHeaderView, QAbstractScrollArea
+from PySide6.QtWidgets import QTableWidget, QTableWidgetItem, QHeaderView, QAbstractScrollArea, QStyledItemDelegate
+from PySide6.QtGui import QBrush, QColor
+
+
+
+class _WhiteInputDelegate(QStyledItemDelegate):
+    def initStyleOption(self, option, index):
+        super().initStyleOption(option, index)
+        if index.column() == 1:  # Ref E (keV) column
+            option.backgroundBrush = QBrush(QColor("#ffffff"))
 
 
 class Tab2(QWidget):
@@ -137,32 +148,52 @@ class Tab2(QWidget):
         tab2_layout.addLayout(self.roi_controls)
         self._roi_dialog = None
 
+        self._in_recompute = False
+        self._in_recalc = False
+
+
         # --- ROI Table ---
-        self.roi_table = QTableWidget(0, 6)
+        self.roi_table = QTableWidget(0, 9)
         self.roi_table.keyPressEvent = self._table_keypress_delete
+        self.roi_table.setItemDelegateForColumn(1, _WhiteInputDelegate(self.roi_table))
+
 
         self.roi_table.setHorizontalHeaderLabels([
-            "Centroid",          # 0
-            "Resolution (%)",    # 1
-            "Width",             # 2  <-- added
-            "Net counts",        # 3
-            "Gross counts",      # 4
-            "Isotope"            # 5
+            "Centroid",       # 0
+            "Ref E (keV)",    # 1 (editable)
+            "Peak E (keV)",   # 2 (computed)
+            "ΔE (keV)",       # 3 (computed)
+            "Resolution (%)", # 4
+            "Width",          # 5
+            "Net counts",     # 6
+            "Gross counts",   # 7
+            "Isotope"         # 8
         ])
+
+
+
+        hdr = self.roi_table.horizontalHeader()
+        for c in range(8):
+            hdr.setSectionResizeMode(c, QHeaderView.ResizeToContents)
+        hdr.setSectionResizeMode(8, QHeaderView.Stretch)  # Isotope column stretches
+
+
         self.roi_table.setWordWrap(True)
         self.roi_table.setTextElideMode(Qt.ElideNone)
         self.roi_table.verticalHeader().setVisible(False)
-
-        hdr = self.roi_table.horizontalHeader()
-        # Size columns to contents, but let Isotope breathe
-        for c in range(5):
-            hdr.setSectionResizeMode(c, QHeaderView.ResizeToContents)
-        hdr.setSectionResizeMode(5, QHeaderView.Stretch)  # Isotope column stretches
 
         # Compact height while docked
         self.roi_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.roi_table.setFixedHeight(75)
         tab2_layout.addWidget(self.roi_table)
+
+        self._cal_points = {}          # persists user-entered energies by uid
+        self._uid_to_centroid_ch = {}  # maintained each recompute
+        self._updating_table = False
+        self.roi_table.itemChanged.connect(self._on_roi_item_changed)
+
+
+
 
         # --- ROI signals ---
         self.btn_auto_roi.clicked.connect(self._on_auto_roi_clicked)
@@ -606,7 +637,7 @@ class Tab2(QWidget):
         self.open_calib_btn = QPushButton("Calibrate")
         self.open_calib_btn.clicked.connect(self.open_calibration_popup)
         self.open_calib_btn.setProperty("btn", "primary")
-        grid.addWidget(self.open_calib_btn, 3, 6)
+        # grid.addWidget(self.open_calib_btn, 3, 6)
 
         # Col 8: Notes input (spanning rows 0–3)
         self.notes_input = QTextEdit()
@@ -664,14 +695,14 @@ class Tab2(QWidget):
     def _configure_roi_table_for_dialog(self):
         table = self.roi_table
         header = table.horizontalHeader()
-        for c in range(5):
+        for c in range(8):
             header.setSectionResizeMode(c, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(5, QHeaderView.Stretch)
+        header.setSectionResizeMode(8, QHeaderView.Stretch)
         table.setWordWrap(True)
         table.setTextElideMode(Qt.ElideNone)
         table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         table.setMinimumWidth(900)
-        table.setColumnWidth(5, 350)
+        table.setColumnWidth(6, 350)
 
         # expand with the window
         table.setSizeAdjustPolicy(QAbstractScrollArea.AdjustIgnored)
@@ -714,9 +745,9 @@ class Tab2(QWidget):
     def _configure_roi_table_for_docked(self):
         table = self.roi_table
         header = table.horizontalHeader()
-        for c in range(5):
+        for c in range(8):
             header.setSectionResizeMode(c, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(5, QHeaderView.Stretch)
+        header.setSectionResizeMode(8, QHeaderView.Stretch)
         table.setWordWrap(True)
         table.setTextElideMode(Qt.ElideNone)
         table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
@@ -727,7 +758,10 @@ class Tab2(QWidget):
         # 👇 add this (so the docked view is compact too)
         self._compact_table_style(table)
 
-        
+ 
+
+    
+
     def _toggle_roi_table_window(self):
 
         # If already popped out, dock it back
@@ -1031,7 +1065,7 @@ class Tab2(QWidget):
     def on_mouse_moved(self, pos):
         vb = self.plot_widget.getViewBox()
         mouse_point = vb.mapSceneToView(pos)
-        x_val = float(mouse_point.x()) 
+        x_val = float(mouse_point.x())
 
         with shared.write_lock:
             histogram  = shared.histogram.copy()
@@ -1043,32 +1077,32 @@ class Tab2(QWidget):
         pen = pg.mkPen(color=pen_color, width=1)
         self.vline.setPen(pen)
         self.hline.setPen(pen)
-    
 
-        if len(histogram) == 0:
+        if not histogram:
             return
 
+        n = len(histogram)
+
         if cal_switch:
-            ch_idx = self.inverse_calibration(x_val, coeffs, len(histogram))
-            if ch_idx is None:
+            ch_f = self.inverse_calibration(x_val, coeffs, n)
+            if ch_f is None or not np.isfinite(ch_f):
                 return
-
-            ch_idx = int(round(ch_idx))
-            y = histogram[ch_idx]
-
-            self.vline.setPos(x_val)
-            self.hline.setPos(y)
-            self.plot_widget.setToolTip(f"{x_val:.2f} keV\n{y} cts")
-
+            ch_idx = int(np.clip(np.rint(ch_f), 0, n - 1))
+            x_for_vline = x_val  # calibrated axis uses keV for the vertical line
         else:
-            ch_idx = int(round(x_val))
-            if not (0 <= ch_idx < len(histogram)):
-                return
-            y = histogram[ch_idx]
+            ch_idx = int(np.clip(np.rint(x_val), 0, n - 1))
+            x_for_vline = ch_idx
 
-            self.vline.setPos(ch_idx)
-            self.hline.setPos(y)       
+        y = histogram[ch_idx]
+
+        self.vline.setPos(x_for_vline)
+        self.hline.setPos(y)
+
+        if cal_switch:
+            self.plot_widget.setToolTip(f"{x_val:.2f} keV\n{y} cts")
+        else:
             self.plot_widget.setToolTip(f"Bin: {ch_idx}\ncts: {y}")
+
 
     def refresh_file_dropdowns(self):
         options  = get_filename_options()
@@ -1129,6 +1163,7 @@ class Tab2(QWidget):
 
     def on_checkbox_toggle(self, name, state):
         value = bool(state)
+        logger.info(f"   ✅ {name} set to {value} ")
 
         with shared.write_lock:
             setattr(shared, name, value)
@@ -1141,35 +1176,7 @@ class Tab2(QWidget):
             log_switch  = shared.log_switch
             slb_switch  = shared.slb_switch
             peakfinder  = shared.peakfinder 
-
-
-        if sigma > 0 and peakfinder > 0 and cal_switch:
-            logger.info(f"   ✅ {name} set to {value} ")
-
-        elif comp_switch:
-            logger.info(f"   ✅ {name} turned {value} ")
-
-        elif diff_switch:
-            logger.info(f"   ✅ {name} turned on ")
-
-        elif coi_switch:
-            logger.info(f"   ✅ {name} turned on")    
-
-        elif epb_switch:
-            logger.info(f"   ✅ {name} turned on")
-
-        elif log_switch:
-            logger.info(f"   ✅ {name} turned on")   
-
-        elif cal_switch:
-            logger.info(f"   ✅ {name} turned on")
-
-        elif slb_switch:
-            logger.info(f"   ✅ {name} turned on")    
-
-        else:
-            logger.info(f"   ✅{name} turned off")
-
+            
         self.update_histogram()
 
 
@@ -1275,6 +1282,7 @@ class Tab2(QWidget):
         sigma = val / 10.0
         with shared.write_lock:
             shared.sigma = sigma
+        logger.info(f"Sigma set to {sigma}")    
         self.sigma_label.setText(f"Sigma: {sigma:.1f}")
         self.update_histogram()
 
@@ -1286,6 +1294,7 @@ class Tab2(QWidget):
             self.peakfinder_label.setText("Auto select Width Default")
         elif val > 0:
             self.peakfinder_label.setText(f"Auto select Width: {val}")
+        logger.info(f"Auto select width {val}")    
         self.update_histogram()
         
 
@@ -1328,7 +1337,7 @@ class Tab2(QWidget):
             with open(json_path, "w", encoding="utf-8") as f:
                 json.dump(data, f)  # no indent ➜ compact
 
-            logger.info(f"   ✅ Updated note in {filename} ")
+            # logger.info(f"   ✅ Updated note in {filename} ")
 
         except Exception as e:
             logger.error(f" ❌ Exception during JSON update: {e} ")
@@ -1456,8 +1465,11 @@ class Tab2(QWidget):
     def _on_clear_rois_clicked(self):
         with shared.write_lock:
             shared.peak_list = []
+        if hasattr(self, "_cal_points"):
+            self._cal_points.clear()
         self.roi_table.setRowCount(0)
-        self.update_histogram()  # redraw lines etc if you later add them
+        self.update_histogram()
+
 
     
     def _append_peak_indices(self, i0: int, i1: int, uid: int | None = None):
@@ -1517,125 +1529,202 @@ class Tab2(QWidget):
                 uid = it0.data(Qt.UserRole + 1)
                 if uid is not None:
                     uids.append(int(uid))
+            
             if not uids:
                 return
 
             with shared.write_lock:
                 shared.peak_list = [pk for pk in shared.peak_list if int(pk.get('uid', -1)) not in uids]
-
+            
             # remove corresponding regions
             for uid in uids:
-                reg = self._peak_regions.pop(uid, None)
-                if reg:
-                    try:
-                        self.plot_widget.removeItem(reg)
-                    except Exception:
-                        pass
+                self._cal_points.pop(uid, None)
 
             self._recompute_all_peaks()
+            self._recalculate_calibration_from_table()
         else:
             QTableWidget.keyPressEvent(self.roi_table, ev)
 
 
     def _recompute_all_peaks(self):
-        # snapshot
-        with shared.write_lock:
-            y        = list(shared.histogram)
-            coeffs   = [shared.coeff_1, shared.coeff_2, shared.coeff_3]
-            cal_on   = bool(shared.cal_switch)
-        # make sure each peak has a uid
-        peak_list = self._ensure_peak_uids()
-
-
-        if not y:
-            self.roi_table.setRowCount(0)
+        # re-entry guard
+        if getattr(self, "_in_recompute", False):
             return
 
-        def ch_to_gui(ch: float) -> float:
-            if cal_on and any(coeffs):
-                return float(np.polyval(coeffs, float(ch)))
-            return float(ch)
+        self._in_recompute = True
+        try:
+            # If the user is editing the Ref E (keV) cell, don't touch the table
+            fw = QApplication.focusWidget()
+            if fw and self.roi_table.isAncestorOf(fw):
+                idx = self.roi_table.currentIndex()
+                if idx.isValid() and idx.column() == 1:
+                    return
 
-        rows = []
-        for pk in peak_list:
-            i0 = max(0, min(int(pk['i0']), len(y)-1))
-            i1 = max(0, min(int(pk['i1']), len(y)-1))
-            if i1 <= i0:
-                continue
+            self._uid_to_centroid_ch = {}
 
-            xv = np.arange(i0, i1+1, dtype=float)
-            yr = np.asarray(y[i0:i1+1], dtype=float)
+            # snapshot
+            with shared.write_lock:
+                y      = list(shared.histogram)
+                coeffs = [shared.coeff_1, shared.coeff_2, shared.coeff_3]
+                cal_on = bool(shared.cal_switch)
 
-            gross = float(np.nansum(yr))
-            yL, yR = float(yr[0]), float(yr[-1])
-            m = (yR - yL) / max(1, len(yr)-1)
-            bkg = yL + m*np.arange(len(yr), dtype=float)
-            net = float(np.nansum(yr - bkg))
+            # ensure UIDs
+            peak_list = self._ensure_peak_uids()
 
-            denom = float(np.nansum(yr))
-            centroid_ch = float(np.nansum(xv*yr)/denom) if denom>0 else float((i0+i1)/2)
+            if not y:
+                self.roi_table.setRowCount(0)
+                return
 
-            # FWHM
-            try:
-                y_max = float(np.nanmax(yr)); half = 0.5*y_max
-                L = next((k for k in range(1, len(yr)) if yr[k-1] < half <= yr[k]), None)
-                R = next((k for k in range(len(yr)-1, 0, -1) if yr[k] < half <= yr[k-1]), None)
-                if L is None or R is None:
+            def ch_to_gui(ch: float) -> float:
+                if cal_on and any(np.isfinite(coeffs)):
+                    return float(np.polyval(coeffs, float(ch)))
+                return float(ch)
+
+            rows = []
+            for pk in peak_list:
+                i0 = max(0, min(int(pk['i0']), len(y)-1))
+                i1 = max(0, min(int(pk['i1']), len(y)-1))
+                if i1 <= i0:
+                    continue
+
+                xv = np.arange(i0, i1+1, dtype=float)
+                yr = np.asarray(y[i0:i1+1], dtype=float)
+
+                gross = float(np.nansum(yr))
+                yL, yR = float(yr[0]), float(yr[-1])
+                m = (yR - yL) / max(1, len(yr)-1)
+                bkg = yL + m*np.arange(len(yr), dtype=float)
+                net = float(np.nansum(yr - bkg))
+
+                denom = float(np.nansum(yr))
+                centroid_ch = float(np.nansum(xv * yr) / denom) if denom > 0 else float((i0 + i1) / 2)
+
+                # FWHM
+                try:
+                    y_max = float(np.nanmax(yr)); half = 0.5 * y_max
+                    L = next((k for k in range(1, len(yr)) if yr[k-1] < half <= yr[k]), None)
+                    R = next((k for k in range(len(yr)-1, 0, -1) if yr[k] < half <= yr[k-1]), None)
+                    if L is None or R is None:
+                        fwhm_ch = float("nan")
+                    else:
+                        fracL = (half - yr[L-1]) / max(1e-12, (yr[L] - yr[L-1]))
+                        xL = (i0 + L - 1) + fracL
+                        fracR = (half - yr[R]) / max(1e-12, (yr[R-1] - yr[R]))
+                        xR = (i0 + R) - fracR
+                        fwhm_ch = float(abs(xR - xL))
+                except Exception:
                     fwhm_ch = float("nan")
+
+                centroid_gui = ch_to_gui(centroid_ch)
+                if cal_on and any(np.isfinite(coeffs)) and np.isfinite(fwhm_ch):
+                    a, b, _ = coeffs
+                    dEdx = (2 * a * centroid_ch + b) if (a or b) else (ch_to_gui(centroid_ch+1) - ch_to_gui(centroid_ch))
+                    fwhm_keV = abs(dEdx) * fwhm_ch
+                    res_pct = (fwhm_keV / centroid_gui * 100.0) if centroid_gui > 0 else float("nan")
+                    width_txt = f"{abs(ch_to_gui(i1) - ch_to_gui(i0)):.2f}"
+                    cent_txt  = f"{centroid_gui:.2f} keV"
                 else:
-                    fracL = (half - yr[L-1]) / max(1e-12, (yr[L] - yr[L-1]))
-                    xL = (i0 + L - 1) + fracL
-                    fracR = (half - yr[R]) / max(1e-12, (yr[R-1] - yr[R]))
-                    xR = (i0 + R) - fracR
-                    fwhm_ch = float(abs(xR - xL))
-            except Exception:
-                fwhm_ch = float("nan")
+                    res_pct   = (fwhm_ch / centroid_ch * 100.0) if (np.isfinite(fwhm_ch) and centroid_ch > 0) else float("nan")
+                    width_txt = f"{abs(i1 - i0):.0f}"
+                    cent_txt  = f"{centroid_gui:.0f}"
 
-            centroid_gui = ch_to_gui(centroid_ch)
-            if cal_on and any(coeffs) and np.isfinite(fwhm_ch):
-                a, b, _ = coeffs
-                dEdx = (2*a*centroid_ch + b) if (a or b) else (ch_to_gui(centroid_ch+1) - ch_to_gui(centroid_ch))
-                fwhm_keV = abs(dEdx) * fwhm_ch
-                res_pct = (fwhm_keV/centroid_gui*100.0) if centroid_gui>0 else float("nan")
-                width_txt = f"{abs(ch_to_gui(i1)-ch_to_gui(i0)):.2f}"
-                cent_txt  = f"{centroid_gui:.2f} keV"
-            else:
-                res_pct   = (fwhm_ch/centroid_ch*100.0) if (np.isfinite(fwhm_ch) and centroid_ch>0) else float("nan")
-                width_txt = f"{abs(i1-i0):.0f}"
-                cent_txt  = f"{centroid_gui:.0f}"
+                uid = int(pk.get('uid'))
+                self._uid_to_centroid_ch[uid] = float(centroid_ch)
 
-            uid = int(pk.get('uid'))
-            rows.append({
-                "uid":            uid,
-                "centroid_sort":  float(centroid_gui),
-                "centroid_txt":   cent_txt,
-                "res_txt":        f"{res_pct:.1f} %" if np.isfinite(res_pct) else "",
-                "width_txt":      width_txt,
-                "net_txt":        str(int(round(net))),
-                "gross_txt":      str(int(round(gross))),
-                "iso_txt":        self._isotope_matches(centroid_ch, fwhm_ch),
-            })
+                rows.append({
+                    "uid":           uid,
+                    "centroid_ch":   float(centroid_ch),
+                    "centroid_sort": float(centroid_gui),
+                    "centroid_txt":  cent_txt,
+                    "res_txt":       f"{res_pct:.1f} %" if np.isfinite(res_pct) else "",
+                    "width_txt":     width_txt,
+                    "net_txt":       str(int(round(net))),
+                    "gross_txt":     str(int(round(gross))),
+                    "iso_txt":       self._isotope_matches(centroid_ch, fwhm_ch),
+                })
 
+            # sort by centroid (keV or channel)
+            rows.sort(key=lambda r: r["centroid_sort"])
 
-        # sort by centroid (keV or channel)
-        rows.sort(key=lambda r: r["centroid_sort"])
+            self._updating_table = True
+            try:
+                self.roi_table.setRowCount(len(rows))
+                for r, row in enumerate(rows):
+                    uid           = int(row["uid"])
+                    centroid_gui  = float(row["centroid_sort"])  # keV if calibrated, else channel
 
-        # render
-        self.roi_table.setRowCount(len(rows))
-        for r, row in enumerate(rows):
-            for c, key in enumerate(
-                ("centroid_txt","res_txt","width_txt","net_txt","gross_txt","iso_txt")
-            ):
-                it = self.roi_table.item(r, c)
-                if it is None:
-                    it = QTableWidgetItem("")
-                    self.roi_table.setItem(r, c, it)
-                it.setText(row[key])
-                it.setToolTip(row[key])
-                if c == 0:
-                    it.setData(Qt.UserRole, row["centroid_sort"])   # numeric sort key
-                    it.setData(Qt.UserRole + 1, row["uid"])         # bind uid to the row
+                    # c=0: Centroid (read-only)
+                    it0 = self._cell(r, 0)
+                    it0.setText(row["centroid_txt"])
+                    it0.setToolTip(row["centroid_txt"])
+                    it0.setData(Qt.UserRole, row["centroid_sort"])
+                    it0.setData(Qt.UserRole + 1, uid)
+                    it0.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+                    it0.setTextAlignment(Qt.AlignCenter)
 
+                    # Compute Peak E / ΔE texts safely
+                    if cal_on and any(np.isfinite(coeffs)):
+                        peak_e = centroid_gui
+                        peak_e_txt = f"{peak_e:.3f}"
+                    else:
+                        peak_e = float("nan")
+                        peak_e_txt = ""
+
+                    ref_keV = self._cal_points.get(uid, None)
+                    try:
+                        ref_val = float(ref_keV) if ref_keV is not None else float("nan")
+                    except Exception:
+                        ref_val = float("nan")
+                    delta_txt = f"{(peak_e - ref_val):+.3f}" if (np.isfinite(peak_e) and np.isfinite(ref_val)) else ""
+
+                    # c=1: Ref E (keV) — EDITABLE (do not overwrite while editing)
+                    it1 = self._cell(r, 1)
+                    it1.setToolTip("Enter known energy in keV (used for calibration)")
+                    it1.setData(Qt.UserRole + 1, uid)
+                    it1.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
+                    it1.setTextAlignment(Qt.AlignCenter)
+
+                    is_editing = (
+                        self.roi_table.hasFocus()
+                        and self.roi_table.currentRow() == r
+                        and self.roi_table.currentColumn() == 1
+                    )
+                    if not is_editing:
+                        txt = f"{ref_val:.3f}" if np.isfinite(ref_val) else ""
+                        if it1.text() != txt:
+                            it1.setText(txt)
+
+                    # c=2: Peak E (keV) — computed
+                    it2 = self._cell(r, 2)
+                    it2.setText(peak_e_txt)
+                    it2.setToolTip(peak_e_txt)
+                    it2.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+                    it2.setTextAlignment(Qt.AlignCenter)
+
+                    # c=3: ΔE (keV) — computed
+                    it3 = self._cell(r, 3)
+                    it3.setText(delta_txt)
+                    it3.setToolTip(delta_txt)
+                    it3.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+                    it3.setTextAlignment(Qt.AlignCenter)
+
+                    # c=4..8: Resolution, Width, Net, Gross, Isotope
+                    for c, key in ((4, "res_txt"), (5, "width_txt"), (6, "net_txt"),
+                                   (7, "gross_txt"), (8, "iso_txt")):
+                        it = self._cell(r, c)
+                        it.setText(row[key])
+                        it.setToolTip(row[key])
+                        it.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+                        if c != 8:
+                            it.setTextAlignment(Qt.AlignCenter)
+            finally:
+                self._updating_table = False
+
+            # Refit using only Ref(keV) values
+            self._recalculate_calibration_from_table()
+
+        finally:
+            self._in_recompute = False
 
 
     def _on_scene_clicked(self, ev):
@@ -1709,6 +1798,16 @@ class Tab2(QWidget):
         return snapshot
 
 
+    def _cell(self, r: int, c: int) -> QTableWidgetItem:
+        it = self.roi_table.item(r, c)
+        if it is None:
+            it = QTableWidgetItem("")
+            self.roi_table.setItem(r, c, it)
+        return it
+
+
+        
+
     def _on_region_changed(self, uid: int):
         region = self._peak_regions.get(uid)
         if region is None:
@@ -1725,8 +1824,117 @@ class Tab2(QWidget):
                     pk['i1'] = int(i1)
                     break
         self._recompute_all_peaks()
+        self._recalculate_calibration_from_table()
 
 
+    def _set_coeffs_if_changed(self, a, b, c):
+        # round a bit to avoid noisy refreshes
+        a = float(a); b = float(b); c = float(c)
+        with shared.write_lock:
+            old = (float(shared.coeff_1), float(shared.coeff_2), float(shared.coeff_3))
+        if np.allclose([a,b,c], list(old), rtol=0, atol=1e-9):
+            return False
+
+        with shared.write_lock:
+            shared.coeff_1 = a
+            shared.coeff_2 = b
+            shared.coeff_3 = c
+            coeff_1, coeff_2, coeff_3 = a, b, c
+
+        self.poly_label.setText(f"E = {coeff_1:.6f}x² + {coeff_2:.6f}x + {coeff_3:.6f}")
+        return True
+
+
+    def _on_roi_item_changed(self, item: QTableWidgetItem):
+        if self._updating_table or item.column() != 1:
+            return
+        uid = item.data(Qt.UserRole + 1)
+        if uid is None:
+            return
+        txt = (item.text() or "").strip()
+        if not txt:
+            self._cal_points.pop(int(uid), None)
+            self._recalculate_calibration_from_table()
+            return
+        try:
+            keV = float(txt)
+            if np.isfinite(keV):
+                self._cal_points[int(uid)] = keV
+                self._recalculate_calibration_from_table()
+        except ValueError:
+            pass
+
+
+
+    def _recalculate_calibration_from_table(self):
+        """Collect (channel, energy) pairs from the table and refit poly."""
+        # collect pairs, but only where we still have a centroid channel
+        if self._in_recalc:
+            return
+
+        try:
+            xs, ys = [], []
+            for uid, keV in list(self._cal_points.items()):
+                if uid not in self._uid_to_centroid_ch:
+                    continue
+                if not (keV is not None and np.isfinite(keV)):
+                    continue
+                xs.append(float(self._uid_to_centroid_ch[uid]))  # channel
+                ys.append(float(keV))                            # energy
+
+            n = len(xs)
+            if n == 0:
+                return
+
+            # decide degree
+            if n >= 3:
+                deg = 2
+            elif n == 2:
+                deg = 1
+            else:
+                deg = 1  # 1 point: keep slope from previous if available
+
+            # fit
+            try:
+                if n >= 2:
+                    p = np.polyfit(xs, ys, deg)
+                    # ensure 3 coeffs (a,b,c)
+                    if deg == 2:
+                        a, b, c = float(p[0]), float(p[1]), float(p[2])
+                    else:
+                        m, b_lin = float(p[0]), float(p[1])
+                        a, b, c = 0.0, m, b_lin
+                else:
+                    # n == 1: use previous slope if available, else m=1
+                    x0, y0 = xs[0], ys[0]
+                    with shared.write_lock:
+                        a_old = float(shared.coeff_1)
+                        b_old = float(shared.coeff_2)
+                        c_old = float(shared.coeff_3)
+                    m = b_old if (abs(a_old) < 1e-12 and np.isfinite(b_old) and abs(b_old) > 0) else 1.0
+                    a, b, c = 0.0, m, (y0 - m * x0)
+            except Exception as e:
+                logger.error(f"  ❌ calibration fit failed: {e}")
+                return
+
+            changed = self._set_coeffs_if_changed(a, b, c)
+        finally:
+            self._in_recalc = False
+
+        # replot if we’re currently showing calibrated X (and to refresh isotope matches)
+        with shared.write_lock:
+            cal_on = bool(shared.cal_switch)
+        if cal_on and changed:
+            # avoid immediate recursion when called from recompute
+            if self._in_recompute:
+                QTimer.singleShot(0, self.update_histogram)
+            else:
+                self.update_histogram()
+        else:
+            # even if not showing keV, we still want isotope column to refresh when cal_switch is later turned on
+            self._recompute_all_peaks()
+
+    
 
     def _isotope_matches(self, centroid_ch: float, fwhm_ch: float) -> str:
         """Return a short, sorted string of isotope matches for the centroid (keV), or '' if unavailable."""
