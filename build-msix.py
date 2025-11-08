@@ -26,7 +26,7 @@ PUBLISHER       = "CN=14005534-7E89-4B87-AF78-8BF52D151431"
 DISPLAY_NAME    = "ImpulseQt"
 PUBLISHER_NAME  = "Steven Sesselmann"
 DESCRIPTION     = "Gamma spectrometry interface and analysis tool."
-VERSION         = "3.1.3.0"
+VERSION         = "3.1.6.0"
 ARCH            = "x64"
 
 # Your project assets folder (where you generated the icons)
