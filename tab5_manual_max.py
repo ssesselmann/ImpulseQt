@@ -174,7 +174,7 @@ def get_max_manual_html():
             <li><strong>Log</strong>
             <br>Expresses (y) axis in log scale.</li><br>
 
-            <li><strong>Calibration on</strong>
+            <li><strong>Calibration Checkbox</strong>
             <br>Turns on second order polynomial calibration </li><br>
 
             <li><strong>Show Isotopes</strong>
@@ -208,10 +208,26 @@ def get_max_manual_html():
             <li><strong>Notes</strong>
             <br>Input for spectrum specific notes (saves immediately to spectrum file).</li><br>
 
-            <li><strong>Calibration</strong><br>
-            The calibration settings open up in a pop up window, it can accept anything from two calibration points for linear calibration up to five calibration points for a best fit second order polynomial. Verify that your calibration works by clicking apply and checking the calibration box. </li><br>
+            <h3>Calibration Procedure</h3>
+            <ol>
+              <li>Record a spectrum that contains known photopeaks.</li>
+              <li>Click <strong>Pop-out table</strong> for a larger view of the histogram and peaks table.</li>
+              <li>Double-click each known peak in the histogram to create a yellow ROI and add a new row to the table.</li>
+              <li>In the table, double-click the <strong>Ref E (keV)</strong> cell and enter the known energy for that peak.</li>
+              <li>Repeat for as many calibration points as you like (more points generally improve precision).</li>
+              <li>Enable <strong>Calibration</strong> in the main window.</li>
+              <li>The program will compute energies using a second-order (quadratic) polynomial fit.</li>
+            </ol>
 
-           
+            <h4>Notes</h4>
+            <ul>
+              <li>With two points the fit is linear; with three or more it becomes quadratic.</li>
+              <li>When Calibration is on, the program checks the selected isotope library and suggests nearby gamma/X-ray lines.</li>
+              <li>The polynomial coefficients are saved with the spectrum in the JSON file; ROIs are not currently saved.</li>
+              <li>Clear all ROIs using the <strong>Clear Peaks</strong> button.</li>
+            </ul>
+
+                       
             
             <h2>Waterfall Tab</h2>
             <p>This tab displays the gamma spectrum as a heatmap over time, also known as a waterfall plot. It provides an intuitive way to visualize radiation and makes it easy to spot ‘hot zones’ at a glance. This plot gets most of it's settings like bins, bin size, calibration etc. from the main histogram tab2. It is highly recommended to set up and calibrate the regular histogram before running the waterfall plot. 
