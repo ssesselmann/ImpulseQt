@@ -97,7 +97,7 @@ class Tab2(QWidget):
 
         tab2_layout = QVBoxLayout()
 
-        positive_int_validator = QIntValidator(1, 9999999)  
+        positive_int_validator = QIntValidator(1, 2147483647)  
         positive_float_validator = QDoubleValidator()
         positive_float_validator.setNotation(QDoubleValidator.StandardNotation)
         positive_float_validator.setDecimals(2) 
