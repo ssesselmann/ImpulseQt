@@ -201,9 +201,36 @@ def get_max_manual_html():
             <br>Click to remove all highlighted regions of interest.
             </li><br>
 
+            <li><strong>Download Peaks</strong>
+            <br>Downloads the peaks table as a csv file (filename_peaks.csv)
+            </li><br>
+
             <li><strong>Pop Out Table</strong>
             <br>Pop out the peaks table into a separate window to declutter the screen. The table can now be moved off to the side and resized if required. 
             </li><br>
+
+            <li><strong>Linearity Overlay</strong>
+            <p>
+            The linearity overlay provides a visual check of how well the current energy
+            calibration matches the reference peak energies. Each calibration point in the
+            table consists of a measured centroid (channel) and a reference energy (keV).
+            From these pairs the program fits a second-order calibration polynomial and then
+            recomputes the energy at each centroid using this fit.
+            </p>
+            <p>
+            For every calibration point, the difference between the fitted energy and the
+            reference energy (the residual, in keV) is calculated. These residuals are then
+            scaled and drawn as a small band near the top of the spectrum plot. The
+            horizontal position of each marker corresponds to the peak energy (in keV when
+            calibration is active, otherwise channel), while the vertical position encodes
+            whether the fitted calibration is slightly high or low at that point. The
+            absolute height of the band does not represent counts; only the pattern of
+            points matters. A flat band indicates good linearity, while a systematic trend
+            (upward or downward) reveals regions where the calibration deviates from the
+            reference. This overlay helps you decide whether your current calibration (and
+            choice of calibration points) is adequate across the full energy range.
+            </p></li>
+
 
             <li><strong>Notes</strong>
             <br>Input for spectrum specific notes (saves immediately to spectrum file).</li><br>
