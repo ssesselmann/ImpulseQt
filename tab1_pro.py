@@ -344,68 +344,104 @@ class Tab1ProWidget(QWidget):
 
         distortion_left, distortion_right = distortion_finder(stereo)
 
-        # Optional: plot distortion histogram
         self.plot_distortion(distortion_left, distortion_right)
-        
+
+            
     def plot_distortion(self, left, right):
+        """
+        Plot distortion values (now in % from functions.distortion)
+        for left and right channels.
+        """
 
-        with shared.write_lock:
-            x_vals_left = shared.mean_shape_left
-            x_vals_right = shared.mean_shape_right
+        # Normalise inputs – never rely on their "truthiness"
+        if left is None:
+            left = []
+        if right is None:
+            right = []
 
+        # Make sure we have plain lists (handles numpy arrays, etc.)
+        left  = list(left)
+        right = list(right)
 
+        n_left  = len(left)
+        n_right = len(right)
+
+        # Clear and style the canvas
         self.curve_plot.clear()
         self.curve_plot.setBackground(DARK_BLUE)
 
-        pi = self.curve_plot.getPlotItem()
-        pi.getAxis("left").setPen(WHITE)
-        pi.getAxis("left").setTextPen(WHITE)
-        pi.getAxis("bottom").setPen(WHITE)
-        pi.getAxis("bottom").setTextPen(WHITE)
+        pw = self.curve_plot
+        pi = pw.getPlotItem()
+
+        # Axis styling
+        left_axis   = pi.getAxis("left")
+        bottom_axis = pi.getAxis("bottom")
+
+        left_axis.setPen(WHITE)
+        left_axis.setTextPen(WHITE)
+        bottom_axis.setPen(WHITE)
+        bottom_axis.setTextPen(WHITE)
+
+        # Labels – distortion now in percent
+        pi.setLabel("left", "Distortion", units="%")
+        pi.setLabel("bottom", "Pulse index")
+
+        # Grid
         pi.showGrid(x=True, y=True, alpha=0.18)
 
         # X = sample index (1-based)
-        x_vals_left = list(range(1, len(left) + 1))
-        x_vals_right = list(range(1, len(right) + 1))
+        if n_left > 0:
+            x_vals_left = list(range(1, n_left + 1))
+            pw.plot(
+                x_vals_left,
+                left,
+                pen=pg.mkPen(LIGHT_GREEN, width=2),
+                symbol=None,
+                symbolBrush=LIGHT_GREEN,
+                name="Left",
+            )
 
-        self.curve_plot.plot(
-            x_vals_left, left,
-            pen=pg.mkPen(LIGHT_GREEN, width=2),
-            symbol=None,
-            symbolBrush=LIGHT_GREEN,
-            name="Left"
-        )
+        if n_right > 0:
+            x_vals_right = list(range(1, n_right + 1))
+            pw.plot(
+                x_vals_right,
+                right,
+                pen=pg.mkPen(PINK, width=2),
+                symbol=None,
+                symbolBrush=PINK,
+                name="Right",
+            )
 
-        self.curve_plot.plot(
-            x_vals_right, right,
-            pen=pg.mkPen(PINK, width=2),
-            symbol=None,
-            symbolBrush=PINK,
-            name="Right"
-        )
+        # Let pyqtgraph choose sensible ranges automatically
+        pi.enableAutoRange(x=True, y=True)
+
 
     def draw_mean_shape_plot(self):
         with shared.write_lock:
-            shape_lld = shared.shape_lld
+            shape_lld = shared.shape_lld  # still in 16-bit units
+
+        # Convert LLD threshold to % of full-scale
+        FULL_SCALE = 32767.0
+        shape_lld_pct = (shape_lld / FULL_SCALE) * 100.0
 
         self.pulse_plot.addLine(
-            y=shape_lld,
-            pen=pg.mkPen('darkgreen', width=2, style=Qt.DashLine)
+            y=shape_lld_pct,
+            pen=pg.mkPen('red', width=2, style=Qt.DashLine)
         )
+
 
     def plot_shape(self):
         try:
             # --- snapshot shared state ---
             with shared.write_lock:
-                mean_shape_left     = shared.mean_shape_left
-                mean_shape_right    = shared.mean_shape_right
-                sample_length       = shared.sample_length
-                stereo              = shared.stereo
+                mean_shape_left  = shared.mean_shape_left
+                mean_shape_right = shared.mean_shape_right
+                sample_length    = shared.sample_length
+                stereo           = shared.stereo
 
             if not mean_shape_left and not mean_shape_right:
                 return
 
-            # --- fit lengths to sample_length ---
             def fit_length(data, n):
                 if len(data) > n:
                     return data[:n]
@@ -413,41 +449,64 @@ class Tab1ProWidget(QWidget):
 
             mean_shape_left  = fit_length(mean_shape_left,  sample_length)
             mean_shape_right = fit_length(mean_shape_right, sample_length)
-            x_vals  = list(range(sample_length))
+            x_vals = list(range(sample_length))
 
-            # --- ranges ---
-            y_peak   = max(
-                abs(max(mean_shape_left,  default=[0])),
-                abs(min(mean_shape_left,  default=[0])),
-                abs(max(mean_shape_right, default=[0])),
-                abs(min(mean_shape_right, default=[0])),
+            # --- convert to % of full-scale (16-bit) ---
+            FULL_SCALE = 32767.0
+            scale = 100.0 / FULL_SCALE
+
+            mean_shape_left_pct  = [v * scale for v in mean_shape_left]
+            mean_shape_right_pct = [v * scale for v in mean_shape_right]
+
+            left_vals  = mean_shape_left_pct  if mean_shape_left_pct  else [0.0]
+            right_vals = mean_shape_right_pct if mean_shape_right_pct else [0.0]
+
+            y_peak = max(
+                abs(max(left_vals)),
+                abs(min(left_vals)),
+                abs(max(right_vals)),
+                abs(min(right_vals)),
             )
-            y_margin = max(50, y_peak * 0.10)
+
+            # values are in %, pulses ~10–15%, so we can keep margin modest
+            y_margin = max(2, y_peak * 0.10)
             y_min, y_max = -y_margin, y_peak + y_margin
 
             # --- canvas / axes styling ---
-            pw = self.pulse_plot               
+            pw = self.pulse_plot
             pw.clear()
             pw.setBackground(DARK_BLUE)
 
-            pi = pw.getPlotItem()                
-            # axes: lines + tick labels in white
-            pi.getAxis("left").setPen(WHITE)
-            pi.getAxis("left").setTextPen(WHITE)
-            pi.getAxis("bottom").setPen(WHITE)
-            pi.getAxis("bottom").setTextPen(WHITE)
+            pi = pw.getPlotItem()
 
-            # subtle white grid
+            # axes: lines + tick labels in white
+            left_axis   = pi.getAxis("left")
+            bottom_axis = pi.getAxis("bottom")
+
+            left_axis.setPen(WHITE)
+            left_axis.setTextPen(WHITE)
+            bottom_axis.setPen(WHITE)
+            bottom_axis.setTextPen(WHITE)
+
+            # label axis as % of full scale
+            pi.setLabel("left", "Amplitude", units="% FS")
+            pi.setLabel("bottom", "Sample")
+
+            # --- tick spacing: 1% major ticks ---
+            # major = 1 (%), minor = 0.5 (%) – tweak minor if you like
+            left_axis.setTickSpacing(major=1, minor=0.5)
+
+            # grid
             pi.showGrid(x=True, y=True, alpha=0.18)
 
             # --- ranges ---
             pi.setXRange(0, sample_length)
             pi.setYRange(y_min, y_max)
 
-            # --- traces ---
+            # --- traces (in %FS) ---
             pw.plot(
                 x_vals,
-                mean_shape_left,
+                mean_shape_left_pct,
                 pen=pg.mkPen(LIGHT_GREEN, width=2),
                 symbol='o',
                 symbolSize=6,
@@ -455,19 +514,18 @@ class Tab1ProWidget(QWidget):
                 name="Left"
             )
 
-            if stereo:
+            if stereo and any(mean_shape_right):
                 pw.plot(
-                x_vals,
-                mean_shape_right,
-                pen=pg.mkPen(PINK, width=2),
-                symbol='o',
-                symbolSize=6,
-                symbolBrush=PINK,
-                name="Right"
+                    x_vals,
+                    mean_shape_right_pct,
+                    pen=pg.mkPen(PINK, width=2),
+                    symbol='o',
+                    symbolSize=6,
+                    symbolBrush=PINK,
+                    name="Right"
                 )
 
             self.draw_mean_shape_plot()
 
         except Exception as e:
             logger.error(f"[ERROR] in plot_shape: {e} ❌")
-
