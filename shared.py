@@ -23,7 +23,7 @@ run_flag_lock   = Lock()
 
 # --------------------
 # Versioning
-__version__ = "3.1.6"
+__version__ = "3.1.7"
 # --------------------
 
 SETTINGS = {}  
@@ -177,6 +177,7 @@ histogram_2  = []
 histogram_hmp = []
 
 peak_list = []  # list[dict] like {'i0': int, 'i1': int}
+cal_points = {}
 
 # --- Calibration ---
 calib_bin_1 = 0
@@ -238,6 +239,8 @@ iso_switch = False
 slb_switch = False
 comp_switch = False
 diff_switch = False
+linearity_switch = False
+
 
 
 # --- Region & Coincidence ---
@@ -300,6 +303,7 @@ SETTINGS_SCHEMA = {
     "calib_e_3": {"type": "float", "default": 0.0},
     "calib_e_4": {"type": "float", "default": 0.0},
     "calib_e_5": {"type": "float", "default": 0.0},
+    "cal_points": {"type": "dict", "default": {}},
     "chunk_size": {"type": "int", "default": 4096},
     "coeff_1": {"type": "float", "default": 0.0},
     "coeff_2": {"type": "float", "default": 0.0},
@@ -330,6 +334,7 @@ SETTINGS_SCHEMA = {
     "log_switch": {"type": "bool", "default": False},
     "comp_switch": {"type": "bool", "default": False},
     "diff_switch": {"type": "bool", "default": False},
+    "linearity_switch": {"type": "bool", "default": False},
     "max_counts": {"type": "int", "default": 9999999},
     "max_pulse_height": {"type": "int", "default": 32767},
     "max_pulse_length": {"type": "int", "default": 100},
@@ -341,6 +346,7 @@ SETTINGS_SCHEMA = {
     "mean_shape_right": {"type": "list", "default": []},
     "distortion_left": {"type": "list", "default": []},
     "distortion_right": {"type": "list", "default": []},
+    "peak_list": {"type": "list", "default": []},
     "isotope_tbl": {"type": "str", "default": "Gamma common"},
     "rolling_interval": {"type": "int", "default": 60},
     "sample_length": {"type": "int", "default": 51},
