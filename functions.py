@@ -72,10 +72,32 @@ def normalise_pulse(average):
     normalised = [int(n - mean) for n in average]
     return normalised
 
-# Normalized pulse samples less normalized shape samples squared summed and rooted
 def distortion(normalised, shape):
-    product = [(x - y) ** 2 for x, y in zip(shape, normalised)]
-    return int(math.sqrt(sum(product)))
+    """
+    Shape mismatch metric, 0..100 (0 = perfect match, 100 = worst-case).
+    Returns float for smoother plots.
+    """
+    n = min(len(normalised), len(shape))
+    if n == 0:
+        return 0.0
+
+    a = normalised[:n]
+    b = shape[:n]
+
+    max_a = max(abs(x) for x in a) or 1.0
+    max_b = max(abs(x) for x in b) or 1.0
+
+    a = [x / max_a for x in a]
+    b = [y / max_b for y in b]
+
+    diffsq = [(x - y) ** 2 for x, y in zip(b, a)]
+    rms = math.sqrt(sum(diffsq) / n)   # 0..2
+
+    # 0..2 → 0..100
+    return (rms / 2.0) * 100.0
+
+
+
 
 # Function calculates pulse height
 def pulse_height(samples):
