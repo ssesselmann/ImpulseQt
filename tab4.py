@@ -261,27 +261,32 @@ class Tab4(QWidget):
     @Slot()
     def on_download_clicked(self, filename=None):
         try:
+            # --- Build base filename (without numeric suffix) ---
             if not filename:
                 if self.last_loaded_filename:
                     # Remove "_cps" if present in name
                     base = self.last_loaded_filename.replace("_cps", "")
-                    filename = f"{base}_cps.csv"
+                    download_name = f"{base}_cps.csv"
                 else:
-                    filename = "counts_cps.csv"
+                    download_name = "counts_cps.csv"
             else:
-                filename = f"{filename}_cps.csv"
+                download_name = f"{filename}_cps.csv"
 
-            file_path = os.path.join(shared.DLD_DIR, filename)
+            # Ensure we have exactly one .csv extension
+            if not download_name.lower().endswith(".csv"):
+                download_name += ".csv"
 
-            if os.path.exists(file_path):
-                reply = QMessageBox.question(
-                    self, "Confirm Overwrite",
-                    f'"{filename}" already exists. Overwrite?',
-                    QMessageBox.Yes | QMessageBox.No
-                )
-                if reply != QMessageBox.Yes:
-                    return
+            dld_dir = Path(shared.DLD_DIR)
+            base_stem = Path(download_name).stem   # e.g. "spectrum.n42_cps"
+            file_path = dld_dir / f"{base_stem}.csv"
 
+            # --- If file exists, append _1, _2, ... ---
+            counter = 1
+            while file_path.exists():
+                file_path = dld_dir / f"{base_stem}_{counter}.csv"
+                counter += 1
+
+            # --- Write CSV ---
             with open(file_path, "w") as f:
                 f.write("Second,Counts\n")
                 for i, count in enumerate(shared.count_history):
@@ -293,6 +298,7 @@ class Tab4(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Download Error", str(e))
             logger.error(f"  ❌ error {e}")
+
 
     def clear_session(self):
         shared.counts = []
