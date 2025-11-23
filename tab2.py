@@ -92,6 +92,10 @@ class Tab2(QWidget):
         return container
 
 
+    def clear_rois_and_reset(self):
+        """Clear peaks + table and force a fresh recompute."""
+        self._on_clear_rois_clicked()
+
     def __init__(self):
         super().__init__()
 
@@ -106,6 +110,12 @@ class Tab2(QWidget):
         self.process_thread = None
         self.has_loaded     = False
         self.filename_2     = ""
+
+        self._linearity_enabled = False
+        self._linearity_curve   = None
+        self._cal_pairs         = []
+
+
 
         # ---- Title Setup ----
         self.plot_title = QLabel("Histogram")  
@@ -129,14 +139,23 @@ class Tab2(QWidget):
 
         # --- ROI Controls (buttons) ---
         self.roi_controls = QHBoxLayout()
-        self.btn_auto_roi  = QPushButton("Auto Peaks")
-        self.btn_clear_roi = QPushButton("Clear Peaks")
+        # define buttons
+        self.btn_auto_roi       = QPushButton("Auto Peaks")
+        self.btn_clear_roi      = QPushButton("Clear Peaks")
+        self.btn_download_roi   = QPushButton("Download Peaks")
+        # assign colors
+        self.btn_auto_roi.setProperty("btn", "primary")
+        self.btn_clear_roi.setProperty("btn", "primary")
+        self.btn_download_roi.setProperty("btn", "primary")
 
-        for b in (self.btn_auto_roi, self.btn_clear_roi):
-            b.setProperty("btn", "primary")
+
+        # for b in (self.btn_auto_roi, self.btn_clear_roi, ):
+        #     b.setProperty("btn", "primary")
 
         self.roi_controls.addWidget(self.btn_auto_roi)
         self.roi_controls.addWidget(self.btn_clear_roi)
+        self.roi_controls.addWidget(self.btn_download_roi)
+
         self.roi_controls.addStretch()
 
         # Pop-out button
@@ -146,10 +165,10 @@ class Tab2(QWidget):
         self.roi_controls.addWidget(self.btn_pop_roi)
 
         tab2_layout.addLayout(self.roi_controls)
-        self._roi_dialog = None
 
-        self._in_recompute = False
-        self._in_recalc = False
+        self._roi_dialog    = None
+        self._in_recompute  = False
+        self._in_recalc     = False
 
 
         # --- ROI Table ---
@@ -192,12 +211,30 @@ class Tab2(QWidget):
         self._updating_table = False
         self.roi_table.itemChanged.connect(self._on_roi_item_changed)
 
+        # Load any previously stored calibration points from shared
+        with shared.write_lock:
+            if not hasattr(shared, "cal_points"):
+                shared.cal_points = {}
+            stored = dict(shared.cal_points)
+
+        # Local copy as {uid: keV}
+        for uid, keV in stored.items():
+            try:
+                uid_i = int(uid)
+                keV_f = float(keV)
+            except Exception:
+                continue
+            if not np.isfinite(keV_f):
+                continue
+            self._cal_points[uid_i] = keV_f
 
 
 
         # --- ROI signals ---
         self.btn_auto_roi.clicked.connect(self._on_auto_roi_clicked)
         self.btn_clear_roi.clicked.connect(self._on_clear_rois_clicked)
+        self.btn_download_roi.clicked.connect(self.on_download_roi_clicked)
+
 
         # holds ROI widgets mapped by uid
         self._peak_regions = {}     # uid -> LinearRegionItem
@@ -266,6 +303,7 @@ class Tab2(QWidget):
             epb_switch  = shared.epb_switch
             log_switch  = shared.log_switch
             cal_switch  = shared.cal_switch
+            linearity_switch = shared.linearity_switch
             sigma       = shared.sigma
             peakfinder  = shared.peakfinder
             coeff_1     = shared.coeff_1
@@ -484,7 +522,7 @@ class Tab2(QWidget):
         self.tolerance_input.setValidator(positive_int_validator)
         self.tolerance_input.textChanged.connect(lambda text: self.on_text_changed(text, "tolerance"))
 
-        tolerance_layout.addWidget(self.labeled_input("Distortion tolerance", self.tolerance_input))
+        tolerance_layout.addWidget(self.labeled_input("Distortion tolerance (%)", self.tolerance_input))
         grid.addWidget(self.tolerance_container, 1, 3)
         self.pro_only_widgets.append(self.tolerance_container)
         # PRO CLOSE wrapper =======================================================
@@ -492,7 +530,7 @@ class Tab2(QWidget):
         # Col 4 Row 3 - Download csv button
         self.dld_csv_btn = QPushButton("Download csv")
         self.dld_csv_btn.setProperty("btn", "primary")
-        self.dld_csv_btn.clicked.connect(self.on_dld_csv_btn)
+        self.dld_csv_btn.clicked.connect(self.on_download_clicked)
         grid.addWidget(self.labeled_input("Download csv File", self.dld_csv_btn), 0, 4)
 
         # Col 4 Row 4
@@ -574,10 +612,14 @@ class Tab2(QWidget):
         self.cal_switch = QCheckBox("Calibration")
         self.cal_switch.setChecked(cal_switch)
         self.cal_switch.stateChanged.connect(lambda state, key="cal_switch": self.on_checkbox_toggle(key, state))
-
         grid.addWidget(self.cal_switch, 2, 5)
 
         # Col 6 Row 4
+        self.chk_linearity = QCheckBox("Show linearity")
+        self.chk_linearity.setChecked(linearity_switch)
+        self._linearity_enabled = bool(linearity_switch)   # keep internal flag in sync
+        self.chk_linearity.toggled.connect(self._on_linearity_toggled)
+        grid.addWidget(self.chk_linearity, 3, 5)
 
 
         # Col 7 Row 1
@@ -810,8 +852,15 @@ class Tab2(QWidget):
 
         self.btn_pop_roi.setText("Pop-out table")
 
-    def clear_rois_and_reset(self):
-        self._on_clear_rois_clicked()
+    def _on_clear_rois_clicked(self):
+        with shared.write_lock:
+            shared.peak_list = []
+        if hasattr(self, "_cal_points"):
+            self._cal_points.clear()
+        self._sync_cal_points_to_shared()
+        self.roi_table.setRowCount(0)
+        self.update_histogram()
+
 
     def update_ui(self):
         if not self.isVisible():      
@@ -960,6 +1009,15 @@ class Tab2(QWidget):
         self.start_recording_2d(filename)
 
     
+    def _on_linearity_toggled(self, checked):
+        self._linearity_enabled = bool(checked)
+        with shared.write_lock:
+            shared.linearity_switch = bool(checked)
+        # Optional: if you want immediate persistence to disk:
+        # shared.save_settings()
+        self.update_histogram()
+
+
     def confirm_overwrite(self, file_path, filename_display=None):
         if filename_display is None:
             filename_display = os.path.basename(file_path)
@@ -1023,7 +1081,7 @@ class Tab2(QWidget):
 
         # --- Reset plotting ---
         self.clear_session()
-        self.clear_rois_and_reset()
+        #self.clear_rois_and_reset()
 
         try:
             # Call the centralized recording logic
@@ -1338,6 +1396,21 @@ class Tab2(QWidget):
         self.calibration_popup.show()
 
 
+    def _sync_cal_points_to_shared(self):
+        """Mirror local calibration point mapping into shared.cal_points."""
+        with shared.write_lock:
+            try:
+                shared.cal_points = {
+                    int(uid): float(keV)
+                    for uid, keV in self._cal_points.items()
+                    if keV is not None and np.isfinite(float(keV))
+                }
+            except Exception:
+                # Fallback to avoid breaking anything if something is odd
+                shared.cal_points = {}
+
+
+
     def on_notes_changed(self):  # WL Compliant
         new_note = self.notes_input.toPlainText().strip()
 
@@ -1374,7 +1447,7 @@ class Tab2(QWidget):
         except Exception as e:
             logger.error(f" ❌ Exception during JSON update: {e} ")
 
-    def on_dld_csv_btn(self):
+    def on_download_clicked(self):
 
         with shared.write_lock:
             filename   = shared.filename
@@ -1385,22 +1458,27 @@ class Tab2(QWidget):
             coeff_3    = shared.coeff_3
 
         try:
-            filename_stem = Path(filename).stem if filename else "spectrum"
-            csv_path = os.path.join(DLD_DIR, f"{filename_stem}.csv")
-            
             if not histogram:
                 QMessageBox.warning(self, "Download Failed", "No histogram data to save.")
                 return
 
-            if os.path.exists(csv_path):
-                result = QMessageBox.question(
-                    self, "Overwrite Confirmation",
-                    f"The file {filename_stem}.csv already exists.\nDo you want to overwrite it?",
-                    QMessageBox.Yes | QMessageBox.No
-                )
-                if result != QMessageBox.Yes:
-                    return  # Abort if user chooses "No"
+            filename_stem = Path(filename).stem if filename else "spectrum"
 
+            # Base path (no suffix)
+            base_path = Path(DLD_DIR) / f"{filename_stem}.csv"
+            csv_path = base_path
+
+            # If it exists, append _1, _2, _3... until we find a free name
+            if csv_path.exists():
+                counter = 1
+                while True:
+                    candidate = Path(DLD_DIR) / f"{filename_stem}_{counter}.csv"
+                    if not candidate.exists():
+                        csv_path = candidate
+                        break
+                    counter += 1
+
+            # Actually write the CSV
             with open(csv_path, mode='w', newline='') as file:
                 writer = csv.writer(file)
 
@@ -1419,7 +1497,69 @@ class Tab2(QWidget):
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to save CSV:\n{str(e)} ❌")
-            logger.error(f"  ❌ Save failed: {str(e)} ") 
+            logger.error(f"  ❌ Save failed: {str(e)} ")
+
+
+    def on_download_roi_clicked(self):
+        """Download the ROI / peaks table as CSV."""
+        try:
+            # --- Get base filename from current spectrum name ---
+            with shared.write_lock:
+                raw_name = shared.filename or ""
+            base_stem = Path(raw_name).stem or "spectrum"
+
+            # initial path: e.g. spectrum_peaks.csv
+            csv_path = DLD_DIR / f"{base_stem}_peaks.csv"
+
+            # --- If file exists, append _1, _2, ... until free name is found ---
+            if csv_path.exists():
+                stem = csv_path.stem  # e.g. "spectrum_peaks"
+                counter = 1
+                while True:
+                    candidate = csv_path.with_name(f"{stem}_{counter}.csv")
+                    if not candidate.exists():
+                        csv_path = candidate
+                        break
+                    counter += 1
+
+            # --- Grab the ROI table widget ---
+            # Change `self.roi_table` to whatever your actual table variable is
+            table = self.roi_table  
+
+            row_count = table.rowCount()
+            col_count = table.columnCount()
+
+            if row_count == 0:
+                QMessageBox.information(self, "No Peaks", "There are no peaks/ROIs to save.")
+                return
+
+            # --- Write CSV ---
+            with open(csv_path, "w", newline="") as fh:
+                writer = csv.writer(fh)
+
+                # Header from table column labels
+                headers = []
+                for col in range(col_count):
+                    header_item = table.horizontalHeaderItem(col)
+                    headers.append(header_item.text() if header_item is not None else f"Col {col+1}")
+                writer.writerow(headers)
+
+                # Data rows
+                for row in range(row_count):
+                    row_data = []
+                    for col in range(col_count):
+                        item = table.item(row, col)
+                        row_data.append(item.text() if item is not None else "")
+                    writer.writerow(row_data)
+
+            QMessageBox.information(self, "Download Complete", f"Peaks CSV saved to:\n{csv_path}")
+            logger.info(f"   ✅ ROI/peaks download complete {csv_path}")
+
+        except Exception as e:
+            logger.error(f"❌ ROI CSV export failed: {e}", exc_info=True)
+            QMessageBox.critical(self, "Error", f"Failed to export ROI CSV:\n{e}")
+
+
 
     def send_selected_command(self):
 
@@ -1572,8 +1712,10 @@ class Tab2(QWidget):
             for uid in uids:
                 self._cal_points.pop(uid, None)
 
+            self._sync_cal_points_to_shared()
             self._recompute_all_peaks()
             self._recalculate_calibration_from_table()
+
         else:
             QTableWidget.keyPressEvent(self.roi_table, ev)
 
@@ -1648,17 +1790,18 @@ class Tab2(QWidget):
                     fwhm_ch = float("nan")
 
                 centroid_gui = ch_to_gui(centroid_ch)
+
                 if cal_on and any(np.isfinite(coeffs)) and np.isfinite(fwhm_ch):
                     a, b, _ = coeffs
                     dEdx = (2 * a * centroid_ch + b) if (a or b) else (ch_to_gui(centroid_ch+1) - ch_to_gui(centroid_ch))
                     fwhm_keV = abs(dEdx) * fwhm_ch
                     res_pct = (fwhm_keV / centroid_gui * 100.0) if centroid_gui > 0 else float("nan")
                     width_txt = f"{abs(ch_to_gui(i1) - ch_to_gui(i0)):.2f}"
-                    cent_txt  = f"{centroid_gui:.2f} keV"
                 else:
                     res_pct   = (fwhm_ch / centroid_ch * 100.0) if (np.isfinite(fwhm_ch) and centroid_ch > 0) else float("nan")
                     width_txt = f"{abs(i1 - i0):.0f}"
-                    cent_txt  = f"{centroid_gui:.0f}"
+                
+                cent_txt = f"{centroid_ch:.0f}"
 
                 uid = int(pk.get('uid'))
                 self._uid_to_centroid_ch[uid] = float(centroid_ch)
@@ -1838,8 +1981,6 @@ class Tab2(QWidget):
         return it
 
 
-        
-
     def _on_region_changed(self, uid: int):
         region = self._peak_regions.get(uid)
         if region is None:
@@ -1883,27 +2024,32 @@ class Tab2(QWidget):
         uid = item.data(Qt.UserRole + 1)
         if uid is None:
             return
+        uid = int(uid)
         txt = (item.text() or "").strip()
         if not txt:
-            self._cal_points.pop(int(uid), None)
+            self._cal_points.pop(uid, None)
+            self._sync_cal_points_to_shared()
             self._recalculate_calibration_from_table()
             return
         try:
             keV = float(txt)
             if np.isfinite(keV):
-                self._cal_points[int(uid)] = keV
+                self._cal_points[uid] = keV
+                self._sync_cal_points_to_shared()
                 self._recalculate_calibration_from_table()
         except ValueError:
             pass
 
 
 
+
     def _recalculate_calibration_from_table(self):
         """Collect (channel, energy) pairs from the table and refit poly."""
-        # collect pairs, but only where we still have a centroid channel
-        if self._in_recalc:
+        # re-entry guard
+        if getattr(self, "_in_recalc", False):
             return
 
+        self._in_recalc = True
         try:
             xs, ys = [], []
             for uid, keV in list(self._cal_points.items()):
@@ -1913,6 +2059,14 @@ class Tab2(QWidget):
                     continue
                 xs.append(float(self._uid_to_centroid_ch[uid]))  # channel
                 ys.append(float(keV))                            # energy
+
+            # Sort by channel so plots don't zig-zag if points are entered in random order
+            pairs = sorted(zip(xs, ys), key=lambda p: p[0])
+            xs    = [p[0] for p in pairs]
+            ys    = [p[1] for p in pairs]
+
+            # snapshot for the linearity overlay (channel, ref_keV)
+            self._cal_pairs = pairs
 
             n = len(xs)
             if n == 0:
@@ -1924,9 +2078,9 @@ class Tab2(QWidget):
             elif n == 2:
                 deg = 1
             else:
-                deg = 1  # 1 point: keep slope from previous if available
+                # n == 1: we'll handle explicitly (line through origin)
+                deg = 1
 
-            # fit
             try:
                 if n >= 2:
                     p = np.polyfit(xs, ys, deg)
@@ -1937,19 +2091,23 @@ class Tab2(QWidget):
                         m, b_lin = float(p[0]), float(p[1])
                         a, b, c = 0.0, m, b_lin
                 else:
-                    # n == 1: use previous slope if available, else m=1
-                    x0, y0 = xs[0], ys[0]
-                    with shared.write_lock:
-                        a_old = float(shared.coeff_1)
-                        b_old = float(shared.coeff_2)
-                        c_old = float(shared.coeff_3)
-                    m = b_old if (abs(a_old) < 1e-12 and np.isfinite(b_old) and abs(b_old) > 0) else 1.0
-                    a, b, c = 0.0, m, (y0 - m * x0)
+                    # n == 1: single-point calibration
+                    x0, y0 = float(xs[0]), float(ys[0])
+
+                    if x0 == 0.0:
+                        # Degenerate case: channel 0 -> constant mapping
+                        a, b, c = 0.0, 0.0, float(y0)
+                    else:
+                        # Line through origin: E = (y0/x0) * ch
+                        m = float(y0) / float(x0)  # keV per channel
+                        a, b, c = 0.0, m, 0.0
+
             except Exception as e:
                 logger.error(f"  ❌ calibration fit failed: {e}")
                 return
 
             changed = self._set_coeffs_if_changed(a, b, c)
+
         finally:
             self._in_recalc = False
 
@@ -1965,6 +2123,7 @@ class Tab2(QWidget):
         else:
             # even if not showing keV, we still want isotope column to refresh when cal_switch is later turned on
             self._recompute_all_peaks()
+
 
     
 
@@ -2108,6 +2267,8 @@ class Tab2(QWidget):
             if y_vals2: y_vals2[-1] = 0
             if corr:    corr[-1]    = 0
 
+        self._update_linearity_overlay(y_vals, coeff_abc, cal_switch)
+
 
         def _finite_same_len(a, repl=0.0):
             """Return same-length list with non-finite values replaced."""
@@ -2227,4 +2388,75 @@ class Tab2(QWidget):
 
         self._recompute_all_peaks()
 
-   
+    def _update_linearity_overlay(self, y_vals, coeff_abc, cal_switch):
+        """
+        Draw or remove the linearity overlay on the main spectrum plot.
+
+        y_vals:      final y-array currently being plotted (after EPB/log/SLB)
+        coeff_abc:   [a, b, c] of the current calibration polynomial
+        cal_switch:  True if X-axis is keV, else channel
+
+        Uses self._cal_pairs = [(channel, Ref keV), ...] populated by
+        _recalculate_calibration_from_table().
+        """
+        # Use the main plot widget
+        if not hasattr(self, "plot_widget"):
+            return
+
+        cal_pairs = getattr(self, "_cal_pairs", None)
+        if (not getattr(self, "_linearity_enabled", False) or
+                not cal_pairs or len(cal_pairs) < 2):
+            # Remove existing overlay if present
+            if getattr(self, "_linearity_curve", None) is not None:
+                try:
+                    self.plot_widget.removeItem(self._linearity_curve)
+                except Exception:
+                    pass
+                self._linearity_curve = None
+            return
+
+        if not any(np.isfinite(coeff_abc)):
+            return
+        if not y_vals:
+            return
+
+        # Build arrays from stored calibration points
+        ch   = np.array([p[0] for p in cal_pairs], dtype=float)  # centroid channels
+        eref = np.array([p[1] for p in cal_pairs], dtype=float)  # reference keV
+
+        a, b, c = [float(x) for x in coeff_abc]
+        efit  = np.polyval([a, b, c], ch)
+        resid = efit - eref  # keV difference
+
+        if resid.size == 0:
+            return
+
+        max_abs_resid = float(np.max(np.abs(resid)))
+        if max_abs_resid <= 0:
+            max_abs_resid = 1.0
+
+        # Vertical placement: band near top of current histogram
+        max_counts = float(max(y_vals)) if y_vals else 1.0
+        if max_counts <= 0:
+            max_counts = 1.0
+
+        band_center = 0.90 * max_counts
+        band_amp    = 0.05 * max_counts
+
+        y_overlay = band_center + band_amp * (resid / max_abs_resid)
+
+        # X coordinates: if calibrated, use keV; else channel
+        x_overlay = eref if cal_switch else ch
+
+        # Create or update the overlay curve
+        if getattr(self, "_linearity_curve", None) is None:
+            self._linearity_curve = self.plot_widget.plot(
+                x_overlay,
+                y_overlay,
+                pen=pg.mkPen('w', width=1),   # yellow-ish on dark blue
+                symbol="o",
+                symbolSize=6,
+            )
+            self._linearity_curve.setZValue(11)  # above hist_curve (10)
+        else:
+            self._linearity_curve.setData(x_overlay, y_overlay)
