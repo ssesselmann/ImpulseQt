@@ -106,9 +106,16 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
         data = stream.read(chunk_size, exception_on_overflow=False)
         # Convert hex values into a list of decimal values
         values = list(wave.struct.unpack("%dh" % (chunk_size * channels), data))
-        # Extract every other element (left channel)
-        left_channel = values[::2]
-        right_channel = values[1::2]     
+
+        if channels == 1:
+            # Mono: use all samples as left channel
+            left_channel  = values
+            right_channel = []
+        else:
+            # Stereo (2-channel): interleaved L,R,L,R,...
+            left_channel  = values[0::2]
+            right_channel = values[1::2]
+            
 
         # Flip logic simplified
         flip_settings = {11: (1, 1), 12: (1, -1), 21: (-1, 1), 22: (-1, -1)}
