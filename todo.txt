@@ -1,0 +1,38 @@
+ImpulseQt
+---------
+
+ImpulseQt v3.1.7 – Changelog
+–––––––––––––––––––––––––––––
+• Centroid column in the calibration table now always displays bin/channel values. ✅
+• Peak calibration table is now saved in settings and restored on startup. ✅
+• Peak table now persists between sessions and is only cleared by the user via the “Clear Peaks” button. ✅
+• Fixed a bug in single-point linear calibration. ✅
+• Optional linearity trace added to the main spectrum plot. ✅
+• Linearity points are now stored in settings and persist between sessions. ✅
+• Added an option to download the peaks/ROI table as a CSV file. ✅
+• CSV downloads now auto-append a unique numeric suffix (e.g. spectrum.csv, spectrum_1.csv, spectrum_2.csv). ✅
+• Pulse shape plot y-axis changed from raw 16-bit values to percentage of sound card input (% full scale). ✅
+
+Distortion metric redefined as a percentage mismatch between each pulse and the mean pulse shape, giving a stable, interpretable 0–100 scale for “shape tolerance.” ✅
+
+ImpulseQt v3.1.6 – Changelog
+–––––––––––––––––––––––––––––
+• Removed isotope checkbox and redundant code ✅
+• Removed calibration window ✅
+• Integrated calibration into peaks table ✅
+• New Isotope library updater ✅
+
+ImpulseQt v3.1.5 – Changelog
+–––––––––––––––––––––––––––––
+• Add smooth count rate number to count rate histogram ✅
+• Add Log function to count rate histogram ✅
+• Add data table - Centroid - Counts - Resolution - Energy- gross counts - Net Counts ✅
+• Highlight Regions of interest - ROI ✅
+• Add Pb210 to library ✅
+• Remove all histogram annotations ✅
+
+Things to Do: ⚙️
+===================================================================
+• Backup serial device settings (not so simple)
+• Surgically remove flag options
+• Loaded spectrum should show recording date not current date.
