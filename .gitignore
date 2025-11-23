@@ -23,7 +23,6 @@ identifier.py
 assets/.DS_Store
 MSIX/ImpulseQt_x64.msix
 tab2-pre-mod.py
-todo.txt
 /unpacked/ImpulseQt/_internal
 unpacked/ImpulseQt.exe
 unpacked/ImpulseQt/ImpulseQt.exe
