@@ -103,10 +103,34 @@ def get_pro_manual_html():
         <p>Buffers incoming audio data for processing. Larger sample rates need proportionally larger buffers (modern PC's can handle large buffers).</p>
 
         <h3>Pulse Shape Plot</h3>
-        <p>Plots the mean pulse shape which is derived from audio input and used during data acquisition for filtering (distortion rejection). Note: The pulse height is calculated as the difference between the lowest and highest sample point of a pulse.</p>
+        <p>
+        The pulse shape plot shows the mean pulse shape calculated from the audio input.
+        Multiple pulses are captured, aligned on their peak and averaged to produce a
+        clean reference pulse. The vertical axis is shown as a percentage of the full
+        16-bit input range (% FS), so a pulse that reaches about 10–15&nbsp;% FS is using
+        10–15&nbsp;% of the available dynamic range. This helps you adjust the gain to
+        avoid both clipping (too close to 100&nbsp;%) and very small pulses (too close
+        to 0&nbsp;%). The pulse height is internally calculated as the difference between
+        the lowest and highest sample points of each pulse.
+        </p>
 
         <h3>Distortion Plot</h3>
-        <p>This plot is helpful for visualising pulse distortion. It normalises and compares a set number of pulses to the mean shape and calculates a distortion number for each pulse in the set, the set is sorted by distotion lowest to highest and presented as a line plot. It's purpose is to determine a value for the "shape tolerance". Typically the distortion tolerance is set just above the point where the distortion curve goes vertical. Setting the tolerance too tight will reult in a loss of counts.</p>
+        <p>
+        The distortion plot is used to visualise how closely individual pulses match the
+        mean pulse shape. A set number of pulses is captured from the audio input, each
+        pulse is normalised and compared to the mean shape, and a distortion value is
+        calculated for every pulse. The distortion scale runs from 0&nbsp;% (almost
+        perfect match) towards 100&nbsp;% (very different shape). The pulses are then
+        sorted from lowest to highest distortion and displayed as a line plot.
+        </p>
+        <p>
+        This plot is used to choose a suitable value for the <b>shape tolerance</b> on
+        Tab&nbsp;2. In practice, the distortion curve starts low and then rises sharply.
+        You normally set the shape tolerance just above the point where the curve turns
+        upwards. Setting the tolerance too tight will reject many valid pulses and
+        reduce the overall count rate; setting it too loose will allow distorted pulses
+        to pass through and increase noise in the spectrum.
+        </p>
 
         <h2>2D Histogram Tab</h2>
         <p>This is the main gamma spectrum or histogram tab and its main feature is the large histogram plot. The plot update frequency can be manually set to any integer number of seconds. The histogram chart has several hidden features that are not immediately obvious, hover over the chart and you will see cross hairs that hep you pinpoint the values or use the mouse right click button to capture an image or zoom in on the scale. A small [A] will apear in the bottom right hand corner which can reset the plot to auto.</p>
@@ -182,9 +206,35 @@ def get_pro_manual_html():
         <br>Click to remove all highlighted regions of interest.
         </li><br>
 
+        <li><strong>Download Peaks</strong>
+        <br>Downloads the peaks table as a csv file (filename_peaks.csv)
+        </li><br>
+
         <li><strong>Pop Out Table</strong>
         <br>Pop out the peaks table into a separate window to declutter the screen. The table can now be moved off to the side and resized if required. 
         </li><br>
+
+        <li><strong>Linearity Overlay</strong>
+        <p>
+        The linearity overlay provides a visual check of how well the current energy
+        calibration matches the reference peak energies. Each calibration point in the
+        table consists of a measured centroid (channel) and a reference energy (keV).
+        From these pairs the program fits a second-order calibration polynomial and then
+        recomputes the energy at each centroid using this fit.
+        </p>
+        <p>
+        For every calibration point, the difference between the fitted energy and the
+        reference energy (the residual, in keV) is calculated. These residuals are then
+        scaled and drawn as a small band near the top of the spectrum plot. The
+        horizontal position of each marker corresponds to the peak energy (in keV when
+        calibration is active, otherwise channel), while the vertical position encodes
+        whether the fitted calibration is slightly high or low at that point. The
+        absolute height of the band does not represent counts; only the pattern of
+        points matters. A flat band indicates good linearity, while a systematic trend
+        (upward or downward) reveals regions where the calibration deviates from the
+        reference. This overlay helps you decide whether your current calibration (and
+        choice of calibration points) is adequate across the full energy range.
+        </p></li>
 
         <li><strong>Notes</strong>
         <br>Input for spectrum specific notes (saves immediately to spectrum file).</li><br>
