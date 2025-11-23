@@ -263,7 +263,7 @@ class Tab3(QWidget):
         # Download array button
         self.dld_array_button = QPushButton("Download array")
         self.dld_array_button.setProperty("btn", "primary")
-        self.dld_array_button.clicked.connect(self.download_array_csv)
+        self.dld_array_button.clicked.connect(self.on_download_clicked)
         top_right_col.addWidget(self.dld_array_button)
 
         # View full recording button
@@ -651,11 +651,13 @@ class Tab3(QWidget):
             logger.warning(f"👆 No compression data found for index {index}")
 
 
-    def download_array_csv(self):
+    def on_download_clicked(self):
         import json
 
         with shared.write_lock:
-            filename = Path(shared.filename_hmp).stem or "spectrum3d"
+            raw_name = shared.filename_hmp or ""
+            filename = Path(raw_name).stem or "spectrum3d"
+
         json_path = USER_DATA_DIR / f"{filename}_hmp.json"
         csv_path  = DLD_DIR / f"{filename}_hmp.csv"
 
@@ -663,13 +665,16 @@ class Tab3(QWidget):
             QMessageBox.warning(self, "Missing File", f"No JSON file found:\n{json_path}")
             return
 
+        # If CSV exists, append _1, _2, _3... until we find a free name
         if csv_path.exists():
-            if QMessageBox.question(
-                self, "Overwrite?",
-                f"{csv_path.name} exists — overwrite?",
-                QMessageBox.Yes | QMessageBox.No
-            ) != QMessageBox.Yes:
-                return
+            base_stem = csv_path.stem          # e.g. "spectrum3d_hmp"
+            counter = 1
+            while True:
+                candidate = csv_path.with_name(f"{base_stem}_{counter}.csv")
+                if not candidate.exists():
+                    csv_path = candidate
+                    break
+                counter += 1
 
         try:
             with open(json_path, "r") as jf:
@@ -715,6 +720,7 @@ class Tab3(QWidget):
         except Exception as e:
             logger.error(f"❌ CSV export failed: {e}", exc_info=True)
             QMessageBox.critical(self, "Error", f"Failed to export CSV:\n{e}")
+
 
     # ------------------------------------------------------------------
 
