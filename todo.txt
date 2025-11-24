@@ -34,5 +34,4 @@ ImpulseQt v3.1.5 – Changelog
 Things to Do: ⚙️
 ===================================================================
 • Backup serial device settings (not so simple)
-• Surgically remove flag options
 • Loaded spectrum should show recording date not current date.

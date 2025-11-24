@@ -80,6 +80,8 @@ a = Analysis(
 
 #------------ Pruning stuff ---------------
 
+
+
 # Helpers FIRST (used by all filters below)
 def _toc_src(entry):
     if isinstance(entry, (list, tuple)):
@@ -99,15 +101,27 @@ def _is_unwanted_sqldriver(entry):
         return False
     return not any(k in p for k in ("sqldrivers/qsqlite",))
 
-a.binaries = [b for b in a.binaries if not _is_unwanted_sqldriver(b)]
-a.datas    = [d for d in a.datas    if not _is_unwanted_sqldriver(d)]
+def _is_unwanted_qt_data(entry):
+    p = _norm(_toc_src(entry))
+
+    # Whole QML/QQuick tree – you don't use QtQuick/QML
+    if "/qt/qml/" in p:
+        return True
+
+    # WebEngine and other heavy resources
+    if "/qt/resources/" in p and any(k in p for k in (
+        "webengine", "qtwebengine", "datavisualization", "3d", "charts",
+        "positioning", "sensors", "location", "bluetooth", "nfc",
+    )):
+        return True
+
+    return False
+
 
 # 1) Drop all Qt translations
 def _is_qt_translation(entry):
     p = _norm(_toc_src(entry))
     return "/qt/translations/" in p
-
-a.datas = [d for d in a.datas if not _is_qt_translation(d)]
 
 # 2) Prune heavy plugin families
 _PRUNE_KEYS = [
@@ -115,6 +129,32 @@ _PRUNE_KEYS = [
     "3d", "location", "positioning", "sensors", "bluetooth", "nfc",
     "virtualkeyboard",
 ]
+
+# Qt6 DLL names we definitely don't need (native side of those modules)
+_QT6_NATIVE_DROP = [
+    "qt6webenginecore",
+    "qt6webenginewidgets",
+    "qt6webenginequick",
+    "qt6webchannel",
+    "qt6charts",
+    "qt6datavisualization",
+    "qt63dcore",
+    "qt63drender",
+    "qt63dinput",
+    "qt6positioning",
+    "qt6location",
+    "qt6sensors",
+    "qt6bluetooth",
+    "qt6nfc",
+    "qt6multimedia",
+    "qt6multimediawidgets",
+    "qt6svg",
+    "qt6svgwidgets",
+    "qt6serialport",
+    "qt6pdf",
+    "qt6pdfwidgets",
+]
+
 _ESSENTIAL_KEEP = [
     "platforms/qwindows",
     "imageformats/qjpeg",
@@ -125,13 +165,20 @@ _ESSENTIAL_KEEP = [
 
 def _keep_binary(entry):
     p = _norm(_toc_src(entry))
+
+    # 1) Keep explicitly essential stuff
     if any(k in p for k in _ESSENTIAL_KEEP):
         return True
+
+    # 2) Kill Qt6 native DLLs we know we don't use
+    if "/qt/bin/" in p and any(name in p for name in _QT6_NATIVE_DROP):
+        return False
+
+    # 3) Kill plugin families we don't need
     if "/qt/plugins/" in p and any(k in p for k in _PRUNE_KEYS):
         return False
-    return True
 
-a.binaries = [b for b in a.binaries if _keep_binary(b)]
+    return True
 
 # 3) Trim imageformats to jpeg/png/ico only
 def _is_unwanted_imageformat(entry):
@@ -140,28 +187,34 @@ def _is_unwanted_imageformat(entry):
         return False
     return not any(x in p for x in ("imageformats/qjpeg", "imageformats/qpng", "imageformats/qico"))
 
-a.binaries = [b for b in a.binaries if not _is_unwanted_imageformat(b)]
-
 # 4) If unwanted plugin trees slipped into datas (rare)
 def _is_unwanted_plugin_data(entry):
     p = _norm(_toc_src(entry))
     return ("/qt/plugins/" in p) and any(k in p for k in _PRUNE_KEYS)
-
-a.datas = [d for d in a.datas if not _is_unwanted_plugin_data(d)]
 
 # 5) Remove PyOpenGL DLLs (since you're forcing software rendering)
 def _is_opengl_dll(entry):
     p = _norm(_toc_src(entry))
     return "/opengl/dlls/" in p  # .../site-packages/OpenGL/DLLS/...
 
-a.binaries = [b for b in a.binaries if not _is_opengl_dll(b)]
-a.datas    = [d for d in a.datas    if not _is_opengl_dll(d)]
+
+# --- Apply filters AFTER helpers are defined ---
+a.binaries  = [b for b in a.binaries if not _is_unwanted_sqldriver(b)]
+a.binaries  = [b for b in a.binaries if _keep_binary(b)]
+a.binaries  = [b for b in a.binaries if not _is_unwanted_imageformat(b)]
+a.binaries  = [b for b in a.binaries if not _is_opengl_dll(b)]
+
+a.datas     = [d for d in a.datas if not _is_unwanted_sqldriver(d)]
+a.datas     = [d for d in a.datas if not _is_qt_translation(d)]
+a.datas     = [d for d in a.datas if not _is_unwanted_plugin_data(d)]
+a.datas     = [d for d in a.datas if not _is_opengl_dll(d)]
+a.datas     = [d for d in a.datas if not _is_unwanted_qt_data(d)]
 
 print(f"[prune] datas: {len(a.datas)}  binaries: {len(a.binaries)}")
+
+
+
 # ---------- End pruning here -------------
-
-
-
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=None)
 

@@ -13,7 +13,6 @@ from qt_compat import QWidget
 from qt_compat import QVBoxLayout
 from qt_compat import QGridLayout
 from qt_compat import QLabel
-from qt_compat import QFrame
 from qt_compat import QSizePolicy
 from qt_compat import QPushButton 
 from qt_compat import QLineEdit
@@ -43,7 +42,7 @@ from functions import (
     load_histogram_2, 
     gaussian_correl,
     peak_finder,
-    get_flag_options,
+    get_isotope_options,
     resource_path,
     sanitize_for_log,
     generate_synthetic_histogram
@@ -56,13 +55,11 @@ from PySide6.QtWidgets import QTableWidget, QTableWidgetItem, QHeaderView, QAbst
 from PySide6.QtGui import QBrush, QColor
 
 
-
 class _WhiteInputDelegate(QStyledItemDelegate):
     def initStyleOption(self, option, index):
         super().initStyleOption(option, index)
         if index.column() == 1:  # Ref E (keV) column
             option.backgroundBrush = QBrush(QColor("#ffffff"))
-
 
 class Tab2(QWidget):
 
@@ -572,23 +569,23 @@ class Tab2(QWidget):
 
         # Col 5 Row 4
         # --- Initialization (run once at UI setup) ---
-        self.current_flag_file = None  # Remember current selection during session only
+        self.current_isotope_file = None  # Remember current selection during session only
 
         self.select_flag_table = QComboBox()
         self.select_flag_table.setEditable(False)
         self.select_flag_table.setInsertPolicy(QComboBox.NoInsert)
         self.select_flag_table.setProperty("typo", "p2")
-        self.select_flag_table.currentIndexChanged.connect(self.on_select_flag_table_changed)
+        self.select_flag_table.currentIndexChanged.connect(self.on_select_isotope_table_changed)
 
         # Initial populate
-        options = get_flag_options() 
+        options = get_isotope_options() 
         for opt in options:
             self.select_flag_table.addItem(opt['label'], opt['value'])
 
         # Set first item by default (if list not empty)
         if self.select_flag_table.count() > 0:
             self.select_flag_table.setCurrentIndex(0)
-            self.on_select_flag_table_changed(0)
+            self.on_select_isotope_table_changed(0)
 
         # Add to layout
         grid.addWidget(self.labeled_input("Select Isotope Library", self.select_flag_table), 3, 4)
@@ -782,8 +779,6 @@ class Tab2(QWidget):
         compact_row = fm.height() + 4   # small breathing room
         table.verticalHeader().setDefaultSectionSize(compact_row)
 
-
-
     def _configure_roi_table_for_docked(self):
         table = self.roi_table
         header = table.horizontalHeader()
@@ -799,10 +794,6 @@ class Tab2(QWidget):
 
         # 👇 add this (so the docked view is compact too)
         self._compact_table_style(table)
-
- 
-
-    
 
     def _toggle_roi_table_window(self):
 
@@ -868,13 +859,13 @@ class Tab2(QWidget):
         self.update_labels()
         self.update_histogram()
 
-    def _reload_flag_combo(self):
+    def _reload_isotope_combo(self):
         """Rebuild combo from LIB_DIR and preserve current selection in-memory only."""
-        prev_value = getattr(self, "current_flag_file", None)  # remember previous selection (session only)
+        prev_value = getattr(self, "current_isotope_file", None)  # remember previous selection (session only)
         self.select_flag_table.blockSignals(True)
         self.select_flag_table.clear()
 
-        options = get_flag_options()
+        options = get_isotope_options()
         for opt in options:
             self.select_flag_table.addItem(opt['label'], opt['value'])
 
@@ -890,14 +881,14 @@ class Tab2(QWidget):
 
         # fire handler for the (possibly new) selection
         if self.select_flag_table.currentIndex() >= 0:
-            self.on_select_flag_table_changed(self.select_flag_table.currentIndex())
+            self.on_select_isotope_table_changed(self.select_flag_table.currentIndex())
 
     def load_on_show(self):
         # quick refresh you already have
         try:
-            self._reload_flag_combo()
+            self._reload_isotope_combo()
         except Exception as e:
-            logger.error(f"  ❌ refreshing flag options: {e}")
+            logger.error(f"  ❌ refreshing isotope options: {e}")
 
         # Always pull live settings from shared
         with shared.write_lock:
@@ -979,14 +970,7 @@ class Tab2(QWidget):
             index = len(BIN_OPTIONS) - 1 
 
         self.bins_selector.setCurrentIndex(index)
-        self.update_histogram()
-
-
-    def make_cell(self, text):
-        label = QLabel(text)
-        label.setFrameStyle(QFrame.Box | QFrame.Plain)
-        label.setAlignment(Qt.AlignCenter)
-        return label    
+        self.update_histogram() 
 
     @Slot()
     def on_start_clicked(self):
@@ -1334,10 +1318,10 @@ class Tab2(QWidget):
 
 
 
-    def on_select_flag_table_changed(self, index: int):
-        """Load the selected flag file and update shared.isotope_flags (+meta)."""
+    def on_select_isotope_table_changed(self, index: int):
+        """Load the selected isotopes file and update shared.isotope_flags (+meta)."""
         if index < 0:
-            self.current_flag_file = None
+            self.current_isotope_file = None
             with shared.write_lock:
                 shared.isotope_flags = []
                 try:
@@ -1347,7 +1331,7 @@ class Tab2(QWidget):
             return
 
         fname = self.select_flag_table.itemData(index)
-        self.current_flag_file = fname
+        self.current_isotope_file = fname
         flag_path = Path(shared.LIB_DIR) / fname
 
         rows, meta = self._load_isotope_table(flag_path)
@@ -1365,7 +1349,7 @@ class Tab2(QWidget):
         if ver is not None: extras.append(f"v{ver}")
         if upd:             extras.append(str(upd))
         tag = f" ({', '.join(extras)})" if extras else ""
-        logger.info(f"   ✅ Loaded isotope flags from: {fname}{tag} [{len(rows)} lines]")
+        logger.info(f"   ✅ Loaded isotopes from: {fname}{tag} [{len(rows)} lines]")
 
 
     def on_sigma_changed(self, val):
@@ -1633,15 +1617,6 @@ class Tab2(QWidget):
 
         if added:
             self._recompute_all_peaks()
-
-    def _on_clear_rois_clicked(self):
-        with shared.write_lock:
-            shared.peak_list = []
-        if hasattr(self, "_cal_points"):
-            self._cal_points.clear()
-        self.roi_table.setRowCount(0)
-        self.update_histogram()
-
 
     
     def _append_peak_indices(self, i0: int, i1: int, uid: int | None = None):
@@ -1953,14 +1928,6 @@ class Tab2(QWidget):
             ch = int(round(float(x)))
         return max(0, min(int(round(ch)), n - 1))
 
-    def _ch_to_gui(self, ch: float) -> float:
-        with shared.write_lock:
-            cal_on = bool(shared.cal_switch)
-            coeffs = [shared.coeff_1, shared.coeff_2, shared.coeff_3]
-        ch = float(ch)
-        if cal_on and any(coeffs):
-            return float(np.poly1d(coeffs)(ch))
-        return ch
 
     def _ensure_peak_uids(self):
         """Ensure each entry in shared.peak_list has a unique 'uid'. Return a snapshot."""

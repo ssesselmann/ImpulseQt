@@ -526,6 +526,7 @@ def process_01(filename, compression, device, t_interval):
     counts       = 0
     last_counts  = 0
     elapsed      = 0
+    tt           = 0 # device seconds; default 0 in case no STAT is received
     max_bins     = 8192
     spec_notes   = ""
 

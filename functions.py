@@ -1202,8 +1202,7 @@ def capture_pulse_data():
         logger.error(f"  ❌ fn capture_pulse_data: {e} ")
 
 
-
-def get_flag_options():
+def get_isotope_options():
     """
     Return [{'label','value'}] for each JSON flag file in shared.LIB_DIR,
     excluding 'isotopes.json'. Sorted by label.
@@ -1225,7 +1224,7 @@ def get_flag_options():
             label = f.stem.replace('-', ' ').replace('_', ' ').title()
             options.append({'label': label, 'value': f.name})
     except Exception as e:
-        logger.error(f"[  ❌ fn Fget_flag_options {path}: {e} ")
+        logger.error(f"[  ❌ fn get_isotope_options {path}: {e} ")
         return []
 
     return options   
