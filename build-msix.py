@@ -12,6 +12,7 @@ Usage: python build_msix.py
 import shutil, sys, subprocess
 from pathlib import Path
 from textwrap import dedent
+from shared import __version__
 
 # ========= EDIT THESE VALUES =========
 DIST   = Path(r"C:\Users\steven-elitedesk\Documents\ImpulseQt\dist")
@@ -26,7 +27,7 @@ PUBLISHER       = "CN=14005534-7E89-4B87-AF78-8BF52D151431"
 DISPLAY_NAME    = "ImpulseQt"
 PUBLISHER_NAME  = "Steven Sesselmann"
 DESCRIPTION     = "Gamma spectrometry interface and analysis tool."
-VERSION         = "3.1.6.0"
+VERSION         = __version__
 ARCH            = "x64"
 
 # Your project assets folder (where you generated the icons)
