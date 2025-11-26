@@ -7,9 +7,11 @@ dist/*
 build/*
 MSIX/*
 stage/*
+unpacked/*
 
 shproto/__pycache__/*
 shproto/.DS_Store/*
+assets/.DS_Store/*
 
 credentials.py
 appsigner.py
@@ -20,11 +22,6 @@ _arpack.cpython-310-darwin.so
 downloads.html
 impulseqt-downloads.html
 identifier.py
-assets/.DS_Store
-MSIX/ImpulseQt_x64.msix
-tab2-pre-mod.py
-/unpacked/ImpulseQt/_internal
-unpacked/ImpulseQt.exe
-unpacked/ImpulseQt/ImpulseQt.exe
-assets/.DS_Store
-assets/.DS_Store
+
+
+
