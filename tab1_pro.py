@@ -1,42 +1,27 @@
 # tab1_pro.py
 
+import threading
+from threading import Event
+
 import pyqtgraph as pg
+
 import functions as fn
 import shared
-import numpy as np
+from shared import logger, WHITE, LIGHT_GREEN, PINK, DARK_BLUE
 
-from qt_compat import QComboBox
-from qt_compat import QGridLayout
-from qt_compat import QGroupBox
-from qt_compat import QHBoxLayout
-from qt_compat import QHeaderView
-from qt_compat import QLabel
-from qt_compat import QLineEdit
-from qt_compat import QMovie
-from qt_compat import QPixmap
-from qt_compat import QPushButton
-from qt_compat import QSizePolicy
-from qt_compat import Qt
-from qt_compat import QTableWidgetItem
-from qt_compat import QTextEdit
-from qt_compat import QTimer
-from qt_compat import QVBoxLayout
-from qt_compat import QWidget
-from qt_compat import QFont
-from qt_compat import QBrush
-from qt_compat import QColor
-from qt_compat import QIntValidator
-from qt_compat import QPixmap
-from qt_compat import QCheckBox
-from qt_compat import QSlider
-from qt_compat import QSizePolicy
+from qt_compat import (
+    QComboBox, QHBoxLayout, QLabel, QPushButton, QSizePolicy, Qt,
+    QTextEdit, QTimer, QVBoxLayout, QWidget, QCheckBox, QSlider, QPixmap
+)
+
 from shapecatcher import shapecatcher
 from distortionchecker import distortion_finder
-from shared import logger, WHITE, LIGHT_GREEN, PINK, DARK_BLUE
+
 
 class Tab1ProWidget(QWidget):
 
     def __init__(self):
+
         super().__init__()
 
         tab1_pro_layout = QVBoxLayout(self)
@@ -162,11 +147,6 @@ class Tab1ProWidget(QWidget):
         self.curve_plot.setTitle("Distortion Curve")  
         self.curve_plot.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
-
-        # --- 3-column layout under controls ---
-        for widget in [self.help_text, self.pulse_plot, self.curve_plot]:
-            widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-
         # Use stretch factors to divide space evenly
         row_layout = QHBoxLayout()
         row_layout.addWidget(self.help_text, stretch=1)
@@ -243,12 +223,11 @@ class Tab1ProWidget(QWidget):
             label_row.addWidget(label)
 
         slider_layout.addLayout(label_row)
-        slider_container = QHBoxLayout()
-
+        
         slider_widget = QWidget()
         slider_widget.setLayout(slider_layout)
         slider_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-
+        
         slider_container = QHBoxLayout()
         slider_container.addWidget(slider_widget)
 
@@ -323,19 +302,52 @@ class Tab1ProWidget(QWidget):
         with shared.write_lock:
             shared.device = selected_index  # OK
 
+
     def run_shapecatcher(self):
-        logger.info("[INFO] Looking for pulses 🔎")
-        try:
-            pulses_left, pulses_right = shapecatcher()
 
+        # Ensure abort event exists
+        with shared.write_lock:
+            if not hasattr(shared, "shape_abort"):
+                shared.shape_abort = Event()
+            running = getattr(shared, "shape_running", False)
+
+        # If already running, treat click as stop
+        if running:
             with shared.write_lock:
-                shared.mean_shape_left  = pulses_left
-                shared.mean_shape_right = pulses_right
+                shared.shape_abort.set()
+            return
 
-            self.plot_shape()  
+        logger.info("[INFO] Looking for pulses 🔎")
 
-        except Exception as e:
-            logger.error(f"[ERROR] during shapecatcher: {e} ❌")
+        # Reset state
+        with shared.write_lock:
+            shared.shape_abort.clear()
+            shared.shape_running  = True
+            shared.shape_n_left   = 0
+            shared.shape_n_right  = 0
+            shared.shape_target   = shared.shapecatches
+
+        # Start/update timer (~3 Hz)
+        if not hasattr(self, "shape_timer"):
+            self.shape_timer = QTimer(self)
+            self.shape_timer.setInterval(333)
+            self.shape_timer.timeout.connect(self.plot_shape)
+        self.shape_timer.start()
+
+        # Single worker thread
+        def worker():
+            try:
+                shapecatcher(live_update=True, update_interval=0.33)
+            except Exception as e:
+                logger.error(f"[ERROR] during shapecatcher: {e} ❌")
+            finally:
+                with shared.write_lock:
+                    shared.shape_running = False
+
+        self.shape_thread = threading.Thread(target=worker, daemon=True)
+        self.shape_thread.start()
+
+
 
     def run_distortion_finder(self):
 
@@ -430,102 +442,129 @@ class Tab1ProWidget(QWidget):
         )
 
 
+    def init_pulse_plot(self):
+        pw = self.pulse_plot
+        pw.setBackground(DARK_BLUE)
+
+        pi = pw.getPlotItem()
+        pi.showGrid(x=True, y=True, alpha=0.18)
+
+        left_axis   = pi.getAxis("left")
+        bottom_axis = pi.getAxis("bottom")
+        left_axis.setPen(WHITE);   left_axis.setTextPen(WHITE)
+        bottom_axis.setPen(WHITE); bottom_axis.setTextPen(WHITE)
+
+        pi.setLabel("left", "Amplitude", units="% FS")
+        pi.setLabel("bottom", "Sample")
+
+        # safer across pyqtgraph versions: use positional args
+        try:
+            left_axis.setTickSpacing(1, 0.5)
+        except TypeError:
+            # some versions only accept kwargs
+            left_axis.setTickSpacing(major=1, minor=0.5)
+
+        # Create persistent curves (don’t recreate every update)
+        self._shape_curve_left = pi.plot(
+            [], [],
+            pen=pg.mkPen(LIGHT_GREEN, width=2),
+            symbol='o', symbolSize=6, symbolBrush=LIGHT_GREEN,
+            name="Left"
+        )
+        self._shape_curve_right = pi.plot(
+            [], [],
+            pen=pg.mkPen(PINK, width=2),
+            symbol='o', symbolSize=6, symbolBrush=PINK,
+            name="Right"
+        )
+        self._shape_curve_right.hide()
+
+        # Optional: a small status overlay
+        self._shape_text = pg.TextItem("", color=WHITE, anchor=(0, 1))
+        pi.addItem(self._shape_text)
+        self._shape_text.setPos(0, 0)   # will be repositioned each update
+
+
+    def _set_btn_role(self, button, role: str):
+        if button.property("btn") == role:
+            return
+        button.setProperty("btn", role)
+        button.style().unpolish(button)
+        button.style().polish(button)
+        button.update()
+
+
     def plot_shape(self):
         try:
-            # --- snapshot shared state ---
+            # ensure plot is initialized
+            if not hasattr(self, "_shape_curve_left"):
+                self.init_pulse_plot()
+
+            pw = self.pulse_plot
+            pi = pw.getPlotItem()
+
             with shared.write_lock:
-                mean_shape_left  = shared.mean_shape_left
-                mean_shape_right = shared.mean_shape_right
+                mean_shape_left  = list(shared.mean_shape_left) if shared.mean_shape_left else []
+                mean_shape_right = list(shared.mean_shape_right) if shared.mean_shape_right else []
                 sample_length    = shared.sample_length
                 stereo           = shared.stereo
 
+                running = getattr(shared, "shape_running", False)
+                nL      = getattr(shared, "shape_n_left", 0)
+                nR      = getattr(shared, "shape_n_right", 0)
+                target  = getattr(shared, "shape_target", 0)
+
+            done = (target > 0 and nL >= target and (not stereo or nR >= target))
+            btn = self.get_pulse_button
+
+            if running and not done:
+                self._set_btn_role(btn, "primary")
+                btn.setText(f"Stop pulse shape  (L {nL}/{target}, R {nR}/{target})" if stereo
+                            else f"Stop pulse shape  ({nL}/{target})")
+
+            elif done:
+                self._set_btn_role(btn, "primary")
+                btn.setText("Pulse shape complete (Re-run)")
+                if hasattr(self, "shape_timer"):
+                    self.shape_timer.stop()
+
+            else:
+                self._set_btn_role(btn, "primary")
+                btn.setText("Get pulse shape")
+                if hasattr(self, "shape_timer"):
+                    self.shape_timer.stop()
+
+            # always show something, even at 0 pulses
             if not mean_shape_left and not mean_shape_right:
-                return
+                mean_shape_left  = [0] * sample_length
+                mean_shape_right = [0] * sample_length
 
             def fit_length(data, n):
-                if len(data) > n:
-                    return data[:n]
-                return data + [0] * (n - len(data))
+                data = data[:n]
+                if len(data) < n:
+                    data += [0] * (n - len(data))
+                return data
 
             mean_shape_left  = fit_length(mean_shape_left,  sample_length)
             mean_shape_right = fit_length(mean_shape_right, sample_length)
+
             x_vals = list(range(sample_length))
 
-            # --- convert to % of full-scale (16-bit) ---
-            FULL_SCALE = 32767.0
-            scale = 100.0 / FULL_SCALE
+            scale = 100.0 / 32767.0
+            left_pct  = [v * scale for v in mean_shape_left]
+            right_pct = [v * scale for v in mean_shape_right]
 
-            mean_shape_left_pct  = [v * scale for v in mean_shape_left]
-            mean_shape_right_pct = [v * scale for v in mean_shape_right]
+            self._shape_curve_left.setData(x_vals, left_pct)
 
-            left_vals  = mean_shape_left_pct  if mean_shape_left_pct  else [0.0]
-            right_vals = mean_shape_right_pct if mean_shape_right_pct else [0.0]
+            if stereo:
+                self._shape_curve_right.show()
+                self._shape_curve_right.setData(x_vals, right_pct)
+            else:
+                self._shape_curve_right.hide()
 
-            y_peak = max(
-                abs(max(left_vals)),
-                abs(min(left_vals)),
-                abs(max(right_vals)),
-                abs(min(right_vals)),
-            )
-
-            # values are in %, pulses ~10–15%, so we can keep margin modest
-            y_margin = max(2, y_peak * 0.10)
-            y_min, y_max = -y_margin, y_peak + y_margin
-
-            # --- canvas / axes styling ---
-            pw = self.pulse_plot
-            pw.clear()
-            pw.setBackground(DARK_BLUE)
-
-            pi = pw.getPlotItem()
-
-            # axes: lines + tick labels in white
-            left_axis   = pi.getAxis("left")
-            bottom_axis = pi.getAxis("bottom")
-
-            left_axis.setPen(WHITE)
-            left_axis.setTextPen(WHITE)
-            bottom_axis.setPen(WHITE)
-            bottom_axis.setTextPen(WHITE)
-
-            # label axis as % of full scale
-            pi.setLabel("left", "Amplitude", units="% FS")
-            pi.setLabel("bottom", "Sample")
-
-            # --- tick spacing: 1% major ticks ---
-            # major = 1 (%), minor = 0.5 (%) – tweak minor if you like
-            left_axis.setTickSpacing(major=1, minor=0.5)
-
-            # grid
-            pi.showGrid(x=True, y=True, alpha=0.18)
-
-            # --- ranges ---
-            pi.setXRange(0, sample_length)
-            pi.setYRange(y_min, y_max)
-
-            # --- traces (in %FS) ---
-            pw.plot(
-                x_vals,
-                mean_shape_left_pct,
-                pen=pg.mkPen(LIGHT_GREEN, width=2),
-                symbol='o',
-                symbolSize=6,
-                symbolBrush=LIGHT_GREEN,
-                name="Left"
-            )
-
-            if stereo and any(mean_shape_right):
-                pw.plot(
-                    x_vals,
-                    mean_shape_right_pct,
-                    pen=pg.mkPen(PINK, width=2),
-                    symbol='o',
-                    symbolSize=6,
-                    symbolBrush=PINK,
-                    name="Right"
-                )
-
-            self.draw_mean_shape_plot()
+            # keep X fixed; let Y auto-range if you prefer
+            pi.setXRange(0, sample_length - 1, padding=0.0)
+            # pi.enableAutoRange(axis='y', enable=True)
 
         except Exception as e:
             logger.error(f"[ERROR] in plot_shape: {e} ❌")
