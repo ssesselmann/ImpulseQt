@@ -109,7 +109,12 @@ def distortion_finder(stereo):
 
     distortion_left.sort()
 
-    max_left = distortion_left[int(shapecatches*0.96)]
+    n = len(distortion_left)
+    if n == 0:
+        return [], []
+    idx = min(int(n * 0.96), n - 1)
+    max_left = distortion_left[idx]
+
 
     logger.info(f"   ✅ Left Distortion at 96% {max_left}")
     
