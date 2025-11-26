@@ -1,7 +1,11 @@
 ImpulseQt
 ---------
 
-ImpulseQt v3.1.7 – Changelog
+ImpulseQt v3.1.8.0 – Changelog
+–––––––––––––––––––––––––––––
+• Pulse shape acquisition plot on tab-1 has live updates (audio version)
+
+ImpulseQt v3.1.7.0 – Changelog
 –––––––––––––––––––––––––––––
 • Centroid column in the calibration table now always displays bin/channel values. ✅
 • Peak calibration table is now saved in settings and restored on startup. ✅
@@ -15,14 +19,14 @@ ImpulseQt v3.1.7 – Changelog
 
 Distortion metric redefined as a percentage mismatch between each pulse and the mean pulse shape, giving a stable, interpretable 0–100 scale for “shape tolerance.” ✅
 
-ImpulseQt v3.1.6 – Changelog
+ImpulseQt v3.1.6.0 – Changelog
 –––––––––––––––––––––––––––––
 • Removed isotope checkbox and redundant code ✅
 • Removed calibration window ✅
 • Integrated calibration into peaks table ✅
 • New Isotope library updater ✅
 
-ImpulseQt v3.1.5 – Changelog
+ImpulseQt v3.1.5.0 – Changelog
 –––––––––––––––––––––––––––––
 • Add smooth count rate number to count rate histogram ✅
 • Add Log function to count rate histogram ✅
