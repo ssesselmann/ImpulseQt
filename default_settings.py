@@ -3,12 +3,12 @@
 from threading import Lock, Event
 
 DEFAULT_SETTINGS = {
-	"bin_size" : 15,
-	"bin_size_2" :15,
+	"bin_size" : 10,
+	"bin_size_2" :10,
 	"bin_size_hmp": 60,
-	"bins": 2048,
-	"bins_2": 2048,
-	"bins_hmp": 512,
+	"bins": 1024,
+	"bins_2": 1024,
+	"bins_hmp": 1024,
 	"cached_device_info": None,
 	"cached_device_info_ts": 0.0,
 	"cal_switch": False,
@@ -90,7 +90,7 @@ DEFAULT_SETTINGS = {
 	"tempcal_table": [],
 	"theme": "light-theme",
 	"threshold": 200,
-	"tolerance": 50000,
+	"tolerance": 50,
 	"user_settings": "",
 	"val_flag": False,
 	"window_pos_x": 100,
