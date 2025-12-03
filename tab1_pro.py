@@ -92,7 +92,7 @@ class Tab1ProWidget(QWidget):
         top_controls.setSpacing(15)
         top_controls.addWidget(QLabel("Device"))
         top_controls.addWidget(self.device_selector)
-        top_controls.addWidget(QLabel("Sample Rate"))
+        top_controls.addWidget(QLabel("Sample Rate Hz"))
         top_controls.addWidget(self.sample_rate)
         top_controls.addWidget(QLabel("Sample length"))
         top_controls.addWidget(self.sample_size)
