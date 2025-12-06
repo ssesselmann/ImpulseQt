@@ -5,6 +5,8 @@ ImpulseQt v3.1.8.0 – Changelog
 –––––––––––––––––––––––––––––
 • Pulse shape acquisition plot on tab-1 has live updates (audio version)
 • Set more sensible default values for first launch
+• Fixed minor bugs
+
 
 ImpulseQt v3.1.7.0 – Changelog
 –––––––––––––––––––––––––––––
