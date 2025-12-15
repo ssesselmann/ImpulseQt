@@ -23,7 +23,7 @@ run_flag_lock   = Lock()
 
 # --------------------
 # Versioning
-__version__ = "3.1.8.0"
+__version__ = "3.1.9.0"
 # --------------------
 
 SETTINGS = {}  
@@ -278,6 +278,11 @@ window_pos_y = 0
 window_width = 0
 window_height = 0
 
+tab3_hist_view = False
+tab3_y_fixed   = False
+tab3_ymax      = 100
+tab3_smooth_on  = True
+tab3_smooth_win = 5
 
 
 # -------------------------------
@@ -379,7 +384,11 @@ SETTINGS_SCHEMA = {
     "window_pos_x": {"type": "int", "default": 50},
     "window_pos_y": {"type": "int", "default": 50},
     "window_width": {"type": "int", "default": 1280},
-    "window_height": {"type": "int", "default": 720}
+    "tab3_hist_view": {"type": "bool", "default": False},
+    "tab3_y_fixed": {"type": "bool", "default": False},
+    "tab3_ymax": {"type": "int", "default": 100},
+    "tab3_smooth_on": {"type": "Bool", "default": False},
+    "tab3_smooth_win": {"type": "int", "default": 3}
 }
 
 def read_flag_data(path):
