@@ -278,7 +278,7 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
         self.tabs.addTab(self.tab1, "Device Setup")
         self.tabs.addTab(self.tab2, "2D Histogram")
-        self.tabs.addTab(self.tab3, "Waterfall")
+        self.tabs.addTab(self.tab3, "3D Histogram")
         self.tabs.addTab(self.tab4, "Count Rate")
         self.tabs.addTab(self.tab5, "Manual")
         self.tabs.currentChanged.connect(self.on_tab_changed)
