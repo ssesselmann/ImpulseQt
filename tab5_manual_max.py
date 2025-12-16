@@ -133,83 +133,78 @@ def get_max_manual_html():
            <h3>Functions below the plot</h3>
             <p>ImpulseQt was designed to have easy access and high visibility of all settings, somthing which is sadly missing in many commersial MCA programs where settings are hidden in hard to find windows. Following are the main settings the user will need.</p>
 
-            <li><strong>START</strong>
-            <br>Click to start histogram recording -- this start button also controls the Count Rate histogram on tab-4</li><br>
+            <li><strong>START</strong></li>
+            Click to start histogram recording -- this start button also controls the Count Rate histogram on tab-4<br>
 
-            <li><strong>STOP</strong>
-            <br>Click to stop histogram recording -- this stop button also controls the Count Rate histogram on tab-4</li><br>
-
-
-            <li><strong>Stop at counts</strong>
-            <br>This is a stop condition, the spectrometer will automatically stop after n counts.</li><br>
-
-            <li><strong>Stop at seconds</strong>
-            <br>This is a stop condition, the spectrometer will automatically stop after n seconds.</li><br>    
-
-            <li><strong>Filename</strong>
-            <br>User defined filename input - enter a filename without the [.json] extension.</li><br> 
-
-            <li><strong>Select bins</strong>
-            <br>Sets the resolution of the x axis (shared with waterfall). Bins are commonly called channels, higher bin counts improve resolution but increases file size and CPU load.</li><br> 
-
-            <li><strong>Open spectrum file</strong>
-            <br>Select and plot a previously recorded spectrum file, the plot line will render in light green.</li><br>
-
-            <li><strong>Comparison spectrum</strong>
-            <br>Select a second file for comparison, this feature allows the user to super-impose a second spectrum. The dropdown selection menu lists all compatible files in the user data directory followed by synthetic gamma line spectra of almost 400 known isotopes. Synthetic spectra are prefixed by "•" i.e. • cs137 . 
-            The isotope library lives in the user data directory at /lib/isotopes.json. To see the comparison spectrum (red line plot) check the box called 'Show Comparison'.</li><br>
-
-            <li><strong>Subtract comparison</strong>
-            <br>After selecting a comparison plot, checking the 'Subtract comparison' box, will subtract the comparison spectrum from the main spectrum, bin for bin. This feature is useful for background subtraction. When 'Subract comparison' is active, the plot line will render in white.</li><br>  
-
-            <li><strong>Download csv</strong>
-            <br>Downloads the primary spectrum to your downloads directory.</li><br>
-
-            <li><strong>Select Isotope Library</strong>
-            <br>Select a library of common or less common isotope flags. These libraries live in the ImpulseQtData Directory and can be manually edited.</li><br>
-
-            <li><strong>Energy per bin</strong>
-            <br>Enhances low counts by factoring (x * y).</li><br>
-
-            <li><strong>Log</strong>
-            <br>Expresses (y) axis in log scale.</li><br>
-
-            <li><strong>Calibration Checkbox</strong>
-            <br>Turns on second order polynomial calibration </li><br>
-
-            <li><strong>Show Isotopes</strong>
-            <br>Shows matching isotope flags, this functions only works with calibration and sigma turned on</li><br>
+            <li><strong>STOP</strong></li>
+            Click to stop histogram recording -- this stop button also controls the Count Rate histogram on tab-4<br>
 
 
-            <li><strong>Sigma</strong>
-            <br>Produces a gaussian curve overlay, sigma wide for easy identification of smaller peaks. 
-            <br>This slider also sets the peak detection tolerance for the Auto peaks function</li><br>
+            <li><strong>Stop at counts</strong></li>
+            This is a stop condition, the spectrometer will automatically stop after n counts.<br>
 
-            <li><strong>Auto Select Width Slider</strong>
-            <br>This slider sets the peak width for the Auto Peaks function, moving the slider to the right increases the number of bins required for a peak to be detected (less sensitive)</li><br>
+            <li><strong>Stop at seconds</strong></li>
+            This is a stop condition, the spectrometer will automatically stop after n seconds.<br>    
 
-            <li><strong>Auto Peaks</strong>
-            <br>Clicking this button will auto select peaks up to a maximum of 12 peaks. The sensitivity can be set using the Sigma slider and the Auto Select Width slider.
-            </li><br>
+            <li><strong>Filename</strong></li>
+            User defined filename input - enter a filename without the [.json] extension.<br> 
 
-            <li><strong>Manual Peak Selection</strong>
-            <br>Double click on any peak to select a region of interest (ROI).
-            <br>Click and drag the edges of the yellow highlight to adjust the ROI.
-            </li><br>
+            <li><strong>Select bins</strong></li>
+            Sets the resolution of the x axis (shared with waterfall). Bins are commonly called channels, higher bin counts improve resolution but increases file size and CPU load.<br> 
 
-            <li><strong>Clear Peaks</strong>
-            <br>Click to remove all highlighted regions of interest.
-            </li><br>
+            <li><strong>Open spectrum file</strong></li>
+            Select and plot a previously recorded spectrum file, the plot line will render in light green.<br>
 
-            <li><strong>Download Peaks</strong>
-            <br>Downloads the peaks table as a csv file (filename_peaks.csv)
-            </li><br>
+            <li><strong>Comparison spectrum</strong></li>
+            Select a second file for comparison, this feature allows the user to super-impose a second spectrum. The dropdown selection menu lists all compatible files in the user data directory followed by synthetic gamma line spectra of almost 400 known isotopes. Synthetic spectra are prefixed by "•" i.e. • cs137 . 
+            The isotope library lives in the user data directory at /lib/isotopes.json. To see the comparison spectrum (red line plot) check the box called 'Show Comparison'.<br>
 
-            <li><strong>Pop Out Table</strong>
-            <br>Pop out the peaks table into a separate window to declutter the screen. The table can now be moved off to the side and resized if required. 
-            </li><br>
+            <li><strong>Subtract comparison</strong></li>
+            After selecting a comparison plot, checking the 'Subtract comparison' box, will subtract the comparison spectrum from the main spectrum, bin for bin. This feature is useful for background subtraction. When 'Subract comparison' is active, the plot line will render in white.<br>  
 
-            <li><strong>Linearity Overlay</strong>
+            <li><strong>Download csv</strong></li>
+            Downloads the primary spectrum to your downloads directory.<br>
+
+            <li><strong>Select Isotope Library</strong></li>
+            Select a library of common or less common isotope flags. These libraries live in the ImpulseQtData Directory and can be manually edited.<br>
+
+            <li><strong>Energy per bin</strong></li>
+            Enhances low counts by factoring (x * y).<br>
+
+            <li><strong>Log</strong></li>
+            Expresses (y) axis in log scale.<br>
+
+            <li><strong>Calibration Checkbox</strong></li>
+            Turns on second order polynomial calibration<br>
+
+            <li><strong>Show Isotopes</strong></li>
+            Shows matching isotope flags, this functions only works with calibration and sigma turned on<br>
+
+
+            <li><strong>Sigma</strong></li>
+            Produces a gaussian curve overlay, sigma wide for easy identification of smaller peaks. 
+            <br>This slider also sets the peak detection tolerance for the Auto peaks function<br>
+
+            <li><strong>Auto Select Width Slider</strong></li>
+            This slider sets the peak width for the Auto Peaks function, moving the slider to the right increases the number of bins required for a peak to be detected (less sensitive)<br>
+
+            <li><strong>Auto Peaks</strong></li>
+            Clicking this button will auto select peaks up to a maximum of 12 peaks. The sensitivity can be set using the Sigma slider and the Auto Select Width slider.<br>
+
+            <li><strong>Manual Peak Selection</strong></li>
+            Double click on any peak to select a region of interest (ROI).
+            <br>Click and drag the edges of the yellow highlight to adjust the ROI.<br>
+
+            <li><strong>Clear Peaks</strong></li>
+            Click to remove all highlighted regions of interest.<br>
+
+            <li><strong>Download Peaks</strong></li>
+            Downloads the peaks table as a csv file (filename_peaks.csv)<br>
+
+            <li><strong>Pop Out Table</strong></li>
+            Pop out the peaks table into a separate window to declutter the screen. The table can now be moved off to the side and resized if required. <br>
+
+            <li><strong>Linearity Overlay</strong></li>
             <p>
             The linearity overlay provides a visual check of how well the current energy
             calibration matches the reference peak energies. Each calibration point in the
@@ -229,11 +224,11 @@ def get_max_manual_html():
             (upward or downward) reveals regions where the calibration deviates from the
             reference. This overlay helps you decide whether your current calibration (and
             choice of calibration points) is adequate across the full energy range.
-            </p></li>
+            </p><br>
 
 
-            <li><strong>Notes</strong>
-            <br>Input for spectrum specific notes (saves immediately to spectrum file).</li><br>
+            <li><strong>Notes</strong></li>
+            Input for spectrum specific notes (saves immediately to spectrum file).<br>
 
             <h3>Calibration Procedure</h3>
             <ol>
@@ -256,10 +251,41 @@ def get_max_manual_html():
 
                        
             
-            <h2>Waterfall Tab</h2>
-            <p>This tab displays the gamma spectrum as a heatmap over time, also known as a waterfall plot. It provides an intuitive way to visualize radiation and makes it easy to spot ‘hot zones’ at a glance. This plot gets most of it's settings like bins, bin size, calibration etc. from the main histogram tab2. It is highly recommended to set up and calibrate the regular histogram before running the waterfall plot. 
-                The screen plot can hold up to one hour of data before it starts purgin history, but all data is being saved to json file in the user directory and can also be downloaded as a csv file. 
+            <h2>3D Histogram</h2>
+            <p>
+              This tab inherits its settings and calibration from Tab 2. Before recording a 3D histogram,
+              run a normal (2D) histogram in Tab 2 and confirm the calibration and settings are correct.
+              There are two viewing modes for the 3D histogram and one download function.
+            </p>
+
+            <li><strong>Filename Input</strong></li>
+              Choose a filename before you start. The 3D recording file is separate from the 2D histogram file
+              and is saved with the suffix <code>_hmp.json</code>.<br>
+
+            <li><strong>Waterfall Heatmap View</strong></li>
+              The Waterfall Heatmap is the default view. A new row is added at each time interval, and counts per
+              channel are displayed as a colour heatmap. Approximate count levels can be read from the colour legend.
+              The x-axis can be calibrated by enabling <b>Calibration</b> (calibration is inherited from Tab 2).
+              Optional modes include <b>Energy by bin</b> and <b>Log(y)</b> for improved contrast.<br>
             
+
+            <li><strong>Last Histogram View</strong></li>
+              Enable <b>Last interval (histogram)</b> to display only the most recent interval as a line plot (similar to an oscilloscope).
+              This view is most useful with a fixed y-axis maximum (set slightly above the expected peak counts per channel).
+              Optional smoothing is available, averaging across 3, 5, 7… channels to reduce noise.<br>
+            
+
+            <li><strong>Download array</strong></li>
+              After recording, you can download the 3D histogram array for further analysis using <b>Download array</b>.<br>
+            
+
+            <li><strong>Full Screen View</strong></li>
+              Open the plot in full screen for improved visibility when working with high channel counts.<br>
+            
+
+
+
+
             <h2>Count Rate Tab</h2>
             <p>This window contains a large count rate chart with seconds on the x axis and counts on the y axis, it is associated with the main histogram and plots continuously during data recording. The window has a maximum width of 300 seconds moving, but the check box can be ticked to show all.  There is also a convenient slider which allows for averaging of the plot data.</p>
                 <li>Show Log checkbox will show the y-axis in log scale.</li>
