@@ -16,6 +16,7 @@ from qt_compat import QComboBox
 from qt_compat import QDialog
 from qt_compat import QDialogButtonBox
 from qt_compat import QFont
+from qt_compat import QFrame
 from qt_compat import QGridLayout
 from qt_compat import QHBoxLayout
 from qt_compat import QIntValidator
@@ -31,6 +32,7 @@ from qt_compat import QVBoxLayout
 from qt_compat import QWidget
 from qt_compat import Signal
 from qt_compat import Slot
+from qt_compat import QSlider
 from qt_compat import QGroupBox
 from qt_compat import QIcon
 from viewer_full_hmp import FullRecordingDialog, load_full_hmp_from_json
@@ -43,7 +45,7 @@ from matplotlib.figure import Figure
 from matplotlib import cm
 from datetime import datetime, timedelta
 from collections import deque 
-from shared import logger, MONO, START, STOP, BTN, BUD, FOOTER, DLD_DIR, USER_DATA_DIR, BIN_OPTIONS, DARK_BLUE, ICON_PATH
+from shared import logger, MONO, START, STOP, BTN, BUD, FOOTER, DLD_DIR, USER_DATA_DIR, BIN_OPTIONS, DARK_BLUE, ICON_PATH, LIGHT_GREEN
 from functions import (
     load_histogram_hmp, 
     get_options_hmp, 
@@ -76,6 +78,7 @@ class Tab3(QWidget):
             bins        = shared.bins
             max_counts  = shared.max_counts
             max_seconds = shared.max_seconds 
+            tab3_ymax   = shared.tab3_ymax
 
         # Main layout for the entire widget
         main_layout = QVBoxLayout(self)
@@ -204,8 +207,87 @@ class Tab3(QWidget):
         self.cal_switch.setChecked(shared.cal_switch)
         self.cal_switch.stateChanged.connect(self.update_graph)
         self.cal_switch.stateChanged.connect(lambda state: self.on_checkbox_toggle("cal_switch", state))
-        top_left_col.addWidget(self.cal_switch)        
+        top_left_col.addWidget(self.cal_switch)
 
+
+        # BEGIN BOX ================================================
+        #self.hist_box = QFrame()
+        self.hist_box = QGroupBox("Interval Histogram")
+
+        self.hist_box.setObjectName("tab3_hist_box")
+
+        # thin light-blue outline + a touch of padding + rounded corners
+        self.hist_box.setStyleSheet("""
+        QFrame#tab3_hist_box {
+            border: 1px solid rgba(120, 180, 255, 180);
+            border-radius: 6px;
+            padding: 6px;
+        }
+        """)
+
+        hist_box_col = QVBoxLayout(self.hist_box)
+        hist_box_col.setContentsMargins(6, 6, 6, 6)
+        hist_box_col.setSpacing(6)
+
+        # NEW: View mode switch (heatmap vs last-interval histogram)
+        if not hasattr(shared, "tab3_hist_view"):
+            shared.tab3_hist_view = False  # default
+
+        self.hist_view_switch = QCheckBox("Switch view to histogram")
+        self.hist_view_switch.setChecked(shared.tab3_hist_view)
+        self.hist_view_switch.stateChanged.connect(self.update_graph)
+        self.hist_view_switch.stateChanged.connect(
+            lambda state: self.on_checkbox_toggle("tab3_hist_view", state)
+        )
+        hist_box_col.addWidget(self.hist_view_switch)
+
+        # NEW: Fixed Y scale (histogram view)
+        if not hasattr(shared, "tab3_y_fixed"):
+            shared.tab3_y_fixed = False
+        if not hasattr(shared, "tab3_ymax"):
+            shared.tab3_ymax = 100  # sensible default
+
+        self.y_fixed_switch = QCheckBox("Fixed Y max")
+        self.y_fixed_switch.setChecked(shared.tab3_y_fixed)
+        self.y_fixed_switch.stateChanged.connect(self.update_graph)
+        self.y_fixed_switch.stateChanged.connect(
+            lambda state: self.on_checkbox_toggle("tab3_y_fixed", state)
+        )
+        hist_box_col.addWidget(self.y_fixed_switch)
+
+        self.ymax_label = QLabel("Y axis max counts")
+        self.ymax_label.setProperty("typo", "p1")
+        hist_box_col.addWidget(self.ymax_label)
+
+        self.ymax_input = QLineEdit(str(shared.tab3_ymax))
+        self.ymax_input.setValidator(QIntValidator(1, 10_000_000, self))
+        self.ymax_input.textChanged.connect(lambda text: self.on_text_changed(text, "tab3_ymax"))
+        hist_box_col.addWidget(self.ymax_input)
+
+        # Optional: disable input unless Fixed Y is enabled
+        self.ymax_input.setEnabled(shared.tab3_y_fixed)
+        self.y_fixed_switch.stateChanged.connect(
+            lambda _: self.ymax_input.setEnabled(self.y_fixed_switch.isChecked())
+        )
+
+
+        # Slider + readout (0 = off)
+        win0 = int(getattr(shared, "tab3_smooth_win", 21))
+
+        self.smooth_label = QLabel(f"Smooth window: {win0} (off)" if win0 <= 0 else f"Smooth window: {win0}")
+        self.smooth_label.setProperty("typo", "p1")
+        hist_box_col.addWidget(self.smooth_label)
+
+        self.smooth_slider = QSlider(Qt.Horizontal)
+        self.smooth_slider.setRange(0, 31)   # ✅ allow 0 = off
+        self.smooth_slider.setValue(win0)
+        self.smooth_slider.valueChanged.connect(self.on_smooth_win_changed)
+        hist_box_col.addWidget(self.smooth_slider)
+
+
+        # finally: add the framed box to your existing column layout
+        top_left_col.addWidget(self.hist_box)
+        # END BOX ================================================
 
 
         # END LEFT COL
@@ -267,7 +349,7 @@ class Tab3(QWidget):
         top_right_col.addWidget(self.dld_array_button)
 
         # View full recording button
-        self.view_full_btn = QPushButton("View full heatmap")
+        self.view_full_btn = QPushButton("View full screen")
         self.view_full_btn.setProperty("btn", "primary")
         self.view_full_btn.clicked.connect(self.on_view_full_clicked)
         top_right_col.addWidget(self.view_full_btn)
@@ -377,20 +459,27 @@ class Tab3(QWidget):
 
 
     def load_switches(self):
-
         with shared.write_lock:
-            log_state = shared.log_switch
-            epb_state = shared.epb_switch
-            cal_state = shared.cal_switch
+            log_state  = shared.log_switch
+            epb_state  = shared.epb_switch
+            cal_state  = shared.cal_switch
+            hist_state = getattr(shared, "tab3_hist_view", False)
+            y_fixed = getattr(shared, "tab3_y_fixed", False)
+            y_max   = shared.tab3_ymax
 
+        self.y_fixed_switch.setChecked(y_fixed)
+        self.ymax_input.setText(str(y_max))
+        self.ymax_input.setEnabled(y_fixed)
         self.log_switch.setChecked(log_state)
         self.cal_switch.setChecked(cal_state)
         self.epb_switch.setChecked(epb_state)
+        self.hist_view_switch.setChecked(hist_state)
+
 
 
     def on_text_changed(self, text, key):
         try:
-            if key in {"max_counts", "t_interval", "max_seconds"}:
+            if key in {"max_counts", "t_interval", "max_seconds", "tab3_ymax"}:
                 with shared.write_lock:
                     setattr(shared, key, int(text))
                     shared.save_settings()   # <-- persist
@@ -419,6 +508,30 @@ class Tab3(QWidget):
             shared.save_settings()
 
         self.update_graph()    
+
+    
+    def on_smooth_win_changed(self, v: int):
+        v = int(v)
+
+        if v <= 0:
+            shared.tab3_smooth_win = 0
+            self.smooth_label.setText("Smooth window: 0 (off)")
+            self.update_graph()
+            return
+
+        # force odd for a symmetric window
+        if v % 2 == 0:
+            v += 1
+            # prevent recursion storms
+            self.smooth_slider.blockSignals(True)
+            self.smooth_slider.setValue(v)
+            self.smooth_slider.blockSignals(False)
+
+        shared.tab3_smooth_win = v
+        self.smooth_label.setText(f"Smooth window: {v}")
+        self.update_graph()
+
+
 
     def refresh_file_list(self):
 
@@ -506,15 +619,12 @@ class Tab3(QWidget):
 
         if running:
             logger.warning("Can not open full view while running !")
-            QMessageBox.warning(
-                self,
-                "Not Allowed",
-                "Can not open full view while running !"
-            )
+            QMessageBox.warning(self, "Not Allowed", "Can not open full view while running !")
             return
 
-        # Otherwise, proceed normally
         try:
+            from viewer_full_hmp import load_full_hmp_from_json, FullRecordingDialog  # <-- important
+
             json_path = USER_DATA_DIR / f"{shared.filename_hmp}_hmp.json"
             if not json_path.exists():
                 from qt_compat import QFileDialog
@@ -525,7 +635,13 @@ class Tab3(QWidget):
                     return
                 json_path = Path(picked)
 
-            Z, x_axis, coeffs, t_interval = self._load_full_hmp_from_json(json_path)
+            # NOTE: viewer_full_hmp loader expects fallback_t_interval
+            Z, x_axis, coeffs, t_interval = load_full_hmp_from_json(
+                json_path,
+                fallback_t_interval=int(getattr(shared, "t_interval", 1))
+            )
+
+            hist_view = getattr(shared, "tab3_hist_view", False)
 
             dlg = FullRecordingDialog(
                 parent=self,
@@ -536,8 +652,14 @@ class Tab3(QWidget):
                 cal_switch=shared.cal_switch,
                 log_switch=shared.log_switch,
                 epb_switch=shared.epb_switch,
-                filename_hmp=shared.filename_hmp
+                filename_hmp=shared.filename_hmp,
+                hist_view=hist_view,
+                y_fixed=getattr(shared, "tab3_y_fixed", False),
+                y_max_user=getattr(shared, "tab3_ymax", 100),
+                smooth_on=getattr(shared, "tab3_smooth_on", True),
+                smooth_win=getattr(shared, "tab3_smooth_win", 21),
             )
+
             dlg.showMaximized()
             dlg.exec()
 
@@ -722,6 +844,17 @@ class Tab3(QWidget):
             QMessageBox.critical(self, "Error", f"Failed to export CSV:\n{e}")
 
 
+    def smooth_channels(y, win=7):
+        win = int(win)
+        if win < 2:
+            return y
+        if win % 2 == 0:
+            win += 1  # make it odd
+        kernel = np.ones(win, dtype=float) / win
+        return np.convolve(y, kernel, mode="same")
+
+
+
     # ------------------------------------------------------------------
 
     def update_graph(self):
@@ -742,8 +875,13 @@ class Tab3(QWidget):
                 elapsed      = shared.elapsed
                 bins         = shared.bins
                 coeffs       = [shared.coeff_1, shared.coeff_2, shared.coeff_3]
-               
+                hist_view    = shared.tab3_hist_view
+                y_fixed      = shared.tab3_y_fixed
+                y_max_user   = shared.tab3_ymax
+                smooth_on    = shared.tab3_smooth_on
+                win          = shared.tab3_smooth_win
 
+               
             # Ensure we have something to display
             if not data or bins <= 0:
                 logger.warning("👆 Plot data empty or bins <= 0")
@@ -756,6 +894,129 @@ class Tab3(QWidget):
             n_rows = len(rows)
             if n_rows == 0:
                 return
+
+
+            # ---------------------------------------------------------
+            # HISTOGRAM VIEW (plot LAST ROW ONLY as a line)
+            # ---------------------------------------------------------
+            if hist_view:
+                # --- take LAST ROW only ---
+                last = rows[-1]
+                y = np.zeros(bins, dtype=float)
+
+                if isinstance(last, (list, tuple)):
+                    rlen = len(last)
+                    if rlen >= bins:
+                        y[:] = last[:bins]
+                    elif rlen > 0:
+                        y[:rlen] = last
+                else:
+                    logger.warning(f"👆 Unexpected last-row type: {type(last)}")
+                    return
+
+                total_counts = float(np.sum(y))                 # raw sum of counts in this interval
+                cps = total_counts / max(1, int(t_interval))    # counts per second (nice extra)
+
+                bin_indices = np.arange(bins)
+                x_axis = bin_indices.astype(float)
+
+                # Energy-per-bin weighting (optional)
+                if epb_switch:
+                    meanx = np.mean(x_axis)
+                    denom = meanx if meanx != 0 else 1.0
+                    y *= (x_axis / denom)
+
+                # --- Smooth across CHANNELS (x-axis) ---
+
+                win = int(getattr(shared, "tab3_smooth_win", 21))
+                if win > 1:
+                    if win % 2 == 0:
+                        win += 1
+                    kernel = np.ones(win, dtype=float) / win
+                    y = np.convolve(y, kernel, mode="same")
+
+
+                # Log scaling
+                if log_switch:
+                    y[y <= 0] = 0.1
+                    y = np.log10(y)
+
+                # Calibration for x-axis
+                if cal_switch:
+                    x_axis = coeffs[0] * bin_indices**2 + coeffs[1] * bin_indices + coeffs[2]
+
+                # Draw
+                self.figure.clf()
+                self.ax = self.figure.add_subplot(111, facecolor="#0b1d38")
+
+                self.ax.text(
+                    0.99, 0.99,
+                    f"Σ {total_counts:,.0f}",
+                    transform=self.ax.transAxes,
+                    ha="right", va="top",
+                    fontsize=14, fontweight="bold",
+                    color="white",
+                    bbox=dict(boxstyle="round,pad=0.3", facecolor="#0b1d38", edgecolor="white", alpha=0.6)
+                )
+
+
+                # --- choose a baseline for the fill ---
+                fill_base = (np.log10(0.1) if log_switch else 0.0)
+
+                # --- ensure x is sorted (important if cal_switch ever makes x non-monotonic) ---
+                order = np.argsort(x_axis)
+                x_plot = np.asarray(x_axis)[order]
+                y_plot = np.asarray(y)[order]
+
+                # --- fill under the trace + then draw the line on top ---
+                self.ax.fill_between(
+                    x_plot, y_plot, fill_base,
+                    alpha=0.25,
+                    color=LIGHT_GREEN,
+                    linewidth=0,
+                    zorder=1
+                )
+                self.ax.plot(
+                    x_plot, y_plot,
+                    linewidth=1.2,
+                    color=LIGHT_GREEN,
+                    zorder=2
+                )
+
+                if y_fixed:
+                    if log_switch:
+                        # user enters max in COUNTS, but plot is log10(counts)
+                        y_max_plot = np.log10(max(0.1, y_max_user))
+                        y_min_plot = np.log10(0.1)   # matches your log floor
+                    else:
+                        y_max_plot = max(1.0, y_max_user)
+                        y_min_plot = 0.0
+
+                    self.ax.set_ylim(y_min_plot, y_max_plot)
+                else:
+                    self.ax.relim()
+                    self.ax.autoscale_view(scalex=True, scaley=True)
+
+                title = f"Last interval - {filename_hmp}"
+                self.ax.set_title(title, color="white")
+                self.ax.set_xlabel("Energy (keV)" if cal_switch else "Bin #", color="white")
+                self.ax.set_ylabel("log₁₀(Counts)" if log_switch else "Counts", color="white")
+
+                self.ax.tick_params(axis='x', colors='white')
+                self.ax.tick_params(axis='y', colors='white')
+                self.ax.grid(True, color="white", alpha=0.2)
+                for spine in self.ax.spines.values():
+                    spine.set_color("white")
+
+                self.canvas.draw()
+
+                # Update UI readouts
+                if run_flag:
+                    self.counts_display.setText(str(counts))
+                    self.elapsed_display.setText(str(elapsed))
+                return
+
+            #----- END Histogram plot -----------------------------                
 
             # Build Z (pad/trim defensively if bins changed)
             Z = np.zeros((n_rows, bins), dtype=float)
