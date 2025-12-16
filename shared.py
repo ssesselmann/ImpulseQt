@@ -23,7 +23,7 @@ run_flag_lock   = Lock()
 
 # --------------------
 # Versioning
-__version__ = "3.1.9.0"
+__version__ = "3.2.0.0"
 # --------------------
 
 SETTINGS = {}  
