@@ -334,19 +334,49 @@ def get_device_list():
         p.terminate()
         return [('no device', 99)]
 
+def _com_sort_key(dev: str) -> int:
+    m = re.match(r"^COM(\d+)$", (dev or "").upper().strip())
+    return int(m.group(1)) if m else 10**9
 
 def get_serial_device_list():
-    manufacturer_criteria = "FTDI"
-    serial_device_list = []
     serial_index = 100
+    ports = list(serial.tools.list_ports.comports())
+    if not ports:
+        return []
 
-    for port in serial.tools.list_ports.comports():
-        manufacturer = (port.manufacturer or "").lower()
-        description  = (port.description or "").lower()
+    # Sort nicely on Windows; otherwise keep OS order
+    if platform.system().lower().startswith("win"):
+        ports.sort(key=lambda p: _com_sort_key(getattr(p, "device", "")))
 
-        if manufacturer_criteria.lower() in manufacturer or manufacturer_criteria.lower() in description:
-            serial_device_list.append((port.device, serial_index))
-            serial_index += 1
+    serial_device_list = []
+
+    for p in ports:
+        dev = getattr(p, "device", "") or ""
+        desc = (getattr(p, "description", "") or "").strip()
+        mfg  = (getattr(p, "manufacturer", "") or "").strip()
+
+        vid = getattr(p, "vid", None)
+        pid = getattr(p, "pid", None)
+        sn  = getattr(p, "serial_number", None)
+
+        extras = []
+        if mfg:
+            extras.append(mfg)
+        if vid is not None and pid is not None:
+            extras.append(f"{vid:04X}:{pid:04X}")
+        if sn:
+            extras.append(f"SN:{sn}")
+
+        # Label shown in dropdown (starts with the real port)
+        label = dev
+        if desc and desc.lower() not in dev.lower():
+            # include description if it's meaningful and not redundant
+            label += f" — {desc}"
+        if extras:
+            label += "  [" + ", ".join(extras) + "]"
+
+        serial_device_list.append((label, serial_index))
+        serial_index += 1
 
     return serial_device_list
 

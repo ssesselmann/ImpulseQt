@@ -51,7 +51,8 @@ class Tab1MaxWidget(QWidget):
 
         self.port_selector = QComboBox(); 
         self.port_selector.setPlaceholderText("Select serial device")
-        opts = fn.cleanup_serial_options([{"label": l, "value": str(v)} for l, v in fn.get_serial_device_list()])
+        self.port_selector.setMaximumWidth(320)  
+        opts = [{"label": label, "value": port_str} for label, port_str in fn.get_serial_device_list()]
         for o in opts: self.port_selector.addItem(o["label"], o["value"])
         if opts:
             i = self.port_selector.findData(opts[0]["value"])
