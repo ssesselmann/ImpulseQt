@@ -4,7 +4,7 @@ ImpulseQt
 ImpulseQt v3.2.0.0 – Changelog
 –––––––––––––––––––––––––––––
 • Updated manual
-• Fixed bug in port selection
+• Fixed bug affecting serial port selection on Windows
 
 ImpulseQt v3.1.9.0 – Changelog
 –––––––––––––––––––––––––––––
