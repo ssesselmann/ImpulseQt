@@ -23,7 +23,7 @@ run_flag_lock   = Lock()
 
 # --------------------
 # Versioning
-__version__ = "3.2.0.0"
+__version__ = "3.2.1.0"
 # --------------------
 
 SETTINGS = {}  
@@ -143,6 +143,7 @@ filename_hmp    = "my_hmp_spectrum"
 device = 0
 device_type = ""
 device_info = ""
+device_port = ""
 sample_rate = 44100
 chunk_size = 1024
 stereo = False
@@ -325,6 +326,7 @@ SETTINGS_SCHEMA = {
     "cps": {"type": "int", "default": 0},
     "device": {"type": "int", "default": 0},
     "device_type": {"type": "str", "default": "PRO"},
+    "device_port": {"type": "str", "default": ""},
     "dropped_counts": {"type": "int", "default": 0},
     "elapsed": {"type": "int", "default": 0},
     "elapsed_2": {"type": "int", "default": 0},
