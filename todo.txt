@@ -1,6 +1,12 @@
 ImpulseQt
 ---------
 
+ImpulseQt v3.2.1.0 – Changelog
+–––––––––––––––––––––––––––––
+• Fixed bug in port selector
+• Added button for serial port re-scann
+• Minor bug fxes and improvements
+
 ImpulseQt v3.2.0.0 – Changelog
 –––––––––––––––––––––––––––––
 • Updated manual
