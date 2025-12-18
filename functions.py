@@ -316,69 +316,39 @@ def get_device_number():
     
     return shared.device
 
-# This function gets a list of audio devices connected to the computer
-def get_device_list():
-    refresh_audio_device_list()
-    time.sleep(0.01)
-    p = pyaudio.PyAudio()
-    try:
-        device_count = p.get_device_count()
-        input_device_list = [
-            (p.get_device_info_by_index(i)['name'], p.get_device_info_by_index(i)['index'])
-            for i in range(device_count)
-            if p.get_device_info_by_index(i)['maxInputChannels'] >= 1
-        ]
-        p.terminate()
-        return input_device_list
-    except:
-        p.terminate()
-        return [('no device', 99)]
+def get_serial_device_list():
+    out = []
+    for p in serial.tools.list_ports.comports():
+        dev  = p.device  # "COM7" on Windows, "/dev/..." on mac
+        desc = (p.description or "").strip()
+        mfg  = (p.manufacturer or "").strip()
+        sn   = (getattr(p, "serial_number", "") or "").strip()
+        vid  = getattr(p, "vid", None)
+        pid  = getattr(p, "pid", None)
+
+        tags = []
+        if "FTDI" in (mfg + " " + desc).upper():
+            tags.append("FTDI")
+        if vid is not None and pid is not None:
+            tags.append(f"{vid:04X}:{pid:04X}")
+        if sn:
+            tags.append(f"SN:{sn}")
+
+        label = dev
+        if desc:
+            label += f" — {desc}"
+        if tags:
+            label += " [" + " ".join(tags) + "]"
+
+        out.append((label, dev))   # <-- IMPORTANT: dev is the VALUE
+    return out
+
 
 def _com_sort_key(dev: str) -> int:
     m = re.match(r"^COM(\d+)$", (dev or "").upper().strip())
     return int(m.group(1)) if m else 10**9
 
-def get_serial_device_list():
-    serial_index = 100
-    ports = list(serial.tools.list_ports.comports())
-    if not ports:
-        return []
 
-    # Sort nicely on Windows; otherwise keep OS order
-    if platform.system().lower().startswith("win"):
-        ports.sort(key=lambda p: _com_sort_key(getattr(p, "device", "")))
-
-    serial_device_list = []
-
-    for p in ports:
-        dev = getattr(p, "device", "") or ""
-        desc = (getattr(p, "description", "") or "").strip()
-        mfg  = (getattr(p, "manufacturer", "") or "").strip()
-
-        vid = getattr(p, "vid", None)
-        pid = getattr(p, "pid", None)
-        sn  = getattr(p, "serial_number", None)
-
-        extras = []
-        if mfg:
-            extras.append(mfg)
-        if vid is not None and pid is not None:
-            extras.append(f"{vid:04X}:{pid:04X}")
-        if sn:
-            extras.append(f"SN:{sn}")
-
-        # Label shown in dropdown (starts with the real port)
-        label = dev
-        if desc and desc.lower() not in dev.lower():
-            # include description if it's meaningful and not redundant
-            label += f" — {desc}"
-        if extras:
-            label += "  [" + ", ".join(extras) + "]"
-
-        serial_device_list.append((label, serial_index))
-        serial_index += 1
-
-    return serial_device_list
 
 # Returns maxInputChannels in an unordered list
 def get_max_input_channels(device):

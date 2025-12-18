@@ -22,11 +22,12 @@ from qt_compat import QTimer
 from qt_compat import QVBoxLayout
 from qt_compat import QWidget
 
-from shared import FOOTER, DARK_BLUE, LIGHT_GREEN, WHITE
+from shared import logger, FOOTER, DARK_BLUE, LIGHT_GREEN, WHITE
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from shproto.dispatcher import process_03
 
+BTN_W = 130
 
 class Tab1MaxWidget(QWidget):
     def __init__(self):
@@ -45,35 +46,56 @@ class Tab1MaxWidget(QWidget):
         left_column = QWidget(); left_layout = QVBoxLayout(left_column)
 
         # Port selector
-        port_group = QGroupBox("Select Port")
+        port_group = QGroupBox("Serial Port Selector")
         pg = QVBoxLayout(port_group)
         port_group.setProperty("typo", "p1")
 
-        self.port_selector = QComboBox(); 
+        # Row: dropdown + rescan button
+        port_row = QHBoxLayout()
+
+        self.port_selector = QComboBox()
         self.port_selector.setPlaceholderText("Select serial device")
-        self.port_selector.setMaximumWidth(320)  
-        opts = [{"label": label, "value": port_str} for label, port_str in fn.get_serial_device_list()]
-        for o in opts: self.port_selector.addItem(o["label"], o["value"])
-        if opts:
-            i = self.port_selector.findData(opts[0]["value"])
-            if i != -1: self.port_selector.setCurrentIndex(i)
+        self.port_selector.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.port_selector.currentIndexChanged.connect(self.on_port_selection)
-        pg.addWidget(self.port_selector)
+        self.port_selector.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.port_selector.setMinimumContentsLength(18)
+
+        self.rescan_ports_btn = QPushButton("Rescan")
+        self.rescan_ports_btn.setProperty("btn", "primary")
+        self.rescan_ports_btn.setFixedWidth(BTN_W)  # <-- fixed
+        self.rescan_ports_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.rescan_ports_btn.clicked.connect(lambda: self.refresh_ports(keep_selection=True))
+
+        port_row.addWidget(self.port_selector, 1)      # stretch
+        port_row.addWidget(self.rescan_ports_btn, 0)   # fixed
+
+        pg.addLayout(port_row)
+
         left_layout.addWidget(port_group)
+
+        # Populate once on load
+        self.refresh_ports(keep_selection=False)
+
+        QTimer.singleShot(1500, lambda: self.refresh_ports(keep_selection=True))
+        QTimer.singleShot(3000, lambda: self.refresh_ports(keep_selection=True))
 
         # Serial command input
         serial_cmd_box = QGroupBox("Serial Command input")
         v = QVBoxLayout(serial_cmd_box)
 
         row = QHBoxLayout()
+        
         self.serial_command_input = QLineEdit()
         self.serial_command_input.setPlaceholderText("Enter serial command")
+        self.serial_command_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
         self.send_button = QPushButton("Send command")
         self.send_button.setProperty("btn", "primary")
+        self.send_button.setFixedWidth(BTN_W)  # <-- fixed
+        self.send_button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
-        row.addWidget(self.serial_command_input)
-        row.addWidget(self.send_button)
+        row.addWidget(self.serial_command_input, 1)  # stretch
+        row.addWidget(self.send_button, 0)           # fixed
 
         # Feedback label (create once, update later)
         self.serial_status = QLabel("Click 'Send' to retrieve info !")
@@ -122,8 +144,6 @@ class Tab1MaxWidget(QWidget):
         self.pulse_timer.setInterval(1000)
         self.pulse_timer.timeout.connect(self.update_pulse_plot)
 
-        from matplotlib.figure import Figure
-        from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
         self.figure = Figure(); self.ax = self.figure.add_subplot(111); self.canvas = FigureCanvas(self.figure)
         right_layout.addWidget(self.canvas, 1)
         self.setup_plot()
@@ -149,50 +169,81 @@ class Tab1MaxWidget(QWidget):
 
         tab1_max_layout.addLayout(content_layout)
 
-
     #-------------------------------------------------------------------------
 
-    def on_port_selection(self, index):
-        device_value = self.port_selector.itemData(index)
-        if device_value is not None:
-            try:
+    def refresh_ports(self, keep_selection=True):
+        # Prefer what was loaded from settings.json
+        with shared.write_lock:
+            saved = str(getattr(shared, "device_port", "") or "").strip()
+
+        prev = self.port_selector.currentData() if keep_selection else None
+        target = saved or prev  # saved wins
+
+        self.port_selector.blockSignals(True)
+        self.port_selector.clear()
+        self.port_selector.setPlaceholderText("Select serial device")
+
+        opts = [{"label": label, "value": port_str} for label, port_str in fn.get_serial_device_list()]
+        for o in opts:
+            self.port_selector.addItem(o["label"], o["value"])
+
+        # 1) Try reselect saved/previous
+        selected = False
+        if target:
+            i = self.port_selector.findData(target)
+            if i != -1:
+                self.port_selector.setCurrentIndex(i)
+                selected = True
+
+        # 2) If nothing matched, pick first *only if we have no saved target*
+        if not selected and not target and self.port_selector.count() > 0:
+            self.port_selector.setCurrentIndex(0)
+            selected = True
+
+        # 3) Only write shared.device_port if we actually selected something
+        if selected:
+            cur = self.port_selector.currentData()
+            if cur:
                 with shared.write_lock:
-                    shared.device = int(device_value)
-            except ValueError:
-                logger.warning(f"[WARN] Could not convert {device_value} to int 👆")
+                    shared.device_port = str(cur)
+
+        self.port_selector.blockSignals(False)
+
+
+    def on_port_selection(self, index):
+        port_str = self.port_selector.itemData(index)  # "COM7" or "/dev/cu...."
+        if port_str:
+            with shared.write_lock:
+                shared.device_port = str(port_str)   # real port name
+                shared.device      = 100
+
 
     def on_send_command(self):
         cmd = self.serial_command_input.text().strip()
         if not cmd:
             cmd = "-inf"
 
-        # Admin override
         is_override = cmd.startswith("+")
         if is_override:
             cmd = cmd[1:]
 
-        # Validate command
         if not is_override and not fn.allowed_command(cmd):
             self.serial_status.setText("Caution !! (+- to override)")
             return
 
-        # Immediate user feedback
         self.serial_status.setText(f"Command sent: {cmd}")
         self.serial_command_input.clear()
 
-        # Send the command (assumed quick)
-        process_03(cmd)
-        time.sleep(1)
-        # Non-blocking: wait briefly for response to populate shared state
         def _finish():
-            # Refresh table
             self.update_device_info_table()
-            # Show latest received response
             with shared.write_lock:
                 raw_output = getattr(shared, "max_serial_output", "[No output]")
+            # (optional) display raw_output somewhere if you want
 
-        QTimer.singleShot(50, _finish)
+        process_03(cmd)
 
+        # schedule AFTER defining _finish
+        QTimer.singleShot(600, _finish)
 
     def update_device_info_table(self):
         rows, tco_pairs = fn.generate_device_settings_table_data()
@@ -213,7 +264,7 @@ class Tab1MaxWidget(QWidget):
 
             self.temp_calibration_box.setText(tco_text)
 
-        
+    @staticmethod
     def format_tco_pairs_as_table(tco_pairs):
         if not tco_pairs:
             return "No temperature compensation data found."

@@ -64,7 +64,7 @@ total_time          = 0
 cpu_load            = 0
 lost_impulses       = 0
 last_counts         = 0
-stat_prev_tt        = 0
+stat_prev_tt        = None
 count_history       = []
 serial_number       = ""
 calibration         = [0., 1., 0., 0., 0.]
@@ -203,8 +203,9 @@ def start(sn=None):
 
         globals()['stopflag'] = 0
 
-    nano = shproto.port.connectdevice(sn)
-    
+    port_str = getattr(shared, "device_port", None)  # e.g. "COM7"
+    nano     = shproto.port.connectdevice(sn=sn, port_str=port_str)
+
     if not nano:
         logger.error("[ERROR] ❌ Failed to connect to MAX ")
         return
@@ -322,6 +323,8 @@ def start(sn=None):
 
                         crc_str = lines[10].strip()  # device's CRC line
 
+                        last_cmd = getattr(shproto.dispatcher, "_last_cmd_sent", "?")
+
                         # NEW: skip compare if device reports a sentinel/no-CRC
                         if crc_str.upper() in ("FFFFFFFF", "00000000"):
                             logger.info("   ✅ Device reports no CAL CRC (got %r); skipping compare (after cmd=%r)",
@@ -385,7 +388,6 @@ def start(sn=None):
             elif response.cmd == shproto.MODE_HISTOGRAM:
                 shproto.dispatcher.pkts01 += 1
                 pl = response.payload
-
                 if len(pl) < 2:
                     response.clear()
                     continue
@@ -393,6 +395,11 @@ def start(sn=None):
                 offset = (pl[0] & 0xFF) | ((pl[1] & 0xFF) << 8)
                 data   = pl[2:]
                 count  = len(data) // 4
+
+                # Start-of-frame heuristic
+                if offset == 0:
+                    shproto.dispatcher._histogram_cov_count = 0
+                    shproto.dispatcher._histogram_covered[:] = b"\x00" * 8192
 
                 rhist = shproto.dispatcher.raw_hist
 
@@ -404,36 +411,38 @@ def start(sn=None):
                         if idx >= 8192:
                             break
 
+                        # coverage bookkeeping (unique bins only)
+                        if shproto.dispatcher._histogram_covered[idx] == 0:
+                            shproto.dispatcher._histogram_covered[idx] = 1
+                            shproto.dispatcher._histogram_cov_count += 1
+
                         base = i * 4
                         new_val = (
                             (data[base + 0]) |
                             (data[base + 1] << 8) |
                             (data[base + 2] << 16) |
                             (data[base + 3] << 24)
-                        ) & 0x7FFFFFF
+                        ) & 0x7FFFFFFF
 
                         old_val = rhist[idx]
                         if new_val != old_val:
                             delta = int(new_val) - int(old_val)
                             if delta < 0:
-                                delta = 0  # guard against wrap/reset
+                                delta = 0
                             rhist[idx] = new_val
                             hlist[idx] = new_val
-
-                            # running totals
                             shproto.dispatcher.cps_total_counts += delta
                             shproto.dispatcher._hist_delta_since_stat += delta
 
-                # Track how many bins we've received this frame
-                shproto.dispatcher._histogram_offset_sum += count
-
-                # Once we've seen a full frame (or more), mark it complete
-                if shproto.dispatcher._histogram_offset_sum >= 8192:
-                    shproto.dispatcher._histogram_offset_sum = 0
+                # frame complete only when we truly covered all bins
+                if shproto.dispatcher._histogram_cov_count >= 8192:
                     shproto.dispatcher._histogram_version += 1
                     shproto.dispatcher._histogram_row_complete.set()
+                    # optional: clear here if something consumes it
+                    # shproto.dispatcher._histogram_row_complete.clear()
 
                 response.clear()
+
 
             # ===========================================================================
             # MODE_PULSE
@@ -479,24 +488,28 @@ def start(sn=None):
                     response.clear()
                     continue
 
+                # 1) Parse device counters
                 total_time_raw = (payload[0] & 0xFF) | \
                                  ((payload[1] & 0xFF) << 8) | \
                                  ((payload[2] & 0xFF) << 16) | \
                                  ((payload[3] & 0xFF) << 24)
+
                 shproto.dispatcher.total_time = total_time_raw
                 shproto.dispatcher.cpu_load   = (payload[4] & 0xFF) | ((payload[5] & 0xFF) << 8)
 
                 curr_tt = total_time_raw * _TIME_SCALE
                 prev_tt = shproto.dispatcher.stat_prev_tt
 
+                # 2) First STAT: establish baseline, don’t compute CPS yet
                 if prev_tt is None:
                     shproto.dispatcher.stat_prev_tt = curr_tt
                     shproto.dispatcher._hist_delta_since_stat = 0
+
+                # 3) Subsequent STATs: CPS = (new counts since last STAT) / (device seconds elapsed)
                 else:
                     dt = curr_tt - prev_tt
-
                     if dt <= 0:
-                        dt = 1.0  # fallback
+                        dt = 1.0  # safety fallback
 
                     cps_int = int(round(shproto.dispatcher._hist_delta_since_stat / dt))
 
@@ -507,12 +520,12 @@ def start(sn=None):
                     shproto.dispatcher.stat_prev_tt = curr_tt
                     shproto.dispatcher._hist_delta_since_stat = 0
 
-                
-                # Device heartbeat: one tick per second
+                # 4) Heartbeat for process_01/process_02 (wake them once per STAT)
                 _stat_version += 1
                 _stat_tick.set()
 
                 response.clear()
+
 
     nano.close()
 
@@ -945,12 +958,13 @@ def save_spectrum_hmp_json(filename_hmp, hst3d, counts, dt_start, dt_now, coeffs
 
 
 def stop():
-    with stopflag_lock:
-        try: 
-            process_03('-sto')
-            spec_stopflag = 1
+    global spec_stopflag
+    try:
+        process_03("-sto")
+    except Exception as e:
+        logger.error(f"  ❌ dispatcher.stop(): {e} ")
+    with spec_stopflag_lock:
+        spec_stopflag = 1
 
-        except Exception as e:
-            logger.error(f"  ❌ dispatcher.stop(): {e} ")
 
 

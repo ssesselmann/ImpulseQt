@@ -6,16 +6,40 @@ import sys
 
 logger = logging.getLogger(__name__)
 
-def getallports():
-    allports = serial.tools.list_ports.comports()
-    nanoports = []
-    for port in allports:
-        if port.manufacturer == "FTDI" or re.search("^/dev/ttyUSB.*", port.device):
-            nanoports.append(port)
-    return nanoports
+FTDI_VID = 0x0403
+
+def _is_ftdi_like(p) -> bool:
+    # Strong: VID
+    vid = getattr(p, "vid", None)
+    if vid == FTDI_VID:
+        return True
+
+    # Next: HWID often contains VID_0403 on Windows
+    hwid = (getattr(p, "hwid", "") or "").upper()
+    if "VID_0403" in hwid or "VID:PID=0403" in hwid or "0403:" in hwid:
+        return True
+
+    # Weak: strings (keep as last resort)
+    mfg  = (getattr(p, "manufacturer", "") or "").upper()
+    desc = (getattr(p, "description", "") or "").upper()
+    return ("FTDI" in mfg) or ("FTDI" in desc)
+
+def getallports(ftdi_only=True):
+    allports = list(serial.tools.list_ports.comports())
+
+    if not allports:
+        return []
+
+    if ftdi_only:
+        cand = [p for p in allports if _is_ftdi_like(p)]
+        # If detection fails (common on some Windows setups), fall back to *all* ports
+        return cand if cand else allports
+
+    return allports
 
 def getallportssn():
     allports = getallports()
+
     portssn = []
     for port in allports:
         portssn.append(port.serial_number)
@@ -37,21 +61,53 @@ def getportbyserialnumber(sn):
 
 def getdevicebyserialnumber(sn):
     port = getportbyserialnumber(sn)
-    if port is None:
-        return None
-    else:
-        return getportbyserialnumber(sn).device
+    return port.device if port else None
 
-def connectdevice(sn=None):
-    if sn is None and len(getallports()) > 0:
-        nanoport = getallports()[0].device
-    else:
+
+_warned_legacy_numeric = False
+
+def connectdevice(sn=None, port_str=None):
+    global _warned_legacy_numeric
+
+    # If UI accidentally passes legacy "100/101/..." ignore it (warn once)
+    if isinstance(port_str, str) and port_str.strip().isdigit():
+        if not _warned_legacy_numeric:
+            logger.warning(f"👆 Ignoring legacy numeric port_str={port_str}")
+            _warned_legacy_numeric = True
+        port_str = None
+
+    # 1) If UI passed an explicit port (COM7), use it
+    if port_str:
+        nanoport = port_str
+
+    # 2) Else, if sn provided, resolve by serial number
+    elif sn is not None:
         nanoport = getdevicebyserialnumber(sn)
-    if nanoport is None:
-        logger.warning('👆 No serial port device found ')
-        sys.exit(0)
-    tty = serial.Serial(nanoport, baudrate=600000, bytesize=8, parity='N', stopbits=1, timeout=0.01)
-    return tty
+
+    # 3) Else, pick the first candidate
+    else:
+        ports = getallports(ftdi_only=True)
+        if not ports:
+            ports = getallports(ftdi_only=False)  # fallback
+        nanoport = ports[0].device if ports else None
+
+    if not nanoport:
+        logger.warning("👆 No serial port device found")
+        return None   # don't sys.exit inside a GUI app
+
+    try:
+        tty = serial.Serial(
+            nanoport,
+            baudrate=600000,
+            bytesize=8,
+            parity='N',
+            stopbits=1,
+            timeout=0.01
+        )
+        return tty
+    except Exception as e:
+        logger.error(f"❌ Failed to open serial port {nanoport}: {e}")
+        return None
 
 def send_command(command):
     shproto.dispatcher.process_03(command)
