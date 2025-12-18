@@ -235,17 +235,30 @@ class Tab1MaxWidget(QWidget):
 
     def _preflight_max_port(self, port_str: str):
         if not port_str:
-            return False, "No port selected"
+            return False, "❌ No port selected"
 
+        # Port still exists?
         p = self._find_portinfo(port_str)
         if not p:
-            # Port not present right now -> unplugged or stale selection
-            return False, "No device on this port (unplugged or port vanished)"
+            return False, "❌ No device on this port (unplugged or port vanished)"
 
+        # If dispatcher already has it open, don't re-open it (macOS: Resource busy)
+        # (You can refine this with a shared.max_connected flag if you add one.)
+        try:
+            from shproto import dispatcher as disp
+            thr = getattr(disp, "_dispatcher_thread", None)
+            if thr is not None and thr.is_alive():
+                with shared.write_lock:
+                    if str(getattr(shared, "device_port", "")).strip() == str(port_str).strip():
+                        return True, ""  # already engaged on this port
+        except Exception:
+            pass
+
+        # FTDI-like? (I'd make this a warning, not a hard fail, because VID/HWID can be flaky.)
         if not self._is_ftdi_like(p):
-            return False, "No device on this port (not a MAX/FTDI serial device)"
+            return False, "❌ No device on this port (not a MAX/FTDI serial device)"
 
-        # Can we open it at all? (busy/permissions/wrong driver)
+        # Can we open it right now?
         try:
             s = serial.Serial(
                 port_str,
@@ -258,10 +271,9 @@ class Tab1MaxWidget(QWidget):
             )
             s.close()
         except Exception as e:
-            return False, f"No device on this port (can’t open: {e})"
+            return False, f"❌ No device on this port (can’t open: {e})"
 
         return True, ""
-
 
     def on_port_selection(self, index):
         port_str = self.port_selector.itemData(index)  # "COM7" or "/dev/cu...."
@@ -270,28 +282,6 @@ class Tab1MaxWidget(QWidget):
                 shared.device_port = str(port_str)   # real port name
                 shared.device      = 100
 
-
-    def _port_present(self, port_str: str) -> bool:
-        ports = []
-        for item in fn.get_serial_device_list():
-            if isinstance(item, (list, tuple)) and len(item) >= 2:
-                ports.append(item[1])          # (label, device)
-            else:
-                ports.append(str(item))        # last-resort
-        return port_str in ports
-
-
-
-    def _can_open(self, port_str: str) -> tuple[bool, str]:
-        try:
-            import serial
-            s = serial.Serial(port_str, baudrate=600000, timeout=0.2)
-            s.close()
-            return True, ""
-        except Exception as e:
-            return False, str(e)
-
-    
     def on_send_command(self):
         # 1) Define cmd immediately (so it always exists)
         cmd = (self.serial_command_input.text() or "").strip()
