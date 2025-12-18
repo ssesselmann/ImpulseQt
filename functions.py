@@ -343,6 +343,31 @@ def get_serial_device_list():
         out.append((label, dev))   # <-- IMPORTANT: dev is the VALUE
     return out
 
+# functions.py
+
+def get_device_list():
+    try:
+        import pyaudio
+    except Exception:
+        return []
+
+    pa = pyaudio.PyAudio()
+    out = []
+    try:
+        n = pa.get_device_count()
+        for i in range(n):
+            info = pa.get_device_info_by_index(i)
+            # input-capable devices only
+            if int(info.get("maxInputChannels", 0)) > 0:
+                name = info.get("name", f"Device {i}")
+                out.append((name, i))
+    finally:
+        try:
+            pa.terminate()
+        except Exception:
+            pass
+
+    return out
 
 def _com_sort_key(dev: str) -> int:
     m = re.match(r"^COM(\d+)$", (dev or "").upper().strip())

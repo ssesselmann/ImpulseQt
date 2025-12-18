@@ -3,14 +3,15 @@ ImpulseQt
 
 ImpulseQt v3.2.1.0 – Changelog
 –––––––––––––––––––––––––––––
-• Fixed bug in port selector
-• Added button for serial port re-scann
-• Minor bug fxes and improvements
+• Fixed bug in port selector ✅
+• Added button for serial port re-scann (needed when hot swapping devices) ✅
+• Quick fail on wrong port selection ✅
+• Minor bug fixes and improvements ✅
 
 ImpulseQt v3.2.0.0 – Changelog
 –––––––––––––––––––––––––––––
-• Updated manual
-• Fixed bug affecting serial port selection on Windows
+• Updated manual ✅
+• Fixed bug affecting serial port selection on Windows ✅
 
 ImpulseQt v3.1.9.0 – Changelog
 –––––––––––––––––––––––––––––
