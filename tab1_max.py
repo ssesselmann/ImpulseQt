@@ -2,6 +2,9 @@
 import functions as fn
 import time
 import shared
+import serial
+import serial.tools.list_ports
+
 
 from qt_compat import QComboBox
 from qt_compat import QGridLayout
@@ -210,6 +213,56 @@ class Tab1MaxWidget(QWidget):
         self.port_selector.blockSignals(False)
 
 
+    FTDI_VID = 0x0403
+
+    def _find_portinfo(self, port_str):
+        for p in serial.tools.list_ports.comports():
+            if getattr(p, "device", None) == port_str:
+                return p
+        return None
+
+    def _is_ftdi_like(self, p) -> bool:
+        vid = getattr(p, "vid", None)
+        if vid == self.FTDI_VID:
+            return True
+        hwid = (getattr(p, "hwid", "") or "").upper()
+        if "VID_0403" in hwid or "VID:PID=0403" in hwid or "0403:" in hwid:
+            return True
+        mfg  = (getattr(p, "manufacturer", "") or "").upper()
+        desc = (getattr(p, "description", "") or "").upper()
+        return ("FTDI" in mfg) or ("FTDI" in desc)
+
+
+    def _preflight_max_port(self, port_str: str):
+        if not port_str:
+            return False, "No port selected"
+
+        p = self._find_portinfo(port_str)
+        if not p:
+            # Port not present right now -> unplugged or stale selection
+            return False, "No device on this port (unplugged or port vanished)"
+
+        if not self._is_ftdi_like(p):
+            return False, "No device on this port (not a MAX/FTDI serial device)"
+
+        # Can we open it at all? (busy/permissions/wrong driver)
+        try:
+            s = serial.Serial(
+                port_str,
+                baudrate=600000,
+                bytesize=8,
+                parity='N',
+                stopbits=1,
+                timeout=0.1,
+                write_timeout=0.1,
+            )
+            s.close()
+        except Exception as e:
+            return False, f"No device on this port (can’t open: {e})"
+
+        return True, ""
+
+
     def on_port_selection(self, index):
         port_str = self.port_selector.itemData(index)  # "COM7" or "/dev/cu...."
         if port_str:
@@ -218,32 +271,59 @@ class Tab1MaxWidget(QWidget):
                 shared.device      = 100
 
 
+    def _port_present(self, port_str: str) -> bool:
+        ports = []
+        for item in fn.get_serial_device_list():
+            if isinstance(item, (list, tuple)) and len(item) >= 2:
+                ports.append(item[1])          # (label, device)
+            else:
+                ports.append(str(item))        # last-resort
+        return port_str in ports
+
+
+
+    def _can_open(self, port_str: str) -> tuple[bool, str]:
+        try:
+            import serial
+            s = serial.Serial(port_str, baudrate=600000, timeout=0.2)
+            s.close()
+            return True, ""
+        except Exception as e:
+            return False, str(e)
+
+    
     def on_send_command(self):
-        cmd = self.serial_command_input.text().strip()
+        # 1) Define cmd immediately (so it always exists)
+        cmd = (self.serial_command_input.text() or "").strip()
         if not cmd:
             cmd = "-inf"
 
         is_override = cmd.startswith("+")
         if is_override:
-            cmd = cmd[1:]
+            cmd = cmd[1:].strip()
 
-        if not is_override and not fn.allowed_command(cmd):
-            self.serial_status.setText("Caution !! (+- to override)")
+        # 2) Optional: preflight port before touching shproto
+        port_str = self.port_selector.currentData()
+        ok, msg = self._preflight_max_port(port_str)  # if you have this
+        if not ok:
+            self.serial_status.setText(msg)
             return
 
-        self.serial_status.setText(f"Command sent: {cmd}")
+        # 3) Validate command (unless override)
+        if (not is_override) and (not fn.allowed_command(cmd)):
+            self.serial_status.setText("Caution !! (+ to override)")
+            return
+
+        # 4) UI feedback
+        self.serial_status.setText(f"Command queued: {cmd}")
         self.serial_command_input.clear()
 
-        def _finish():
-            self.update_device_info_table()
-            with shared.write_lock:
-                raw_output = getattr(shared, "max_serial_output", "[No output]")
-            # (optional) display raw_output somewhere if you want
-
+        # 5) Queue the command to dispatcher
         process_03(cmd)
 
-        # schedule AFTER defining _finish
-        QTimer.singleShot(600, _finish)
+        # 6) Refresh UI after device replies
+        QTimer.singleShot(600, self.update_device_info_table)
+
 
     def update_device_info_table(self):
         rows, tco_pairs = fn.generate_device_settings_table_data()

@@ -262,7 +262,12 @@ def start(sn=None):
             shproto.dispatcher._last_cmd_sent = local_cmd
             shproto.dispatcher._expect_cal = (local_cmd.strip().lower() == "-cal")
 
-            nano.write(tx.payload)
+            try:
+                nano.write(tx.payload)
+                logger.info(f"   ✅ Sent command: {local_cmd!r}")
+            except Exception as e:
+                logger.error(f"❌ Failed to write command {local_cmd!r}: {e}")
+
 
             # Debug what we actually put on the wire (first 64 bytes)
             try:
@@ -802,7 +807,7 @@ def process_03(cmd):
 
         shproto.dispatcher.command = cmd
 
-    logger.info(f'   ✅ dispatcher process_03 ("{cmd}") ')
+    logger.info(f"   📨 Queued command: {cmd!r}")
 
 
 
