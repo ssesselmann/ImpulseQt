@@ -780,7 +780,7 @@ class Tab3(QWidget):
         # --- write CSV ---
         with open(out_path, "w", newline="", encoding="utf-8") as f:
             w = csv.writer(f)
-            w.writerow(["name", "desc", "latitude", "longitude", "counts", "cps", "t_interval_s"])
+            w.writerow(["name", "desc", "latitude", "longitude", "n", "cps", "t_interval_s"])
 
             for i, row in enumerate(hist):
                 counts = int(sum(row)) if row else 0
