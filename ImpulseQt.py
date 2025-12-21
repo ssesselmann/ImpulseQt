@@ -15,7 +15,8 @@ from tab3 import Tab3
 from tab4 import Tab4
 from tab5 import Tab5
 from pathlib import Path
-from gps_main import gpsloc
+
+import gps_main
 
 from qt_compat import IS_QT6
 from qt_compat import Qt
@@ -44,6 +45,7 @@ from send_feedback import send_feedback_email
 from functions import resource_path
 
 from shared import logger, USER_DATA_DIR, BASE_DIR, ICON_PATH
+
 
 def copy_lib_if_needed():
     dest = Path(USER_DATA_DIR) / "lib"
@@ -330,7 +332,8 @@ class MainWindow(QMainWindow):
 
     def _update_gps_indicator(self):
         try:
-            fix = gpsloc()
+            gps_main.start_gps()          # safe to call repeatedly
+            fix = gps_main.get_fix_cached()
             with shared.write_lock:
                 shared.last_gps_fix = fix  # <-- add this
 

@@ -10,6 +10,8 @@ import logging
 import queue
 import shared
 import functions as fn
+import gps_main  # at top of file is better, but ok here for first test
+
 
 from shared import logger
 
@@ -356,12 +358,20 @@ def update_mode_3_data(
                 if not hasattr(shared, "gps_hmp") or not hasattr(shared.gps_hmp, "append"):
                     shared.gps_hmp = deque(maxlen=getattr(shared, "ring_len_hmp", 3600))
 
-                gps_fix = getattr(shared, "last_gps_fix", None)
-                gps_snap = dict(gps_fix) if isinstance(gps_fix, dict) else None
-
-                # Append BOTH under the same lock so indices always match
+                # 1) append the interval spectrum slice
                 shared.histogram_hmp.append(aggregated)
-                shared.gps_hmp.append(gps_snap)
+
+                # 2) append ONE gps row for the same slice (same lock => indices always match)
+                fix = getattr(shared, "last_gps_fix", None)  # set by gps thread in main
+                if isinstance(fix, dict):
+                    row = {"lat": fix.get("lat"), "lon": fix.get("lon"), "epoch": time.time()}
+                else:
+                    row = {"lat": None, "lon": None, "epoch": time.time()}
+
+                shared.gps_hmp.append(row)
+
+            #print(f"[GPS/HMP] rows hist={len(shared.histogram_hmp)} gps={len(shared.gps_hmp)} last={row}")
+
 
             # Enqueue save job (keeps your existing saver contract)
             payload = meta.copy()

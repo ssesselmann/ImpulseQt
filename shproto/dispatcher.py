@@ -13,6 +13,7 @@ import logging
 import os
 import platform
 import shared
+import gps_main
 
 from threading import Event
 from struct import *
@@ -773,9 +774,29 @@ def process_02(filename_hmp, compression3d, device, t_interval):
             rows_since_save += 1
 
             with shared.write_lock:
-                shared.counts       = counts
-                shared.elapsed      = int(tt)           # UI uses device time
+                shared.counts  = counts
+                shared.elapsed = int(tt)
+
+                # histogram ring exists already
                 shared.histogram_hmp.append(this_hst)
+
+                # gps ring matches histogram ring
+                if not isinstance(getattr(shared, "gps_hmp", None), deque):
+                    shared.gps_hmp = deque(maxlen=getattr(shared, "ring_len_hmp", 3600))
+                else:
+                    # only clear at run start, not here
+                    pass
+
+                fix = getattr(shared, "last_gps_fix", None)
+                if isinstance(fix, dict):
+                    row = {"lat": fix.get("lat"), "lon": fix.get("lon"), "epoch": time.time()}
+                else:
+                    row = {"lat": None, "lon": None, "epoch": time.time()}
+
+                shared.gps_hmp.append(row)
+
+            #print(f"[GPS/HMP serial] hist={len(shared.histogram_hmp)} gps={len(shared.gps_hmp)} last={row}")
+
 
             # 5) periodic JSON checkpoint
             if rows_since_save >= SAVE_EVERY_ROWS:

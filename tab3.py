@@ -729,192 +729,69 @@ class Tab3(QWidget):
     def on_gpsvis_clicked(self):
         import csv
         from pathlib import Path
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timezone
 
-        try:
-            # --- Snapshot shared state safely ---
-            with shared.write_lock:
-                filename   = (shared.filename_hmp or "gps_export").strip()
-                t_interval = int(getattr(shared, "t_interval", 1) or 1)
-                hist       = list(getattr(shared, "histogram_hmp", []) or [])
-                gps_rows   = list(getattr(shared, "gps_hmp", []) or [])
-                start_iso  = getattr(shared, "hmp_start_utc", "")  # optional
+        # --- snapshot state once ---
+        with shared.write_lock:
+            filename   = (shared.filename_hmp or "gps_export").strip()
+            tint       = int(getattr(shared, "t_interval", 1) or 1)
+            hist       = list(getattr(shared, "histogram_hmp", []) or [])
+            gps_rows   = list(getattr(shared, "gps_hmp", []) or [])
 
-            if not hist:
-                QMessageBox.information(self, "No Data", "No interval histogram data to export yet.")
-                return
+        print(f"[gpsvis] hist_rows={len(hist)} gps_rows={len(gps_rows)} tint={tint}")
 
-            # --- choose output file path in Downloads ---
-            out_dir = Path(DLD_DIR)
-            out_dir.mkdir(parents=True, exist_ok=True)
+        if not hist:
+            QMessageBox.information(self, "No Data", "No interval histogram data to export yet.")
+            return
 
-            base = f"{filename}_gpsvis"
-            out_path = out_dir / f"{base}.csv"
-            if out_path.exists():
-                counter = 1
-                while True:
-                    candidate = out_dir / f"{base}_{counter}.csv"
-                    if not candidate.exists():
-                        out_path = candidate
-                        break
-                    counter += 1
+        # --- output path ---
+        out_dir = Path(DLD_DIR)
+        out_dir.mkdir(parents=True, exist_ok=True)
 
-            # --- helpers ---
-            def _roi_ranges_from_shared():
-                """Return merged ROI ranges [(i0,i1), ...] from shared.peak_list."""
-                with shared.write_lock:
-                    peaks = list(getattr(shared, "peak_list", []) or [])
+        base = f"{filename}_gpsvis"
+        out_path = out_dir / f"{base}.csv"
+        n = 1
+        while out_path.exists():
+            out_path = out_dir / f"{base}_{n}.csv"
+            n += 1
 
-                ranges = []
-                for pk in peaks:
-                    if not isinstance(pk, dict):
-                        continue
-                    try:
-                        i0 = int(pk.get("i0", 0))
-                        i1 = int(pk.get("i1", 0))
-                    except Exception:
-                        continue
-                    if i1 < i0:
-                        i0, i1 = i1, i0
-                    ranges.append((i0, i1))
+        def fmt_latlon(g):
+            if not isinstance(g, dict):
+                return ("", "", "")
+            lat = g.get("lat")
+            lon = g.get("lon")
+            epoch = g.get("epoch")
+            if lat is None or lon is None:
+                return ("", "", "")
+            try:
+                lat_s = f"{float(lat):.8f}"
+                lon_s = f"{float(lon):.8f}"
+            except Exception:
+                return ("", "", "")
 
-                if not ranges:
-                    return []
+            # optional timestamp column (GPSVisualizer accepts "desc" text)
+            if isinstance(epoch, (int, float)) and epoch > 0:
+                dt = datetime.fromtimestamp(float(epoch), tz=timezone.utc)
+                desc = dt.isoformat().replace("+00:00", "Z")
+            else:
+                desc = ""
+            return (lat_s, lon_s, desc)
 
-                ranges.sort(key=lambda t: (t[0], t[1]))
-                merged = [list(ranges[0])]
-                for a, b in ranges[1:]:
-                    if a <= merged[-1][1] + 1:
-                        merged[-1][1] = max(merged[-1][1], b)
-                    else:
-                        merged.append([a, b])
+        # --- write CSV ---
+        with open(out_path, "w", newline="", encoding="utf-8") as f:
+            w = csv.writer(f)
+            w.writerow(["name", "desc", "latitude", "longitude", "counts", "cps", "t_interval_s"])
 
-                return [(int(x[0]), int(x[1])) for x in merged]
+            for i, row in enumerate(hist):
+                counts = int(sum(row)) if row else 0
+                cps = counts / float(max(1, tint))
 
-            def _sum_row_in_ranges(row, ranges):
-                if not row or not ranges:
-                    return 0
-                n = len(row)
-                total = 0
-                for i0, i1 in ranges:
-                    a = max(0, min(int(i0), n - 1))
-                    b = max(0, min(int(i1), n - 1))
-                    if b < a:
-                        a, b = b, a
-                    total += int(sum(row[a:b+1]))
-                return total
+                g = gps_rows[i] if i < len(gps_rows) else None
+                lat_s, lon_s, desc = fmt_latlon(g)
 
-            def _latlon(g):
-                if not isinstance(g, dict):
-                    return ("", "")
-                lat = g.get("lat")
-                lon = g.get("lon")
-                if lat is None or lon is None:
-                    return ("", "")
-                try:
-                    return (f"{float(lat):.8f}", f"{float(lon):.8f}")
-                except Exception:
-                    return ("", "")
+                w.writerow([filename, desc, lat_s, lon_s, counts, f"{cps:.3f}", tint])
 
-            def _gps_datetime_utc(g) -> str:
-                if not isinstance(g, dict):
-                    return ""
-
-                # common ISO-ish fields
-                for k in ("datetime_utc", "timestamp_utc", "utc_iso", "iso_utc", "datetime", "timestamp"):
-                    v = g.get(k)
-                    if isinstance(v, str) and v.strip():
-                        s = v.strip()
-                        try:
-                            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
-                            if dt.tzinfo is None:
-                                dt = dt.replace(tzinfo=timezone.utc)
-                            return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
-                        except Exception:
-                            return s
-
-                # epoch seconds
-                for k in ("epoch", "epoch_utc", "ts", "timestamp_s", "time_s"):
-                    v = g.get(k)
-                    if isinstance(v, (int, float)) and v > 0:
-                        dt = datetime.fromtimestamp(float(v), tz=timezone.utc)
-                        return dt.isoformat().replace("+00:00", "Z")
-
-                # ddmmyy + hhmmss(.sss)
-                d = g.get("date") or g.get("date_utc") or g.get("d")
-                t = g.get("utc")  or g.get("time_utc") or g.get("time")
-                if isinstance(d, str) and isinstance(t, str) and len(d) == 6 and len(t) >= 6:
-                    try:
-                        dd = int(d[0:2]); mm = int(d[2:4]); yy = int(d[4:6])
-                        yy += 2000 if yy < 80 else 1900
-                        hh = int(t[0:2]); mi = int(t[2:4])
-                        ss_f = float(t[4:])
-                        sec = int(ss_f)
-                        us = int(round((ss_f - sec) * 1_000_000))
-                        dt = datetime(yy, mm, dd, hh, mi, sec, us, tzinfo=timezone.utc)
-                        return dt.isoformat().replace("+00:00", "Z")
-                    except Exception:
-                        return ""
-
-                return ""
-
-            # Optional fallback start time for blank GPS timestamps
-            start_dt = None
-            if isinstance(start_iso, str) and start_iso.strip():
-                try:
-                    start_dt = datetime.fromisoformat(start_iso.strip().replace("Z", "+00:00")).astimezone(timezone.utc)
-                except Exception:
-                    start_dt = None
-
-            # --- Snapshot ROI choice ONCE ---
-            tint = max(1, int(t_interval))
-            use_roi_only = bool(getattr(self, "use_roi_only_chk", None) and self.use_roi_only_chk.isChecked())
-            roi_ranges = _roi_ranges_from_shared() if use_roi_only else []
-            if use_roi_only and not roi_ranges:
-                use_roi_only = False  # fallback to total
-
-            # --- write CSV ---
-            with open(out_path, "w", newline="", encoding="utf-8") as f:
-                w = csv.writer(f)
-
-                # Your requested-ish order + still GPSVisualizer-friendly
-                # name, desc, latitude, longitude, n, Waypoint1, description, n, n
-                w.writerow(["name", "desc", "latitude", "longitude", "n", "Waypoint1", "description", "cps", "t_interval_s"])
-
-                nrows = len(hist)
-                for i, row in enumerate(hist):
-                    # counts
-                    try:
-                        counts_interval = _sum_row_in_ranges(row, roi_ranges) if use_roi_only else int(sum(row)) if row else 0
-                    except Exception:
-                        counts_interval = 0
-                    cps = counts_interval / float(tint)
-
-                    g = gps_rows[i] if i < len(gps_rows) else None
-                    lat_s, lon_s = _latlon(g)
-                    dt_s = _gps_datetime_utc(g)
-
-                    # fallback datetime if GPS datetime missing but we have recording start
-                    if not dt_s and start_dt is not None:
-                        dt_s = (start_dt + timedelta(seconds=i * tint)).isoformat().replace("+00:00", "Z")
-
-                    # fields
-                    name = filename
-                    desc = dt_s
-                    waypoint = ""  # if you want: f"WP{i+1}"
-                    description = f"counts={counts_interval}, cps={cps:.3f}"
-
-                    w.writerow([name, desc, lat_s, lon_s, counts_interval, waypoint, description, f"{cps:.3f}", tint])
-
-            QMessageBox.information(
-                self,
-                "Export Complete",
-                f"GPSVisualizer CSV saved to:\n{out_path}"
-            )
-
-        except Exception as e:
-            logger.error(f"❌ GPSVisualizer export failed: {e}", exc_info=True)
-            QMessageBox.critical(self, "Error", f"Failed to export GPS data:\n{e}")
+        QMessageBox.information(self, "Export Complete", f"Saved:\n{out_path}")
 
 
     def confirm_overwrite(self, file_path, filename_display=None):
