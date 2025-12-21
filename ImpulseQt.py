@@ -15,6 +15,7 @@ from tab3 import Tab3
 from tab4 import Tab4
 from tab5 import Tab5
 from pathlib import Path
+from gps_main import gpsloc
 
 from qt_compat import IS_QT6
 from qt_compat import Qt
@@ -283,12 +284,62 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.tab5, "Manual")
         self.tabs.currentChanged.connect(self.on_tab_changed)
 
+                # ---------- GPS indicator (top-right) ----------
+        self.gps_text = QLabel("GPS Status:")
+        self.gps_text.setStyleSheet("color: white; padding-right: 6px;")
+
+        self.gps_dot = QLabel("●")
+        self.gps_dot.setStyleSheet("color: #FF0000; font-weight: bold;")  # start red
+        self.gps_dot.setToolTip("Green = fix, Red = no fix")
+
+        
+        # ---------- GPS polling timer ----------
+        self.gps_timer = QTimer(self)
+        self.gps_timer.setInterval(1000)
+        self.gps_timer.timeout.connect(self._update_gps_indicator)
+        self.gps_timer.start()
+        self._update_gps_indicator()
+
+        
+
+        gps_bar = QWidget()
+        gps_layout = QHBoxLayout()
+        gps_layout.setContentsMargins(10, 0, 18, 0)
+        gps_layout.setSpacing(4)
+        gps_layout.addStretch(1)
+        gps_layout.addWidget(self.gps_text)
+        gps_layout.addWidget(self.gps_dot)
+        gps_bar.setLayout(gps_layout)
+
         container = QWidget()
+
         layout = QVBoxLayout()
-        layout.setContentsMargins(0, 20, 0, 0)
+        layout.setContentsMargins(0, 4, 0, 0)
+        layout.setSpacing(2)
+        layout.addWidget(gps_bar)
         layout.addWidget(self.tabs)
+
         container.setLayout(layout)
         self.setCentralWidget(container)
+
+    
+    def _set_gps_dot(self, has_fix: bool):
+        color = "#00C853" if has_fix else "#FF0000"  # green / red
+        self.gps_dot.setStyleSheet(f"color: {color}; font-weight: bold;")
+
+
+    def _update_gps_indicator(self):
+        try:
+            fix = gpsloc()
+            with shared.write_lock:
+                shared.last_gps_fix = fix  # <-- add this
+
+            has_fix = bool(fix and fix.get("fix") is True)
+            self._set_gps_dot(has_fix)
+        except Exception:
+            with shared.write_lock:
+                shared.last_gps_fix = None
+            self._set_gps_dot(False)
 
     @Slot(str, int)
     def on_status_message(self, msg: str, level: int):

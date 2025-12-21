@@ -345,24 +345,35 @@ def update_mode_3_data(
             # Aggregate N seconds into one slice (per-bin sums)
             aggregated = [sum(col) for col in zip(*hmp_buffer)]
 
-            # Publish to UI ring buffer (create deque lazily, keep same object)
             from collections import deque
+
+            # Take a snapshot of the most recent GPS fix (could be None)
+            # dict(...) makes a shallow copy so it doesn't mutate later.
             with shared.write_lock:
                 if not hasattr(shared, "histogram_hmp") or not hasattr(shared.histogram_hmp, "append"):
                     shared.histogram_hmp = deque(maxlen=getattr(shared, "ring_len_hmp", 3600))
+
+                if not hasattr(shared, "gps_hmp") or not hasattr(shared.gps_hmp, "append"):
+                    shared.gps_hmp = deque(maxlen=getattr(shared, "ring_len_hmp", 3600))
+
+                gps_fix = getattr(shared, "last_gps_fix", None)
+                gps_snap = dict(gps_fix) if isinstance(gps_fix, dict) else None
+
+                # Append BOTH under the same lock so indices always match
                 shared.histogram_hmp.append(aggregated)
+                shared.gps_hmp.append(gps_snap)
 
             # Enqueue save job (keeps your existing saver contract)
             payload = meta.copy()
             payload["filename_hmp"] = filename_hmp
             payload["last_minute"]  = aggregated
+            payload["gps"]          = gps_snap   # <-- add this now (harmless if saver ignores it)
             save_queue.put(payload)
 
             # Reset buffer and counter
             hmp_buffer.clear()
             interval_counter = 0
         else:
-            # Nothing buffered in this window; just reset the counter
             interval_counter = 0
 
     return interval_counter, last_histogram

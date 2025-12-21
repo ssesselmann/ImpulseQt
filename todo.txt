@@ -1,6 +1,11 @@
 ImpulseQt
 ---------
 
+
+ImpulseQt v3.2.1.0 – Changelog
+–––––––––––––––––––––––––––––
+• Bug Fix - Restored lost function get_device_list()
+
 ImpulseQt v3.2.1.0 – Changelog
 –––––––––––––––––––––––––––––
 • Fixed bug in port selector ✅
@@ -60,3 +65,7 @@ Things to Do: ⚙️
 ===================================================================
 • Backup serial device settings (not so simple)
 • Loaded spectrum should show recording date not current date.
+• Fix plot to allow zooming and scrolling without resetting ❌
+
+
+

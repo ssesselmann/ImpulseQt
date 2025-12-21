@@ -14,6 +14,13 @@ from qt_compat import QStandardPaths
 
 from default_settings import DEFAULT_SETTINGS
 
+from collections import deque
+
+# latest GPS fix snapshot (dict) or None
+last_gps_fix = None
+
+# per-interval GPS snapshots aligned to histogram_hmp rows
+gps_hmp = deque(maxlen=3600)
 
 # --- Thread Control ---
 run_flag        = Event()
