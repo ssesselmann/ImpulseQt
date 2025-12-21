@@ -377,7 +377,7 @@ def update_mode_3_data(
             payload = meta.copy()
             payload["filename_hmp"] = filename_hmp
             payload["last_minute"]  = aggregated
-            payload["gps"]          = gps_snap   # <-- add this now (harmless if saver ignores it)
+            payload["gps"]          = row   # <-- add this now (harmless if saver ignores it)
             save_queue.put(payload)
 
             # Reset buffer and counter
