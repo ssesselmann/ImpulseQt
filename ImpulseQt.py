@@ -334,6 +334,7 @@ class MainWindow(QMainWindow):
             gps_main.start_gps()
 
             fix = gps_main.get_fix_cached(allow_stale=False)
+            
             with shared.write_lock:
                 shared.last_gps_fix = fix
 
