@@ -342,6 +342,12 @@ class Tab3(QWidget):
         self.t_interval_input.textChanged.connect(lambda text: self.on_text_changed(text, "t_interval"))
         top_right_col.addWidget(self.t_interval_input)
 
+        # View full recording button
+        self.view_full_btn = QPushButton("View full screen")
+        self.view_full_btn.setProperty("btn", "primary")
+        self.view_full_btn.clicked.connect(self.on_view_full_clicked)
+        top_right_col.addWidget(self.view_full_btn)
+
         # Download array button
         self.dld_array_button = QPushButton("Download csv array")
         self.dld_array_button.setProperty("btn", "primary")
@@ -354,21 +360,15 @@ class Tab3(QWidget):
         self.dld_gpsvis_button.clicked.connect(self.on_gpsvis_clicked)
         top_right_col.addWidget(self.dld_gpsvis_button)
 
-        self.use_roi_only_chk = QCheckBox("Use ROI only")
-        self.use_roi_only_chk.setChecked(False)
-        top_right_col.addWidget(self.use_roi_only_chk)
+        # self.use_roi_only_chk = QCheckBox("Use ROI only")
+        # self.use_roi_only_chk.setChecked(False)
+        # top_right_col.addWidget(self.use_roi_only_chk)
 
-
-        # View full recording button
-        self.view_full_btn = QPushButton("View full screen")
-        self.view_full_btn.setProperty("btn", "primary")
-        self.view_full_btn.clicked.connect(self.on_view_full_clicked)
-        top_right_col.addWidget(self.view_full_btn)
 
         # 2. Middle Section — Instructions
         middle_section = QWidget()
         middle_layout = QVBoxLayout(middle_section)        
-        text =  """This plot inherits calibration and interval from the 2D histogram"""
+        text =  """This plot inherits calibration, interval and ROI from the 2D histogram"""
         text2 = "\nDecrease bins and increase interval to reduce file size."
         self.instructions_label = QLabel(text+text2)
         self.instructions_label.setProperty("typo","p1")
@@ -439,12 +439,12 @@ class Tab3(QWidget):
     #    FUNCTIONS
     # ======================================================================
     def load_on_show(self):
-        # 1) Always pull live settings from shared (no matter has_loaded)
+        # 1) Always pull live settings from shared
         with shared.write_lock:
-            ms          = int(shared.max_seconds)
-            mc          = int(shared.max_counts)
-            compression = int(shared.compression)
-            filename_hmp= shared.filename_hmp
+            ms           = int(shared.max_seconds)
+            mc           = int(shared.max_counts)
+            compression  = int(shared.compression)
+            filename_hmp = shared.filename_hmp
 
         # Update inputs without firing signals
         self.max_seconds_input.blockSignals(True)
@@ -462,11 +462,14 @@ class Tab3(QWidget):
             self.bins_selector.setCurrentIndex(idx)
             self.bins_selector.blockSignals(False)
 
-        # 2) Do heavy loads only once
+        # 2) Heavy loads only once
         if not self.has_loaded:
             load_histogram_hmp(filename_hmp)
-            self.refresh_bin_selector()  # if this repopulates, keep it
+            self.refresh_bin_selector()
             self.has_loaded = True
+
+        # 3) ALWAYS redraw on tab show (this is the key)
+        self.update_graph()
 
 
     def load_switches(self):
@@ -737,6 +740,7 @@ class Tab3(QWidget):
             tint       = int(getattr(shared, "t_interval", 1) or 1)
             hist       = list(getattr(shared, "histogram_hmp", []) or [])
             gps_rows   = list(getattr(shared, "gps_hmp", []) or [])
+            peaks      = list(getattr(shared, "peak_list", []) or [])   # <-- ROI table source
 
         print(f"[gpsvis] hist_rows={len(hist)} gps_rows={len(gps_rows)} tint={tint}")
 
@@ -768,8 +772,6 @@ class Tab3(QWidget):
                 lon_s = f"{float(lon):.8f}"
             except Exception:
                 return ("", "", "")
-
-            # optional timestamp column (GPSVisualizer accepts "desc" text)
             if isinstance(epoch, (int, float)) and epoch > 0:
                 dt = datetime.fromtimestamp(float(epoch), tz=timezone.utc)
                 desc = dt.isoformat().replace("+00:00", "Z")
@@ -777,19 +779,65 @@ class Tab3(QWidget):
                 desc = ""
             return (lat_s, lon_s, desc)
 
+        def build_roi_ranges(peaks_list):
+            """Return merged inclusive index ranges [(i0,i1), ...] from shared.peak_list."""
+            ranges = []
+            for pk in peaks_list:
+                if not isinstance(pk, dict):
+                    continue
+                try:
+                    i0 = int(pk.get("i0"))
+                    i1 = int(pk.get("i1"))
+                except Exception:
+                    continue
+                if i1 < i0:
+                    i0, i1 = i1, i0
+                ranges.append((i0, i1))
+
+            if not ranges:
+                return []
+
+            ranges.sort()
+            merged = [list(ranges[0])]
+            for a, b in ranges[1:]:
+                if a <= merged[-1][1] + 1:
+                    merged[-1][1] = max(merged[-1][1], b)
+                else:
+                    merged.append([a, b])
+            return [(int(x[0]), int(x[1])) for x in merged]
+
+        def sum_in_ranges(row, ranges):
+            if not row:
+                return 0
+            if not ranges:
+                return int(sum(row))
+            n = len(row)
+            total = 0
+            for i0, i1 in ranges:
+                a = max(0, min(i0, n - 1))
+                b = max(0, min(i1, n - 1))
+                if b < a:
+                    a, b = b, a
+                total += int(sum(row[a:b+1]))
+            return total
+
+        roi_ranges = build_roi_ranges(peaks)
+        using_roi = bool(roi_ranges)
+        print(f"[gpsvis] ROI ranges: {roi_ranges} (using_roi={using_roi})")
+
         # --- write CSV ---
         with open(out_path, "w", newline="", encoding="utf-8") as f:
             w = csv.writer(f)
-            w.writerow(["name", "desc", "latitude", "longitude", "n", "cps", "t_interval_s"])
+            w.writerow(["name", "desc", "latitude", "longitude", "n", "cps", "t_interval_s", "roi_used"])
 
             for i, row in enumerate(hist):
-                counts = int(sum(row)) if row else 0
+                counts = sum_in_ranges(row, roi_ranges)
                 cps = counts / float(max(1, tint))
 
                 g = gps_rows[i] if i < len(gps_rows) else None
                 lat_s, lon_s, desc = fmt_latlon(g)
 
-                w.writerow([filename, desc, lat_s, lon_s, counts, f"{cps:.3f}", tint])
+                w.writerow([filename, desc, lat_s, lon_s, counts, f"{cps:.3f}", tint, int(using_roi)])
 
         QMessageBox.information(self, "Export Complete", f"Saved:\n{out_path}")
 
@@ -1006,6 +1054,7 @@ class Tab3(QWidget):
                 smooth_on    = shared.tab3_smooth_on
                 win          = shared.tab3_smooth_win
                 gps = shared.gps_hmp[-1] if getattr(shared, "gps_hmp", None) else None
+                peaks = list(getattr(shared, "peak_list", []) or [])
 
                
             # Ensure we have something to display
@@ -1133,6 +1182,70 @@ class Tab3(QWidget):
                 self.ax.grid(True, color="white", alpha=0.2)
                 for spine in self.ax.spines.values():
                     spine.set_color("white")
+
+                
+                def _roi_ranges_from_peaks(peaks, bins):
+                    ranges = []
+                    for pk in (peaks or []):
+                        if not isinstance(pk, dict):
+                            continue
+                        try:
+                            i0 = int(pk.get("i0"))
+                            i1 = int(pk.get("i1"))
+                        except Exception:
+                            continue
+                        if i1 < i0:
+                            i0, i1 = i1, i0
+                        # clamp to [0, bins-1]
+                        i0 = max(0, min(i0, bins - 1))
+                        i1 = max(0, min(i1, bins - 1))
+                        ranges.append((i0, i1))
+
+                    if not ranges:
+                        return []
+
+                    ranges.sort()
+                    merged = [list(ranges[0])]
+                    for a, b in ranges[1:]:
+                        if a <= merged[-1][1] + 1:
+                            merged[-1][1] = max(merged[-1][1], b)
+                        else:
+                            merged.append([a, b])
+                    return [(int(a), int(b)) for a, b in merged]
+
+
+                # --- ROI overlay (shaded bands) ---
+                # with shared.write_lock:
+                #     peaks = list(getattr(shared, "peak_list", []) or [])
+
+                roi_ranges = _roi_ranges_from_peaks(peaks, bins)
+
+                if roi_ranges:
+                    # pick a visible alpha; keep it subtle
+                    for i0, i1 in roi_ranges:
+                        # map bin endpoints into plot x-units
+                        x0 = float(x_axis[i0])
+                        x1 = float(x_axis[i1])
+                        lo, hi = (x0, x1) if x0 <= x1 else (x1, x0)
+
+                        # shaded vertical span behind the trace
+                        self.ax.axvspan(
+                            lo, hi,
+                            alpha=0.18,
+                            color="yellow",
+                            zorder=0
+                        )
+
+                    # optional: label once
+                    self.ax.text(
+                        0.01, 0.99,
+                        f"ROI: {len(roi_ranges)}",
+                        transform=self.ax.transAxes,
+                        ha="left", va="top",
+                        fontsize=10,
+                        color="yellow",
+                        alpha=0.8
+                    )
 
                 self.canvas.draw()
 

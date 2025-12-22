@@ -334,29 +334,16 @@ class MainWindow(QMainWindow):
             gps_main.start_gps()
 
             fix = gps_main.get_fix_cached(allow_stale=False)
-            #print("[GPS UI] fix =", fix)
-
-            if not isinstance(fix, dict):
-                fix = {}  # prevent fix.get crashing
-
             with shared.write_lock:
                 shared.last_gps_fix = fix
 
-            state = fix.get("state")
-            lat   = fix.get("lat")
-            lon   = fix.get("lon")
-
-            has_fix = (state == "fix") and (lat is not None) and (lon is not None)
-            #print("[GPS UI] state=", state, "lat=", lat, "lon=", lon, "has_fix=", has_fix)
-
+            has_fix = bool(gps_main.status)  # <- simplest
             self._set_gps_dot(has_fix)
 
-        except Exception as e:
-            #print("[GPS UI] EXCEPTION:", repr(e))   # <-- add this so we SEE the real cause
+        except Exception:
             with shared.write_lock:
                 shared.last_gps_fix = None
             self._set_gps_dot(False)
-
 
     @Slot(str, int)
     def on_status_message(self, msg: str, level: int):

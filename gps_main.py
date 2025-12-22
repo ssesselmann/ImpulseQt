@@ -5,33 +5,36 @@ import time
 import threading
 from typing import Optional, Dict, Any
 
-import gps_globalsat
 from shared import logger
 
-# Public: True only when we have a *fresh* fix with lat/lon
-status: bool = False
+try:
+    import gps_globalsat
+except Exception:
+    gps_globalsat = None  # GPS optional
 
+# ---- tuning ----
 POLL_INTERVAL_FAST = 1.0
 POLL_INTERVAL_SLOW = 15.0
 MISS_TO_SLOW = 3
-
-# If we haven't received *any* dict update for this long, consider it stale/unplugged
-STALE_AFTER_S = 4.0
+STALE_AFTER_S = 3.5  # if we haven't seen fresh data in this long, treat as not connected
 
 _lock = threading.Lock()
-
-_latest_fix: Optional[Dict[str, Any]] = None   # last dict returned from device
-_latest_t: float = 0.0                         # when _latest_fix was updated
-_state: str = "absent"                         # absent | acquiring | fix | error
+_latest_fix: Optional[Dict[str, Any]] = None
+_latest_t: float = 0.0
 _last_err: Optional[str] = None
 
 _thread: Optional[threading.Thread] = None
 _stop_evt = threading.Event()
 
+# Simple booleans you can use anywhere
+connected: bool = False
+status: bool = False   # == has_fix
+
 
 def start_gps() -> None:
-    """Safe to call repeatedly."""
     global _thread
+    if gps_globalsat is None:
+        return
     if _thread and _thread.is_alive():
         return
     _stop_evt.clear()
@@ -45,129 +48,95 @@ def stop_gps() -> None:
 
 
 def get_fix_cached(allow_stale: bool = True) -> Dict[str, Any]:
-    """
-    Returns a normalized dict with at least:
-      state: absent|acquiring|fix|stale|error
-      age_s: float|None
-      error: str|None
-      lat/lon if known
-    Also updates module-level `status`.
-    """
-    global status
-
+    """Always returns a dict (never None)."""
     now = time.time()
     with _lock:
         fix = _latest_fix.copy() if isinstance(_latest_fix, dict) else None
-        last_t = _latest_t
-        st = _state
+        age = (now - _latest_t) if _latest_t else None
         err = _last_err
 
-    age = (now - last_t) if last_t else None
-
-    # No cached data yet
     if not fix:
-        status = False
-        return {"state": "absent", "age_s": None, "error": err}
+        return {"connected": False, "fix": False, "lat": None, "lon": None, "age_s": None, "error": err}
 
-    # Stale detection (covers unplug / no updates)
-    if age is not None and age > STALE_AFTER_S:
-        status = False
+    # If we want fresh-only and it's stale, downgrade
+    if (not allow_stale) and (age is not None) and (age > STALE_AFTER_S):
         out = fix.copy()
-        out["state"] = "stale"
+        out["connected"] = False
+        out["fix"] = False
         out["age_s"] = age
-        out["error"] = err
-        if not allow_stale:
-            # explicitly refuse stale coords
-            out.pop("lat", None)
-            out.pop("lon", None)
+        out["error"] = "stale" if err is None else err
         return out
 
-    # Fresh update exists; compute "good fix now"
-    lat = fix.get("lat")
-    lon = fix.get("lon")
-    is_fix = (fix.get("fix") is True) or (st == "fix") or (fix.get("state") == "fix")
-    has_coords = (lat is not None) and (lon is not None)
-
-    status = bool(is_fix and has_coords)
-
-    out = fix.copy()
-    out["state"] = "fix" if status else st  # keep acquiring/absent/error if not a true fix
-    out["age_s"] = age
-    out["error"] = err
-    return out
+    fix["age_s"] = age
+    fix["error"] = err
+    return fix
 
 
-def make_gps_row(index: int) -> Dict[str, Any]:
-    """
-    Convenience for spectrum rows:
-    always returns a small dict that won't crash callers.
-    """
-    fix = get_fix_cached(allow_stale=False)
-    return {
-        "i": int(index),
-        "state": fix.get("state"),
-        "lat": fix.get("lat"),
-        "lon": fix.get("lon"),
-        "epoch": time.time(),
-        "age_s": fix.get("age_s"),
-        "error": fix.get("error"),
-        "source": fix.get("source", "globalsat"),
-    }
+def _set_latest(fix: Dict[str, Any], err: Optional[str]) -> None:
+    global _latest_fix, _latest_t, _last_err, connected, status
+    now = time.time()
 
+    # derive booleans directly from the fix dict
+    is_conn = bool(fix.get("connected") is True)
+    has_fix = bool(
+        is_conn
+        and (fix.get("fix") is True)
+        and (fix.get("lat") is not None)
+        and (fix.get("lon") is not None)
+    )
 
-def _publish(*, fix: Optional[Dict[str, Any]] = None, state: Optional[str] = None, err: Optional[str] = None, touch: bool = False) -> None:
-    global _latest_fix, _latest_t, _state, _last_err
     with _lock:
-        if isinstance(fix, dict) and fix:
-            _latest_fix = fix
-        if touch:
-            _latest_t = time.time()
-        if state:
-            _state = state
+        _latest_fix = fix
+        _latest_t = now
         _last_err = err
+        connected = is_conn
+        status = has_fix
 
 
 def _worker() -> None:
+    global _last_err  # <-- declare global ONCE, at top of function
+
     misses = 0
     poll_s = POLL_INTERVAL_FAST
 
     while not _stop_evt.is_set():
         try:
-            fix = gps_globalsat.get_fix(timeout_s=1.2)
+            fix = gps_globalsat.get_fix(timeout_s=1.2) if gps_globalsat is not None else None
 
             if isinstance(fix, dict) and fix:
-                fix = fix.copy()
-                fix.setdefault("source", "globalsat")
-
-                # Determine state from the device dict
-                lat = fix.get("lat")
-                lon = fix.get("lon")
-                got_coords = (lat is not None) and (lon is not None)
-                got_fix = (fix.get("fix") is True) and got_coords
-
-                fix["state"] = "fix" if got_fix else "acquiring"
-
-                _publish(fix=fix, state=fix["state"], err=None, touch=True)
-
                 misses = 0
                 poll_s = POLL_INTERVAL_FAST
-
+                fix.setdefault("source", "globalsat")
+                _set_latest(fix, err=None)
             else:
-                # No dict returned (timeout / no sentence). Don't clobber a previous good fix.
+                # normal "no fix yet"
                 misses += 1
                 if misses >= MISS_TO_SLOW:
                     poll_s = POLL_INTERVAL_SLOW
 
-                # If we have never seen anything, say "absent"; otherwise "acquiring"
+                # "no fix" is not an error; don't overwrite _latest_fix
                 with _lock:
-                    ever = bool(_latest_t)
-
-                _publish(state=("acquiring" if ever else "absent"), err=None, touch=False)
+                    _last_err = None
 
         except Exception as e:
             misses += 1
             if misses >= MISS_TO_SLOW:
                 poll_s = POLL_INTERVAL_SLOW
-            _publish(state="error", err=str(e), touch=False)
+            with _lock:
+                _last_err = str(e)
 
         time.sleep(poll_s)
+
+
+
+def debug_status() -> dict:
+    with _lock:
+        alive = bool(_thread and _thread.is_alive())
+        return {
+            "thread_alive": alive,
+            "latest_t": _latest_t,
+            "latest_fix": _latest_fix,
+            "last_err": _last_err,
+            "connected": connected,
+            "status": status,
+        }
