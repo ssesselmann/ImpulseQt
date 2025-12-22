@@ -329,20 +329,34 @@ class MainWindow(QMainWindow):
         color = "#00C853" if has_fix else "#FF0000"  # green / red
         self.gps_dot.setStyleSheet(f"color: {color}; font-weight: bold;")
 
-
     def _update_gps_indicator(self):
         try:
-            gps_main.start_gps()          # safe to call repeatedly
-            fix = gps_main.get_fix_cached()
-            with shared.write_lock:
-                shared.last_gps_fix = fix  # <-- add this
+            gps_main.start_gps()
 
-            has_fix = bool(fix and fix.get("fix") is True)
+            fix = gps_main.get_fix_cached(allow_stale=False)
+            #print("[GPS UI] fix =", fix)
+
+            if not isinstance(fix, dict):
+                fix = {}  # prevent fix.get crashing
+
+            with shared.write_lock:
+                shared.last_gps_fix = fix
+
+            state = fix.get("state")
+            lat   = fix.get("lat")
+            lon   = fix.get("lon")
+
+            has_fix = (state == "fix") and (lat is not None) and (lon is not None)
+            #print("[GPS UI] state=", state, "lat=", lat, "lon=", lon, "has_fix=", has_fix)
+
             self._set_gps_dot(has_fix)
-        except Exception:
+
+        except Exception as e:
+            #print("[GPS UI] EXCEPTION:", repr(e))   # <-- add this so we SEE the real cause
             with shared.write_lock:
                 shared.last_gps_fix = None
             self._set_gps_dot(False)
+
 
     @Slot(str, int)
     def on_status_message(self, msg: str, level: int):

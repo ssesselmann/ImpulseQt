@@ -38,30 +38,21 @@ SETTINGS = {}
 session_start = datetime.datetime.now()
 session_end = None
 
-
-MONO    = "font-family: Menlo, Courier New; font-size: 10pt; color: #555;"
+# Font
+MONO        = "font-family: Menlo, Courier New; font-size: 10pt; color: #555;"
 # Buttons
-START   = "background-color: #79AB4C; color: white; font-weight: bold;"
-
-STOP    = "background-color: #C12B2B; color: white; font-weight: bold;"
-
-BTN     = "background-color: #E0751C; color: white; font-weight: bold;"
-
-BUD     = "background-color: #7C7C7C; color: white; font-weight: bold;"
-
+START       = "background-color: #79AB4C; color: white; font-weight: bold;"
+STOP        = "background-color: #C12B2B; color: white; font-weight: bold;"
+BTN         = "background-color: #E0751C; color: white; font-weight: bold;"
+BUD         = "background-color: #7C7C7C; color: white; font-weight: bold;"
+# Colors
 DARK_BLUE   = "#112365"
-
 LIGHT_GREEN = "#9AFF7B"
-
 WHITE       = "#FFFFFF"
-
 PINK        = "#FF0066"
-
 RED         = "#FF0000"
-
-
-FOOTER  = f"ImpulseQt ({__version__}) by GammaSpectacular.com"
-
+# Footer
+FOOTER      = f"ImpulseQt ({__version__}) by GammaSpectacular.com"
 # At class level (e.g., Tab3Heatmap or similar)
 BIN_OPTIONS = [("128 Bins", 64),("256 Bins", 32), ("512 Bins", 16), ("1024 Bins", 8), ("2048 Bins", 4), ("4096 Bins", 2), ("8192 Bins", 1)]
 
@@ -393,6 +384,7 @@ SETTINGS_SCHEMA = {
     "window_pos_x": {"type": "int", "default": 50},
     "window_pos_y": {"type": "int", "default": 50},
     "window_width": {"type": "int", "default": 1280},
+    "window_height": {"type": "int", "default": 450},
     "tab3_hist_view": {"type": "bool", "default": False},
     "tab3_y_fixed": {"type": "bool", "default": False},
     "tab3_ymax": {"type": "int", "default": 100},
