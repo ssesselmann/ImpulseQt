@@ -116,6 +116,12 @@ def _close_serial():
     _SER = None
     _PORT = None
 
+def reset():
+    """Force close so next get_fix() will rescan + reopen."""
+    global _LAST_SCAN_T
+    _LAST_SCAN_T = 0.0
+    _close_serial()
+
 
 def get_fix(timeout_s: float = 1.2) -> Dict[str, Any]:
     """
@@ -173,10 +179,16 @@ def get_fix(timeout_s: float = 1.2) -> Dict[str, Any]:
     # read until timeout, parse NMEA
     best: Dict[str, Any] = {}
     deadline = now + float(max(0.2, timeout_s))
+    got_any_bytes = False
+
 
     try:
         while time.time() < deadline:
             raw = _SER.readline()
+            if not raw:
+                continue
+            got_any_bytes = True
+
             if not raw:
                 continue
             try:
@@ -194,6 +206,18 @@ def get_fix(timeout_s: float = 1.2) -> Dict[str, Any]:
             rmc_valid = best.get("rmc_valid", False)
             if lat is not None and lon is not None and (fixq > 0 or rmc_valid):
                 break
+        # If we got ZERO bytes for the whole window, the port is effectively dead.
+        # This is the common "unplug/replug" macOS behavior: no exception, just silence.
+        if not got_any_bytes:
+            _close_serial()
+            return {
+                "connected": bool(got_any_bytes),
+                "fix": False,
+                "lat": None,
+                "lon": None,
+                "epoch": time.time(),
+                "error": None,
+            }
 
     except Exception as e:
         _close_serial()

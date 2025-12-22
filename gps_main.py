@@ -61,7 +61,7 @@ def _worker() -> None:
                     _latest_t = now
                     connected = True
                     status = bool(fix.get("fix") is True)  # <-- THE WHOLE POINT
-
+                    
                 misses = 0
                 poll_s = POLL_FAST
 

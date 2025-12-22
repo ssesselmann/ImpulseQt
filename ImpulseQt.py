@@ -298,9 +298,9 @@ class MainWindow(QMainWindow):
         # ---------- GPS polling timer ----------
         self.gps_timer = QTimer(self)
         self.gps_timer.setInterval(1000)
-        self.gps_timer.timeout.connect(self._update_gps_indicator)
+        self.gps_timer.timeout.connect(self._set_gps_dot)
         self.gps_timer.start()
-        self._update_gps_indicator()
+        self._set_gps_dot()
 
         
 
@@ -324,30 +324,11 @@ class MainWindow(QMainWindow):
         container.setLayout(layout)
         self.setCentralWidget(container)
 
-    
-    def _set_gps_dot(self, has_fix: bool):
-        color = "#00C853" if has_fix else "#FF0000"  # green / red
+    def _set_gps_dot(self):
+        gps_main.start_gps()
+        has_fix = bool(gps_main.status)
+        color = "#00C853" if has_fix else "#FF0000"
         self.gps_dot.setStyleSheet(f"color: {color}; font-weight: bold;")
-
-    def _update_gps_indicator(self):
-        try:
-            gps_main.start_gps()
-
-            fix = gps_main.get_fix_cached(allow_stale=False)
-
-            print(gps_main.status)
-            
-            with shared.write_lock:
-                shared.last_gps_fix = fix
-
-            has_fix = bool(gps_main.status)  # <- simplest
-
-            self._set_gps_dot(has_fix)
-
-        except Exception:
-            with shared.write_lock:
-                shared.last_gps_fix = None
-            self._set_gps_dot(False)
 
     @Slot(str, int)
     def on_status_message(self, msg: str, level: int):
