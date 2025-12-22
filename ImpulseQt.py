@@ -334,11 +334,14 @@ class MainWindow(QMainWindow):
             gps_main.start_gps()
 
             fix = gps_main.get_fix_cached(allow_stale=False)
+
+            print(gps_main.status)
             
             with shared.write_lock:
                 shared.last_gps_fix = fix
 
             has_fix = bool(gps_main.status)  # <- simplest
+
             self._set_gps_dot(has_fix)
 
         except Exception:
