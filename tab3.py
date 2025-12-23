@@ -730,7 +730,6 @@ class Tab3(QWidget):
 
     @Slot()
     def on_gpsvis_clicked(self):
-        import csv
         from pathlib import Path
         from datetime import datetime, timezone
 
@@ -742,7 +741,20 @@ class Tab3(QWidget):
             gps_rows   = list(getattr(shared, "gps_hmp", []) or [])
             peaks      = list(getattr(shared, "peak_list", []) or [])   # <-- ROI table source
 
-        print(f"[gpsvis] hist_rows={len(hist)} gps_rows={len(gps_rows)} tint={tint}")
+        #print(f"[gpsvis] hist_rows={len(hist)} gps_rows={len(gps_rows)} tint={tint}")
+
+        # --- fallback: if gps_hmp isn't populated, grab ONE live fix now ---
+        gps_last = gps_rows[-1] if gps_rows else None
+
+        if gps_last is None:
+            try:
+                import gps_globalsat
+                live = gps_globalsat.get_fix(timeout_s=1.5)
+                if isinstance(live, dict) and live.get("fix") and live.get("lat") is not None and live.get("lon") is not None:
+                    gps_last = live
+            except Exception:
+                gps_last = None
+
 
         if not hist:
             QMessageBox.information(self, "No Data", "No interval histogram data to export yet.")
@@ -760,24 +772,41 @@ class Tab3(QWidget):
             n += 1
 
         def fmt_latlon(g):
-            if not isinstance(g, dict):
+            # Accept dict OR (lat, lon, epoch?) tuples/lists
+            if g is None:
                 return ("", "", "")
-            lat = g.get("lat")
-            lon = g.get("lon")
-            epoch = g.get("epoch")
+
+            lat = lon = epoch = None
+
+            if isinstance(g, dict):
+                lat = g.get("lat")
+                lon = g.get("lon")
+                epoch = g.get("epoch")
+            elif isinstance(g, (list, tuple)) and len(g) >= 2:
+                lat = g[0]
+                lon = g[1]
+                if len(g) >= 3:
+                    epoch = g[2]
+            else:
+                return ("", "", "")
+
             if lat is None or lon is None:
                 return ("", "", "")
+
             try:
                 lat_s = f"{float(lat):.8f}"
                 lon_s = f"{float(lon):.8f}"
             except Exception:
                 return ("", "", "")
+
             if isinstance(epoch, (int, float)) and epoch > 0:
                 dt = datetime.fromtimestamp(float(epoch), tz=timezone.utc)
                 desc = dt.isoformat().replace("+00:00", "Z")
             else:
                 desc = ""
+
             return (lat_s, lon_s, desc)
+
 
         def build_roi_ranges(peaks_list):
             """Return merged inclusive index ranges [(i0,i1), ...] from shared.peak_list."""
@@ -823,7 +852,7 @@ class Tab3(QWidget):
 
         roi_ranges = build_roi_ranges(peaks)
         using_roi = bool(roi_ranges)
-        print(f"[gpsvis] ROI ranges: {roi_ranges} (using_roi={using_roi})")
+        #print(f"[gpsvis] ROI ranges: {roi_ranges} (using_roi={using_roi})")
 
         # --- write CSV ---
         with open(out_path, "w", newline="", encoding="utf-8") as f:
@@ -834,7 +863,8 @@ class Tab3(QWidget):
                 counts = sum_in_ranges(row, roi_ranges)
                 cps = counts / float(max(1, tint))
 
-                g = gps_rows[i] if i < len(gps_rows) else None
+                g = gps_rows[i] if i < len(gps_rows) else gps_last
+
                 lat_s, lon_s, desc = fmt_latlon(g)
 
                 w.writerow([filename, desc, lat_s, lon_s, counts, f"{cps:.3f}", tint, int(using_roi)])

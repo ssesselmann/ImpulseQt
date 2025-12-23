@@ -788,10 +788,13 @@ def process_02(filename_hmp, compression3d, device, t_interval):
                     pass
 
                 fix = getattr(shared, "last_gps_fix", None)
-                if isinstance(fix, dict):
-                    row = {"lat": fix.get("lat"), "lon": fix.get("lon"), "epoch": time.time()}
-                else:
-                    row = {"lat": None, "lon": None, "epoch": time.time()}
+                ok = isinstance(fix, dict) and fix.get("fix") and (fix.get("lat") is not None) and (fix.get("lon") is not None)
+
+                row = {"lat": fix.get("lat") if ok else None,
+                       "lon": fix.get("lon") if ok else None,
+                       "epoch": time.time()}
+                shared.gps_hmp.append(row)
+
 
                 shared.gps_hmp.append(row)
 

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import time
+import shared
 from typing import Optional, Dict, Any
 
 try:
@@ -17,6 +18,9 @@ _PORT = None
 _BAUD = 4800
 _LAST_SCAN_T = 0.0
 SCAN_EVERY_S = 5.0
+
+_latest_fix = None
+_last_dbg_t = 0.0
 
 
 def _score_port(p) -> int:

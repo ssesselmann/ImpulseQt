@@ -8,6 +8,12 @@ try:
 except Exception:
     gps_globalsat = None
 
+try:
+    import shared  # your global shared state module
+except Exception:
+    shared = None
+
+
 POLL_FAST = 1.0
 POLL_SLOW = 15.0
 MISS_TO_SLOW = 3
@@ -16,12 +22,16 @@ STALE_AFTER_S = 3.5
 _lock = threading.Lock()
 _thread: Optional[threading.Thread] = None
 _stop_evt = threading.Event()
+_latest_fix = None  # dict from gps_globalsat.get_fix()
+
 
 # globals the rest of the app uses
 status: bool = False      # True = has fix
 connected: bool = False   # True = receiving data recently
 
 _latest_t: float = 0.0    # last time we received anything (for staleness)
+
+
 
 
 def start_gps() -> None:
@@ -42,6 +52,10 @@ def stop_gps() -> None:
         status = False
         connected = False
 
+def get_latest_fix():
+    with _lock:
+        return dict(_latest_fix) if isinstance(_latest_fix, dict) else None
+
 
 def _worker() -> None:
     global status, connected, _latest_t
@@ -61,7 +75,15 @@ def _worker() -> None:
                     _latest_t = now
                     connected = True
                     status = bool(fix.get("fix") is True)  # <-- THE WHOLE POINT
-                    
+                    _latest_fix = fix
+                # publish latest fix for the recorder thread(s)
+                if shared is not None:
+                    try:
+                        with shared.write_lock:
+                            shared.last_gps_fix = dict(fix)  # shallow copy
+                    except Exception:
+                        pass
+
                 misses = 0
                 poll_s = POLL_FAST
 
