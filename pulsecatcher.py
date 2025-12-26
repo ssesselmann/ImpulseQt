@@ -91,7 +91,7 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
             rate=sample_rate,
             input=True,
             output=False,
-            frames_per_buffer=chunk_size * channels,
+            frames_per_buffer=chunk_size,
             input_device_index=device,
         )
     except Exception as e:
@@ -126,6 +126,7 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
         # Include right channel if mode == 4:
         if mode == 4:
             right_pulses = []  # Reset right pulse array
+            
             for i in range(len(right_channel) - sample_length):
                 samples = right_channel[i:i + sample_length]
                 samples = [flip_right * x for x in samples]
@@ -136,6 +137,7 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
         # Sliding window approach to avoid re-slicing the array each time
         samples = left_channel[:sample_length]
         samples = [flip_left * x for x in samples]
+        
         for i in range(len(left_channel) - sample_length):
             height = fn.pulse_height(samples)
             if samples[peak] == max(samples) and abs(height) > threshold and samples[peak] < 32768:
@@ -160,7 +162,7 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
 
             # Update sliding window instead of re-slicing
             samples.pop(0)
-            samples.append(left_channel[i + sample_length])
+            samples.append(flip_left * left_channel[i + sample_length])
 
         # Time capture
         t1 = datetime.datetime.now()  
