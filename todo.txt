@@ -1,8 +1,12 @@
 ImpulseQt
 ---------
 
+ImpulseQt v3.2.3.0 – Changelog
+–––––––––––––––––––––––––––––
+• Bug Fix - Fixed automatic negative pulse flip.
+• Added Support for Globalsat GPS module
 
-ImpulseQt v3.2.1.0 – Changelog
+ImpulseQt v3.2.2.0 – Changelog
 –––––––––––––––––––––––––––––
 • Bug Fix - Restored lost function get_device_list()
 
