@@ -60,7 +60,7 @@ class FullRecordingDialog(QDialog):
         cal_switch,
         log_switch,
         epb_switch,
-        filename_hmp,
+        filename,
         # NEW:
         hist_view=False,
         y_fixed=False,
@@ -71,7 +71,7 @@ class FullRecordingDialog(QDialog):
         line_color="#66ff99",   # or use your LIGHT_GREEN if you prefer
     ):
         super().__init__(parent)
-        self.setWindowTitle(f"Full Recording — {filename_hmp}")
+        self.setWindowTitle(f"Full Recording — {filename}")
         self.setModal(True)
         self.setMinimumSize(1200, 800)
 
@@ -153,7 +153,7 @@ class FullRecordingDialog(QDialog):
                 ax.relim()
                 ax.autoscale_view(scalex=True, scaley=True)
 
-            ax.set_title(f"Last interval — {filename_hmp}", color="white")
+            ax.set_title(f"Last interval — {filename}", color="white")
             ax.set_xlabel("Energy (keV)" if cal_switch else "Bin #", color="white")
             ax.set_ylabel("log₁₀(Counts)" if log_switch else "Counts", color="white")
 
@@ -188,7 +188,7 @@ class FullRecordingDialog(QDialog):
                 vmin=z_min, vmax=z_max
             )
 
-            ax.set_title(f"Full Heatmap — {filename_hmp}", color="white")
+            ax.set_title(f"Full Heatmap — {filename}", color="white")
             ax.set_xlabel("Energy (keV)" if cal_switch else "Bin #", color="white")
             ax.set_ylabel("Time (s)", color="white")
 
