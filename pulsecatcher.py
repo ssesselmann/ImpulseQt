@@ -34,7 +34,7 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
         bins            = shared.bins
         last_histogram  = [0] * bins
         filename        = shared.filename
-        filename_hmp    = shared.filename_hmp
+        #filename_hmp    = shared.filename_hmp
         device          = shared.device
         sample_rate     = shared.sample_rate
         chunk_size      = shared.chunk_size
@@ -202,7 +202,7 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
                     'spec_notes': spec_notes,
                     'local_count_history': local_count_history
                 },
-                filename_hmp
+                filename
             )
 
 
@@ -273,19 +273,19 @@ def save_data(save_queue):
         location            = data['location']
         spec_notes          = data['spec_notes']
         local_count_history = data['local_count_history']
+        gps                 = data.get('gps')
 
         if 'filename' in data and 'full_histogram' in data:
             filename        = data['filename']
             full_histogram  = data['full_histogram']
             fn.write_histogram_npesv2(t0, t1, bins, local_counts, dropped_counts, local_elapsed, filename, full_histogram, coeff_1, coeff_2, coeff_3, device, location, spec_notes)
             fn.write_cps_json(filename, local_count_history, local_elapsed, local_counts, dropped_counts)
-            # logger.info(f'   ✅ pc histogram and cps saved {t1}')
 
-        if 'filename_hmp' in data and 'last_minute' in data:
-            filename_hmp = data['filename_hmp']
+        if 'filename' in data and 'last_minute' in data:
+            filename = data['filename']
             last_minute  = data['last_minute']
-            fn.update_json_hmp_file(t0, t1, bins, local_counts, local_elapsed, filename_hmp, last_minute, coeff_1, coeff_2, coeff_3, device)
-            fn.write_cps_json(filename_hmp, local_count_history, local_elapsed, local_counts, dropped_counts)
+            fn.update_json_hmp_file(t0, t1, bins, local_counts, local_elapsed, filename, last_minute, coeff_1, coeff_2, coeff_3, device, gps)
+            #fn.write_cps_json(filename, local_count_history, local_elapsed, local_counts, dropped_counts)
 
 
 # Appends 1-second slices to shared.histogram_hmp (mode 3 = waterfall)
@@ -301,7 +301,7 @@ def update_mode_3_data(
     now,                    # (unused here; kept for signature compatibility)
     save_queue,             # queue for JSON saver thread
     meta,                   # dict with metadata for save thread
-    filename_hmp            # base name for JSON file (without _hmp.json)
+    filename            # base name for JSON file (without _hmp.json)
 ):
     """
     Returns: (interval_counter, last_histogram)
@@ -311,10 +311,9 @@ def update_mode_3_data(
       - Buffer each 1s row.
       - Every t_interval seconds, aggregate buffered rows into one slice,
         push to shared.histogram_hmp (UI ring), and enqueue a save job:
-          data["filename_hmp"] = filename_hmp
+          data["filename"] = filename
           data["last_minute"]  = aggregated      # keeps existing save_data contract
     """
-
     # Only active for waterfall mode
     if mode != 3:
         return interval_counter, last_histogram
@@ -370,9 +369,8 @@ def update_mode_3_data(
                 row = {
                     "lat": fix.get("lat") if ok else None,
                     "lon": fix.get("lon") if ok else None,
-                    "epoch": time.time(),
+                    "t": shared.elapsed,
                 }
-
 
                 shared.gps_hmp.append(row)
 
@@ -381,7 +379,7 @@ def update_mode_3_data(
 
             # Enqueue save job (keeps your existing saver contract)
             payload = meta.copy()
-            payload["filename_hmp"] = filename_hmp
+            payload["filename"] = filename
             payload["last_minute"]  = aggregated
             payload["gps"]          = row   # <-- add this now (harmless if saver ignores it)
             save_queue.put(payload)
