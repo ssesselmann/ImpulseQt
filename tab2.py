@@ -906,6 +906,10 @@ class Tab2(QWidget):
         self.max_counts_input.setText(str(mc))
         self.max_counts_input.blockSignals(False)
 
+        self.filename_input.blockSignals(True)
+        self.filename_input.setText(filename)
+        self.filename_input.blockSignals(False)        
+
         # Update bins selector to current compression (same BIN_OPTIONS/itemData)
         idx = self.bins_selector.findData(compression)
         if idx != -1 and idx != self.bins_selector.currentIndex():
