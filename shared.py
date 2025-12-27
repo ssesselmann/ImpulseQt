@@ -134,7 +134,6 @@ else:
 # --- Application Settings ---
 filename        = "my_spectrum"
 filename_2      = "background"
-filename_hmp    = "my_hmp_spectrum"
 
 
 # --- Audio Settings ---
@@ -333,7 +332,6 @@ SETTINGS_SCHEMA = {
     "epb_switch": {"type": "bool", "default": False},
     "filename": {"type": "str", "default": "my_spectrum"},
     "filename_2": {"type": "str", "default": "background"},
-    "filename_hmp": {"type": "str", "default": "my_hmp_spectrum"},
     "flags_selected": {"type": "list", "default": []},
     "flip": {"type": "int", "default": 11},
     "log_switch": {"type": "bool", "default": False},
