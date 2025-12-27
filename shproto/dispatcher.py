@@ -677,8 +677,8 @@ def process_01(filename, compression, device, t_interval):
 # 3D WATERFALL
 # ========================================================
 
-def process_02(filename_hmp, compression3d, device, t_interval):
-    logger.info(f'   ✅ Received cmd ({filename_hmp}) ')
+def process_02(filename, compression3d, device, t_interval):
+    logger.info(f'   ✅ Received cmd ({filename}) ')
 
     global counts, last_counts, histogram_hmp
 
@@ -698,7 +698,7 @@ def process_02(filename_hmp, compression3d, device, t_interval):
 
     # --- load shared settings, prep ring buffer, set run flag ---
     with shared.write_lock:
-        shared.run_flag.is_set()
+        shared.run_flag.set()
         t_interval  = int(shared.t_interval)      # seconds between spectrum rows
         max_counts  = int(shared.max_counts)
         max_seconds = int(shared.max_seconds)
@@ -720,13 +720,13 @@ def process_02(filename_hmp, compression3d, device, t_interval):
         try:
             dt_now = datetime.fromtimestamp(time.time())
             save_spectrum_hmp_json(
-                filename_hmp=filename_hmp,
-                hst3d=hst3d,
-                counts=counts,
-                dt_start=dt_start,
-                dt_now=dt_now,
-                coeffs=coeffs,   # NPES order supplied by caller per your saver
-                device=device
+                filename    = filename,
+                hst3d       = hst3d,
+                counts      = counts,
+                dt_start    = dt_start,
+                dt_now      = dt_now,
+                coeffs      = coeffs,   # NPES order supplied by caller per your saver
+                device      = device
             )
         except Exception as e:
             logger.error(f"❌ Failed to save JSON checkpoint: {e}", exc_info=True)
@@ -792,14 +792,9 @@ def process_02(filename_hmp, compression3d, device, t_interval):
 
                 row = {"lat": fix.get("lat") if ok else None,
                        "lon": fix.get("lon") if ok else None,
-                       "epoch": time.time()}
+                       "t": int(tt)}
+                
                 shared.gps_hmp.append(row)
-
-
-                shared.gps_hmp.append(row)
-
-            #print(f"[GPS/HMP serial] hist={len(shared.histogram_hmp)} gps={len(shared.gps_hmp)} last={row}")
-
 
             # 5) periodic JSON checkpoint
             if rows_since_save >= SAVE_EVERY_ROWS:
@@ -943,9 +938,24 @@ def load_json_data(file_path):
         }
 
 
-def save_spectrum_hmp_json(filename_hmp, hst3d, counts, dt_start, dt_now, coeffs, device):
+def save_spectrum_hmp_json(filename, hst3d, counts, dt_start, dt_now, coeffs, device):
     elapsed_for_save = int(shproto.dispatcher.total_time * _TIME_SCALE)
-    compressed_bins = len(hst3d[0]) if hst3d else 0
+    compressed_bins  = len(hst3d[0]) if hst3d else 0
+    nrows            = len(hst3d)
+
+    # --- snapshot gps rows (aligned to hst3d length) ---
+    try:
+        with shared.write_lock:
+            gps_rows = list(getattr(shared, "gps_hmp", []))
+    except Exception:
+        gps_rows = []
+
+    # Ensure gps_rows matches nrows (pad with None rows or trim)
+    if nrows > 0:
+        if len(gps_rows) < nrows:
+            gps_rows += [{"lat": None, "lon": None, "t": None}] * (nrows - len(gps_rows))
+        elif len(gps_rows) > nrows:
+            gps_rows = gps_rows[-nrows:]   # keep most recent rows (matches hst3d which grows)
 
     data = {
         "schemaVersion": "NPESv2",
@@ -956,13 +966,13 @@ def save_spectrum_hmp_json(filename_hmp, hst3d, counts, dt_start, dt_now, coeffs
                     "deviceName": f"{device}{shproto.dispatcher.serial_number}"
                 },
                 "sampleInfo": {
-                    "name": filename_hmp,
+                    "name": filename,
                     "location": "",
                     "note": ""
                 },
                 "resultData": {
                     "startTime": dt_start.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
-                    "endTime": dt_now.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+                    "endTime":   dt_now.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
                     "energySpectrum": {
                         "numberOfChannels": compressed_bins,
                         "energyCalibration": {
@@ -971,20 +981,18 @@ def save_spectrum_hmp_json(filename_hmp, hst3d, counts, dt_start, dt_now, coeffs
                         },
                         "validPulseCount": counts,
                         "measurementTime": elapsed_for_save,
-                        "spectrum": hst3d
+                        "spectrum": hst3d,
+                        "gps": gps_rows,   # ✅ add gps
                     }
                 }
             }
         ]
     }
 
-    json_data = json.dumps(data, separators=(",", ":"))
-    file_path = os.path.join(USER_DATA_DIR, f'{filename_hmp}_hmp.json')
-
-    logger.info(f'   ✅ Saving HMP JSON: {file_path}')
+    file_path = os.path.join(USER_DATA_DIR, f"{filename}_hmp.json")
+    logger.info(f"   ✅ Saving HMP JSON: {file_path}")
     with open(file_path, "w") as wjf:
-        wjf.write(json_data)
-
+        json.dump(data, wjf, separators=(",", ":"))
 
 def stop():
     global spec_stopflag
