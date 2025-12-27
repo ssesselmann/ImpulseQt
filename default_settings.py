@@ -44,7 +44,6 @@ DEFAULT_SETTINGS = {
 	"epb_switch": False,
 	"filename": "my_spectrum",
 	"filename_2": "background",
-	"filename_hmp": "my_hmp_spectrum",
 	"flags_selected": "",
 	"flip": 1,
 	"histogram": [],
