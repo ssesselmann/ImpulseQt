@@ -75,6 +75,7 @@ class Tab3(QWidget):
     def init_ui(self):
 
         with shared.write_lock:
+            filename    = shared.filename
             bins        = shared.bins
             max_counts  = shared.max_counts
             max_seconds = shared.max_seconds 
@@ -307,8 +308,8 @@ class Tab3(QWidget):
         top_right_col.addWidget(self.filename_input_label)
 
         # Filename input
-        self.filename_input = QLineEdit(shared.filename_hmp)
-        self.filename_input.setText(shared.filename_hmp)
+        self.filename_input = QLineEdit(shared.filename)
+        self.filename_input.setText(shared.filename)
         self.filename_input.textChanged.connect(lambda text: self.on_text_changed(text, "filename"))
         top_right_col.addWidget(self.filename_input)
 
@@ -444,7 +445,7 @@ class Tab3(QWidget):
             ms           = int(shared.max_seconds)
             mc           = int(shared.max_counts)
             compression  = int(shared.compression)
-            filename_hmp = shared.filename_hmp
+            filename     = shared.filename
 
         # Update inputs without firing signals
         self.max_seconds_input.blockSignals(True)
@@ -455,6 +456,11 @@ class Tab3(QWidget):
         self.max_counts_input.setText(str(mc))
         self.max_counts_input.blockSignals(False)
 
+        self.filename_input.blockSignals(True)
+        self.filename_input.setText(filename)
+        self.filename_input.blockSignals(False)
+
+
         # Update bins selector to current compression
         idx = self.bins_selector.findData(compression)
         if idx != -1 and idx != self.bins_selector.currentIndex():
@@ -464,7 +470,7 @@ class Tab3(QWidget):
 
         # 2) Heavy loads only once
         if not self.has_loaded:
-            load_histogram_hmp(filename_hmp)
+            load_histogram_hmp(filename)
             self.refresh_bin_selector()
             self.has_loaded = True
 
@@ -508,7 +514,7 @@ class Tab3(QWidget):
                     base = base[:-4]
 
                 with shared.write_lock:
-                    shared.filename_hmp = base
+                    shared.filename = base
                     shared.save_settings()
 
         except Exception as e:
@@ -583,12 +589,12 @@ class Tab3(QWidget):
         self.filename_input.setText(selected_name)
 
 
-    def load_selected_file(self, filename_hmp):
+    def load_selected_file(self, filename):
         try:
-            load_histogram_hmp(filename_hmp)
+            load_histogram_hmp(filename)
 
             # Simplify input update
-            self.filename_input.setText(Path(filename_hmp).stem.replace("_hmp", ""))
+            self.filename_input.setText(Path(filename).stem.replace("_hmp", ""))
             self.ready_to_plot = True
             self.refresh_timer.stop()
 
@@ -639,7 +645,7 @@ class Tab3(QWidget):
         try:
             from viewer_full_hmp import load_full_hmp_from_json, FullRecordingDialog  # <-- important
 
-            json_path = USER_DATA_DIR / f"{shared.filename_hmp}_hmp.json"
+            json_path = USER_DATA_DIR / f"{shared.filename}_hmp.json"
             if not json_path.exists():
                 from qt_compat import QFileDialog
                 picked, _ = QFileDialog.getOpenFileName(
@@ -666,7 +672,7 @@ class Tab3(QWidget):
                 cal_switch=shared.cal_switch,
                 log_switch=shared.log_switch,
                 epb_switch=shared.epb_switch,
-                filename_hmp=shared.filename_hmp,
+                filename=shared.filename,
                 hist_view=hist_view,
                 y_fixed=getattr(shared, "tab3_y_fixed", False),
                 y_max_user=getattr(shared, "tab3_ymax", 100),
@@ -735,7 +741,7 @@ class Tab3(QWidget):
 
         # --- snapshot state once ---
         with shared.write_lock:
-            filename   = (shared.filename_hmp or "gps_export").strip()
+            filename   = (shared.filename or "gps_export").strip()
             tint       = int(getattr(shared, "t_interval", 1) or 1)
             hist       = list(getattr(shared, "histogram_hmp", []) or [])
             gps_rows   = list(getattr(shared, "gps_hmp", []) or [])
@@ -909,7 +915,7 @@ class Tab3(QWidget):
                 base = base[:-4]
 
             with shared.write_lock:
-                shared.filename_hmp = base
+                shared.filename = base
                 device_type = shared.device_type
                 t_interval  = int(shared.t_interval)
 
@@ -980,7 +986,7 @@ class Tab3(QWidget):
         import json
 
         with shared.write_lock:
-            raw_name = shared.filename_hmp or ""
+            raw_name = shared.filename or ""
             filename = Path(raw_name).stem or "spectrum3d"
 
         json_path = USER_DATA_DIR / f"{filename}_hmp.json"
@@ -1069,7 +1075,7 @@ class Tab3(QWidget):
             with shared.write_lock:
                 run_flag     = shared.run_flag
                 data         = list(shared.histogram_hmp)
-                filename_hmp = shared.filename_hmp
+                filename     = shared.filename
                 t_interval   = shared.t_interval
                 log_switch   = shared.log_switch
                 epb_switch   = shared.epb_switch
@@ -1202,7 +1208,7 @@ class Tab3(QWidget):
                     self.ax.relim()
                     self.ax.autoscale_view(scalex=True, scaley=True)
 
-                title = f"Last interval - {filename_hmp}"
+                title = f"Last interval - {filename}"
                 self.ax.set_title(title, color="white")
                 self.ax.set_xlabel("Energy (keV)" if cal_switch else "Bin #", color="white")
                 self.ax.set_ylabel("log₁₀(Counts)" if log_switch else "Counts", color="white")
@@ -1359,7 +1365,7 @@ class Tab3(QWidget):
                 vmax=z_max
             )
 
-            self.hmp_plot_title = f"Waterfall - {filename_hmp}"
+            self.hmp_plot_title = f"Waterfall - {filename}"
             self.ax.set_title(self.hmp_plot_title, color="white")
             self.ax.set_xlabel("Energy (keV)" if cal_switch else "Bin #", color="white")
             self.ax.set_ylabel("Time (s)", color="white")
