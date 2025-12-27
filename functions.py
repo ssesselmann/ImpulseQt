@@ -17,7 +17,6 @@ import platform
 import threading
 import queue
 import sqlite3 as sql
-import pulsecatcher as pc
 import logging
 import glob
 import requests as req
@@ -27,19 +26,19 @@ import shared
 import numpy as np
 import shproto.dispatcher as disp
 
-from pulsecatcher import pulsecatcher
 from scipy.signal import find_peaks, peak_widths
 from collections import defaultdict
 from datetime import datetime
 from urllib.request import urlopen
 from shproto.dispatcher import process_03, start
 from pathlib import Path
-from shared import logger, USER_DATA_DIR, LIB_DIR
+from shared import logger, LIB_DIR
 
 cps_list        = []
 
-with shared.write_lock:
-    data_directory  = shared.DATA_DIR
+def _user_dir() -> Path:
+    with shared.write_lock:
+        return Path(shared.USER_DATA_DIR)  # works whether it’s str or Path
 
 # Create a threading event to control the background thread
 stop_thread         = threading.Event()
@@ -96,9 +95,6 @@ def distortion(normalised, shape):
     # 0..2 → 0..100
     return (rms / 2.0) * 100.0
 
-
-
-
 # Function calculates pulse height
 def pulse_height(samples):
     return max(samples) - min(samples)
@@ -121,7 +117,7 @@ def update_bin(n, bins, bin_counts):
 
 # This function writes a 2D histogram to JSON file according to NPESv2 schema.
 def write_histogram_npesv2(t0, t1, bins, counts, dropped_counts, elapsed, filename, histogram, coeff_1, coeff_2, coeff_3, device, location, spec_notes):
-    jsonfile = get_path(os.path.join(shared.USER_DATA_DIR, f'{filename}.json'))
+    jsonfile = _user_dir() / f"{filename}.json"
     data = {
         "schemaVersion": "NPESv2",
         "data": [
@@ -156,9 +152,9 @@ def write_histogram_npesv2(t0, t1, bins, counts, dropped_counts, elapsed, filena
     with open(jsonfile, "w+") as f:
         json.dump(data, f, separators=(',', ':'))
 
-# Function to create a blank JSON NPESv2 schema filename_hmp.json
+# Function to create a blank JSON NPESv2 schema filename.json
 def write_blank_json_schema_hmp(filename, device):
-    jsonfile = get_path(f'{shared.USER_DATA_DIR}/{filename}_hmp.json')
+    jsonfile = _user_dir() / f"{filename}_hmp.json"
     data = {
         "schemaVersion": "NPESv2",
         "data": [
@@ -184,7 +180,8 @@ def write_blank_json_schema_hmp(filename, device):
                         "validPulseCount": 0,
                         "droppedPulseCounts": 0,
                         "measurementTime": 0,
-                        "spectrum": []
+                        "spectrum": [],
+                        "gps": []
                     }
                 }
             }
@@ -200,14 +197,20 @@ def write_blank_json_schema_hmp(filename, device):
         logger.error(f"  ❌ fn writing blank JSON file: {e} ")
 
 
-def update_json_hmp_file(t0, t1, bins, counts, elapsed, filename_hmp, last_histogram, coeff_1, coeff_2, coeff_3, device):
+def update_json_hmp_file(
+    t0, t1, bins, counts, elapsed, filename,
+    last_histogram, coeff_1, coeff_2, coeff_3, device,
+    gps=None
+):
+    if gps is None:
+        gps = {}  # or None, but dict is convenient
+
     
     with shared.write_lock:
         data_directory = shared.USER_DATA_DIR
 
-    jsonfile = get_path(os.path.join(data_directory, f'{filename_hmp}_hmp.json'))
-    
-    # Check if the file exists
+    jsonfile = _user_dir() / f"{filename}_hmp.json"
+
     if os.path.isfile(jsonfile):
         try:
             with open(jsonfile, "r") as f:
@@ -215,34 +218,34 @@ def update_json_hmp_file(t0, t1, bins, counts, elapsed, filename_hmp, last_histo
         except Exception as e:
             logger.error(f"  ❌ fn reading JSON file: {e} ")
             return
-        
-        # Update other fields
+
         result_data = data["data"][0]["resultData"]
         result_data["startTime"] = t0.strftime("%Y-%m-%dT%H:%M:%S+00:00")
-        result_data["endTime"] = t1.strftime("%Y-%m-%dT%H:%M:%S+00:00")
-        result_data["energySpectrum"]["numberOfChannels"] = bins
-        result_data["energySpectrum"]["energyCalibration"]["coefficients"] = [coeff_3, coeff_2, coeff_1]
-        result_data["energySpectrum"]["validPulseCount"] = counts
-        result_data["energySpectrum"]["measurementTime"] = elapsed
-        # Append the new histogram to the existing spectrum list
-        result_data['energySpectrum']['spectrum'].append(last_histogram)
+        result_data["endTime"]   = t1.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+
+        es = result_data["energySpectrum"]
+        es["numberOfChannels"] = bins
+        es["energyCalibration"]["coefficients"] = [coeff_3, coeff_2, coeff_1]
+        es["validPulseCount"]  = counts
+        es["measurementTime"]  = elapsed
+
+        # ensure arrays exist (handles old files)
+        if "spectrum" not in es or not isinstance(es["spectrum"], list):
+            es["spectrum"] = []
+        if "gps" not in es or not isinstance(es["gps"], list):
+            es["gps"] = []
+
+        es["spectrum"].append(last_histogram)
+        es["gps"].append(gps)
 
     else:
         logger.info(f"   ✅ fn creating new json file: {jsonfile} ")
-        
         data = {
             "schemaVersion": "NPESv2",
             "data": [
                 {
-                    "deviceData": {
-                        "softwareName": "IMPULSE",
-                        "deviceName": device
-                    },
-                    "sampleInfo": {
-                        "name": filename_hmp,
-                        "location": "",
-                        "note": ""
-                    },
+                    "deviceData": {"softwareName": "IMPULSE", "deviceName": device},
+                    "sampleInfo": {"name": filename, "location": "", "note": ""},
                     "resultData": {
                         "startTime": t0.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
                         "endTime": t1.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
@@ -250,29 +253,30 @@ def update_json_hmp_file(t0, t1, bins, counts, elapsed, filename_hmp, last_histo
                             "numberOfChannels": bins,
                             "energyCalibration": {
                                 "polynomialOrder": 2,
-                                "coefficients": [coeff_3, coeff_2, coeff_1]
+                                "coefficients": [coeff_3, coeff_2, coeff_1],
                             },
-                            "validPulseCount": 0,
-                            "measurementTime": 0,
-                            "spectrum": [],  # Initialize with the first histogram
-                        }
-                    }
+                            "validPulseCount": counts,
+                            "measurementTime": elapsed,
+                            "spectrum": [last_histogram],
+                            "gps": [gps],
+                        },
+                    },
                 }
-            ]
+            ],
         }
-    
-    # Save the updated or new JSON data back to the file
+
     try:
         with open(jsonfile, "w") as f:
-            json.dump(data, f, separators=(',', ':'))
-        logger.info(f"   ✅ fn 3D file created: {filename_hmp}_hmp.json ")
-
+            json.dump(data, f, separators=(",", ":"))
+        logger.info(f"   ✅ fn 3D file created: {filename}_hmp.json ")
     except Exception as e:
         logger.error(f"  ❌ fn writing json file: {e} ")
 
+
 # This function writes counts per second to JSON
 def write_cps_json(filename, count_history, elapsed, valid_counts, dropped_counts):
-    data_directory = shared.USER_DATA_DIR
+    with shared.write_lock:
+        data_directory = shared.USER_DATA_DIR
     cps_file_path = os.path.join(data_directory, f"{filename}_cps.json")
     # Ensure count_history is a flat list of integers
     valid_count_history = [int(item) for sublist in count_history for item in (sublist if isinstance(sublist, list) else [sublist]) if isinstance(item, int) and item >= 0]
@@ -464,41 +468,46 @@ def start_recording(mode, device_type):
         return None
 
 def start_max_recording(mode):
-    # Try to stop any previous process
+    # stop previous
     if hasattr(shared, "max_process_thread") and shared.max_process_thread.is_alive():
-
         logger.warning("👆 fn MAX thread still running, attempting to stop ")
-
         shproto.dispatcher.spec_stopflag = 1
         shared.max_process_thread.join(timeout=2)
         logger.info("   ✅ fn Previous MAX thread stopped ")
 
+    # lock only for fast shared state updates + snapshot
     with shared.write_lock:
         shared.dropped_counts = 0
         shared.counts         = 0
         shared.elapsed        = 0
         shared.run_flag.set()
+
         filename     = shared.filename
-        filename_hmp = shared.filename_hmp
+        #filename_hmp = shared.filename_hmp
         compression  = shared.compression
         device       = shared.device
-        t_interval   = shared.t_interval
+        t_interval   = int(getattr(shared, "t_interval", 1) or 1)
+
+        # OPTIONAL: if starting 3D, reset rings/buffers so old data doesn't mix
+        if mode == 3:
+            shared.histogram_hmp = []
+            shared.gps_hmp       = []
 
     logger.info(f"   ✅ fn Starting MAX recording ({filename}) in mode {mode} ")
 
-    # Reset dispatcher stop flag
+    # everything below is slow -> no lock
     shproto.dispatcher.spec_stopflag = 0
-
-    # Start dispatcher thread (if needed)
     dispatcher_thread = threading.Thread(target=shproto.dispatcher.start, daemon=True)
     dispatcher_thread.start()
+
     time.sleep(0.15)
-    shproto.dispatcher.process_03('-mode 0')
+    shproto.dispatcher.process_03("-mode 0")
     time.sleep(0.15)
-    shproto.dispatcher.process_03('-rst')
+    shproto.dispatcher.process_03("-rst")
     time.sleep(0.15)
-    shproto.dispatcher.process_03('-sta')
+    shproto.dispatcher.process_03("-sta")
     time.sleep(0.15)
+
 
     # Create a recording thread to run process_01 or process_02
     def run_dispatcher():
@@ -506,7 +515,7 @@ def start_max_recording(mode):
             if mode == 3:
                 logger.info("   ✅ fn Launching MAX 3D process_02 ")
 
-                shproto.dispatcher.process_02(filename_hmp, compression, device, t_interval)
+                shproto.dispatcher.process_02(filename, compression, device, t_interval)
 
             else:
                 logger.info("   ✅ fn Launching MAX 2D process_01 ")
@@ -526,7 +535,7 @@ def start_max_recording(mode):
         try:
             if mode == 3:
                 logger.info("   ✅ fn Launching MAX 3D process_02 ")
-                shproto.dispatcher.process_02(filename_hmp, compression3d, device, t_interval)
+                shproto.dispatcher.process_02(filename, compression3d, device, t_interval)
 
             else:
                 logger.info("   ✅ fn Launching MAX 2D process_01 ")
@@ -540,9 +549,12 @@ def start_max_recording(mode):
     return process_thread
 
 def start_pro_recording(mode):
+
+    from pulsecatcher import pulsecatcher
+
     with shared.write_lock:
         filename        = shared.filename
-        filename_hmp    = shared.filename_hmp
+        #filename_hmp    = shared.filename_hmp
         device          = shared.device
         run_flag        = shared.run_flag
         run_flag_lock   = shared.run_flag_lock
@@ -564,7 +576,7 @@ def start_pro_recording(mode):
 
         logger.info("   ✅ fn Start recording (3D) ")
 
-        write_blank_json_schema_hmp(filename_hmp, device)
+        write_blank_json_schema_hmp(filename, device)
 
 
         try:
@@ -609,7 +621,8 @@ def clear_shared(mode):
 
     if mode == 3:
 
-        file_path = os.path.join(shared.USER_DATA_DIR, f'{shared.filename}_hmp.json')
+        with shared.write_lock:
+            file_path = os.path.join(shared.USER_DATA_DIR, f'{shared.filename}_hmp.json')
 
         try:
             if os.path.exists(file_path):
@@ -635,13 +648,6 @@ def clear_shared(mode):
         logger.info(f"   ✅ fn Cleared data mode({mode})")  
 
     return
-
-def clear_global_cps_list():
-    with shared.write_lock:
-        shared.global_cps      = 0
-        shared.dropped_counts  = 0
-        shared.count_history   = []
-
 
 def get_unique_filename(directory, filename):
     """
@@ -760,15 +766,20 @@ def publish_spectrum(filename):
         logger.error(f"  ❌ fn from /code/functions/publish_spectrum: {e} ")
         return f'Error from /code/functions/publish_spectrum: {e}'
 
-
 def get_spec_notes(filename):
     try:
-        with open(f'{data_directory}/{filename}.json') as f:
+        filename = Path(filename).stem
+        path = get_path(os.path.join(USER_DATA_DIR, f"{filename}.json"))
+        with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        if data["schemaVersion"] == "NPESv2":
-            return data["data"][0]["sampleInfo"]["note"]
-    except:
-        return 'Not writing'
+
+        if data.get("schemaVersion") == "NPESv2":
+            data = data["data"][0]
+
+        return data.get("sampleInfo", {}).get("note", "")
+    except Exception:
+        return "Not writing"
+
 
 def fetch_json(file_id):
     url = f'https://www.gammaspectacular.com/spectra/files/{file_id}.json'
@@ -845,8 +856,6 @@ def allowed_command(cmd: str) -> bool:
 
     return False
 
-
-
 def is_valid_json(file_path):
     try:
         with open(file_path, 'r') as f:
@@ -885,8 +894,8 @@ def get_filename_options(kind="user"):
         return {'label': label, 'value': value}
 
     files = [
-        make_option(f, USER_DATA_DIR)
-        for f in USER_DATA_DIR.glob("*.json")
+        make_option(f, shared.USER_DATA_DIR)
+        for f in shared.USER_DATA_DIR.glob("*.json")
         if match(f.name)
     ]
     files.sort(key=lambda x: x['label'].lower())  # case-insensitive sort
@@ -911,8 +920,8 @@ def get_filename_2_options():
 
     # --- User files at USER_DATA_DIR root ---
     user_files = [
-        make_option(f, USER_DATA_DIR)
-        for f in USER_DATA_DIR.glob("*.json")
+        make_option(f, shared.USER_DATA_DIR)
+        for f in shared.USER_DATA_DIR.glob("*.json")
         if is_valid(f.name)
     ]
     user_files.sort(key=lambda x: x['sort_key'])
@@ -920,7 +929,7 @@ def get_filename_2_options():
     # --- Isotope lookup entries from /lib/isotopes.json ---
     iso_options = []
     try:
-        iso_json_path = USER_DATA_DIR / "lib" / "isotopes.json"
+        iso_json_path = shared.USER_DATA_DIR / "lib" / "isotopes.json"
         if not iso_json_path.exists():
             # Fallbacks: allow an app-shipped asset or an explicit path in shared
             candidate = getattr(shared, "ISOTOPES_JSON", None)
@@ -954,8 +963,6 @@ def get_filename_2_options():
     combined += iso_options
 
     return combined
-
-
 
 def get_options_hmp():
     with shared.write_lock:
@@ -1009,7 +1016,7 @@ def reset_stores():
 def load_histogram(filename):
 
     filename = Path(filename).stem + ".json"
-    path     = get_path(os.path.join(USER_DATA_DIR, filename))
+    path     = get_path(os.path.join(shared.USER_DATA_DIR, filename))
 
     try:
         with open(path, "r", encoding="utf-8") as file:
@@ -1047,7 +1054,7 @@ def load_histogram(filename):
 def load_histogram_2(filename):
 
     filename = Path(filename).stem + ".json"
-    path = get_path(os.path.join(USER_DATA_DIR, filename))
+    path = get_path(os.path.join(shared.USER_DATA_DIR, filename))
 
     try:
         with open(path, 'r') as file:
@@ -1085,18 +1092,20 @@ def load_histogram_2(filename):
 def load_histogram_hmp(stem):
 
     clean_stem = Path(stem).stem.removesuffix("_hmp")
-    file_path  = Path(USER_DATA_DIR) / f"{clean_stem}_hmp.json"
+    file_path  = Path(shared.USER_DATA_DIR) / f"{clean_stem}_hmp.json"
 
     if not file_path.exists():
         logger.warning(f"👆 fn file not found: {file_path} ")
+
         with shared.write_lock:
-            shared.histogram_hmp = [[0] * 512] * 10
+            shared.histogram_hmp = [[0] * 512 for _ in range(10)]
+            shared.gps_hmp       = [{"lat": None, "lon": None, "t": None} for _ in range(10)]
+
         return
 
     try:
         with open(file_path, "r", encoding="utf-8") as file:
             logger.info("   ✅ fn loading 3d file ")
-
             data = json.load(file)
 
         if data.get("schemaVersion") == "NPESv2":
@@ -1105,26 +1114,59 @@ def load_histogram_hmp(stem):
         result = data["resultData"]["energySpectrum"]
         coeffs = result["energyCalibration"]["coefficients"]
 
+        spectrum = result.get("spectrum", []) or []
+        gps_list = result.get("gps", []) or []
+
+        # --- normalize gps_list ---
+        if not isinstance(gps_list, list):
+            gps_list = []
+
+        # enforce same length as spectrum (index alignment)
+        n = len(spectrum)
+        default_row = {"lat": None, "lon": None, "t": None}
+
+        if len(gps_list) < n:
+            gps_list = gps_list + [default_row.copy() for _ in range(n - len(gps_list))]
+        elif len(gps_list) > n:
+            gps_list = gps_list[:n]
+
+        # also sanitize each gps row to be a dict with expected keys
+        fixed_gps = []
+        for row in gps_list:
+            if isinstance(row, dict):
+                fixed_gps.append({
+                    "lat": row.get("lat"),
+                    "lon": row.get("lon"),
+                    "t":   row.get("t"),
+                })
+            else:
+                fixed_gps.append(default_row.copy())
+
         with shared.write_lock:
-            shared.histogram_hmp  = [row[:] for row in result["spectrum"]]
-            shared.counts         = result["validPulseCount"]
-            shared.bins           = result["numberOfChannels"]
-            shared.elapsed        = result["measurementTime"]
-            shared.startTime3d    = data["resultData"]["startTime"]
-            shared.endTime3d      = data["resultData"]["startTime"]
+            shared.histogram_hmp  = [row[:] for row in spectrum]
+            shared.gps_hmp        = fixed_gps
+
+            shared.counts         = result.get("validPulseCount", 0)
+            shared.bins           = result.get("numberOfChannels", len(shared.histogram_hmp[0]) if shared.histogram_hmp else 0)
+            shared.elapsed        = result.get("measurementTime", 0)
+            shared.startTime3d    = data["resultData"].get("startTime", "")
+            shared.endTime3d      = data["resultData"].get("endTime", "")
 
             # Coefficients inverted from NPES format [c3, c2, c1] → [c1, c2, c3]
-            shared.coeff_1, shared.coeff_2, shared.coeff_3 = coeffs[::-1]
+            if isinstance(coeffs, list) and len(coeffs) == 3:
+                shared.coeff_1, shared.coeff_2, shared.coeff_3 = coeffs[::-1]
 
-            # Calculated field
-            shared.compression = int(shared.bins_abs / shared.bins)
-
+            # Calculated field (guard div by zero)
+            if getattr(shared, "bins_abs", 0) and shared.bins:
+                shared.compression = int(shared.bins_abs / shared.bins)
+            else:
+                shared.compression = 1
 
         logger.info(f"   ✅ fn shared updated from {file_path} ")
 
     except Exception as e:
-
         logger.error(f"  ❌ fn Exception loading 3D histogram: {e} ")
+
 
 def load_cps_file(filepath):
     
@@ -1393,7 +1435,6 @@ def parse_device_info(info_string):
 
     return settings
 
-
 def sanitize_for_log(y_values, floor=0.1):
     arr = np.asarray(y_values, dtype=float)
     mask_bad = ~np.isfinite(arr) | (arr <= 0)
@@ -1408,7 +1449,7 @@ MAX_ENERGY_KEV = 3000.0
 TARGET_COUNTS  = 10_000
 
 def _load_isotope_db() -> dict:
-    path = Path(USER_DATA_DIR) / "lib" / "isotopes.json"
+    path = Path(shared.USER_DATA_DIR) / "lib" / "isotopes.json"
     data = json.loads(path.read_text(encoding="utf-8"))
     for v in data.values():
         for ln in v.setdefault("lines", []):
@@ -1486,7 +1527,6 @@ def generate_synthetic_histogram(isotope_key: str, include_xray: bool = False) -
             # enforce exact equality on the peak bin (guard against rounding drift)
             j = max(range(len(spec2)), key=lambda k: spec2[k])  # index of current max
             spec2[j] = int(primary_max)
-
 
         dE = MAX_ENERGY_KEV / float(bins)  # invert mapping uses 'bins' in denominator
 
