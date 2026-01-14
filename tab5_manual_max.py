@@ -251,37 +251,40 @@ def get_max_manual_html():
 
                        
             
-            <h2>3D Histogram</h2>
+        <h2>3D Histogram</h2>
             <p>
-              This tab inherits its settings and calibration from Tab 2. Before recording a 3D histogram,
-              run a normal (2D) histogram in Tab 2 and confirm the calibration and settings are correct.
-              There are two viewing modes for the 3D histogram and one download function.
-            </p>
+              This tab inherits its settings and calibration from Tab 2. Before recording a 3D histogram, it is recommended to run a normal (2D) histogram in Tab 2 and confirm all calibration and settings are correct. The 3D histogram page has multiple functions as listed below.</p>
 
             <li><strong>Filename Input</strong></li>
-              Choose a filename before you start. The 3D recording file is separate from the 2D histogram file
-              and is saved with the suffix <code>_hmp.json</code>.<br>
+              The 3D recording shares the same filename as the 2D recording, but adds the suffix <code>_hmp.json</code> to the filename.<br>
 
             <li><strong>Waterfall Heatmap View</strong></li>
-              The Waterfall Heatmap is the default view. A new row is added at each time interval, and counts per
-              channel are displayed as a colour heatmap. Approximate count levels can be read from the colour legend.
-              The x-axis can be calibrated by enabling <b>Calibration</b> (calibration is inherited from Tab 2).
-              Optional modes include <b>Energy by bin</b> and <b>Log(y)</b> for improved contrast.<br>
+              The Waterfall Heatmap is the default view. A new row is added at each time interval, and counts per channel are displayed as a colour heatmap. Approximate count levels can be read from the colour legend. The x-axis can be calibrated by enabling <b>Calibration</b> (calibration is inherited from Tab 2). Optional modes include <b>Energy by bin</b> and <b>Log(y)</b> for improved contrast.<br>
             
 
-            <li><strong>Last Histogram View</strong></li>
-              Enable <b>Last interval (histogram)</b> to display only the most recent interval as a line plot (similar to an oscilloscope).
-              This view is most useful with a fixed y-axis maximum (set slightly above the expected peak counts per channel).
-              Optional smoothing is available, averaging across 3, 5, 7… channels to reduce noise.<br>
-            
+            <li><strong>Histogram Interval View</strong></li>
+              Enable <b>Last interval (histogram)</b> to switch from heatmap plot to histogram plot. The plot will constantly update and show the last interval histogram. This view is most useful with a fixed y-axis maximum (set slightly above the expected peak counts per channel). Optional smoothing is available by adjusting the slider, averaging across 3, 5, 7… channels to reduce noise.<br>
 
-            <li><strong>Download array</strong></li>
-              After recording, you can download the 3D histogram array for further analysis using <b>Download array</b>.<br>
-            
+            <li><strong>View full screen button</strong></li>
+              Opens the plot in full screen modefor improved visibility when working with high channel counts.<br>            
 
-            <li><strong>Full Screen View</strong></li>
-              Open the plot in full screen for improved visibility when working with high channel counts.<br>
+            <li><strong>Download csv array button</strong></li>
+              After completing a recording, the 3D histogram array can be downloaded for further analysis using <b>Download array</b>.<br>
             
+            <li><strong>Otional GPS Functionality</strong></li>
+              If required an external USB GPS module (BU-353N5 by Globalsat) can be used to collect spectra with map coordinates. Once the GPS module has been connected the GPS status indicator in the top right corner of the screen will turn from red to green once the location fix has been obtained.<br>
+
+            <ol>
+              <li><strong>GPS with Regions of Interest</strong></li>
+                Users conducting a gamma survey may be interested in knowing the counts in specific regions of interest, this is noew possible by first selecting the regions of interest on the 2D histogram page, once set the counts in each ROI are recordeed separately by indexed sequence, ROI(1), ROI(2) etc.. If no regions of interest have been selected the program records total counts.<br>
+
+              <li><strong>Download GPS data button</strong></li>
+                This function downloads the interval spectrum array as a csv file in a formatcom mpatible with www.gpsvisualiser.com.<br>
+
+              <li><strong>Plot counts on map button</strong></li>
+                This function requires internet connectivity, as it opens the default browser and plots the GPS data on a map. In the top left hand corcner the user can select ROI to plot. <br>
+            </ol>
+
 
 
 
