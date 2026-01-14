@@ -252,15 +252,15 @@ class Tab2(QWidget):
         self.style_plot_canvas(self.plot_widget)
         self.plot_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
-        # curves — use your color constants
-        self.hist_curve  = self.plot_widget.plot([], pen=pg.mkPen(LIGHT_GREEN, width=2), fillLevel=0, brush=(0, 0, 0, 40))
+        # curve step — use your color constants
+        self.hist_curve  = self.plot_widget.plot([], pen=pg.mkPen(LIGHT_GREEN, width=2), fillLevel=0, brush=LIGHT_GREEN, stepMode="left")
         self.comp_curve  = self.plot_widget.plot([], pen=pg.mkPen(PINK,        width=2))
-        self.gauss_curve = self.plot_widget.plot([], pen=pg.mkPen(RED,         width=2), fillLevel=0, brush=(255, 0, 0, 125))
+        self.gauss_curve = self.plot_widget.plot([], pen=pg.mkPen(RED,         width=2), fillLevel=0, brush=(139,0,0), alpha=1)
 
         # Z-order so crosshairs/markers sit above lines, backgrounds below lines
-        self.hist_curve.setZValue(10)
+        self.hist_curve.setZValue(8)
         self.comp_curve.setZValue(9)
-        self.gauss_curve.setZValue(8)
+        self.gauss_curve.setZValue(10)
 
         # --- Crosshair lines (add after curves, make sure they’re on top) -----------
         self.vline = pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen('gray', width=1))
@@ -2278,8 +2278,6 @@ class Tab2(QWidget):
         self.plot_widget.enableAutoRange('y', True)
         # main histogram
         self.hist_curve.setData(x_vals, y_vals)
-
-    
 
         # comparison histogram
         if comp_switch and not diff_switch:
