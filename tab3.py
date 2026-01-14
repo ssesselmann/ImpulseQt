@@ -365,7 +365,7 @@ class Tab3(QWidget):
         self.dld_gpsvis_button.clicked.connect(self.on_gpsvis_clicked)
         top_right_col.addWidget(self.dld_gpsvis_button)
 
-        self.open_map_btn = QPushButton("Open Map")
+        self.open_map_btn = QPushButton("Plot counts on Map")
         self.open_map_btn.setProperty("btn", "primary")
         self.open_map_btn.clicked.connect(self.on_open_map_clicked)
         top_right_col.addWidget(self.open_map_btn)
@@ -1312,19 +1312,60 @@ class Tab3(QWidget):
                 y_plot = np.asarray(y)[order]
 
                 # --- fill under the trace + then draw the line on top ---
-                self.ax.fill_between(
-                    x_plot, y_plot, fill_base,
-                    alpha=0.25,
+                # self.ax.fill_between(
+                #     x_plot, y_plot, fill_base,
+                #     alpha=0.25,
+                #     color=LIGHT_GREEN,
+                #     linewidth=0,
+                #     zorder=1
+                # )
+                # self.ax.plot(
+                #     x_plot, y_plot,
+                #     linewidth=1.2,
+                #     color=LIGHT_GREEN,
+                #     zorder=2
+                # )
+
+                # --- end line plot
+
+                # --- bar histogram ---
+                # Choose bar widths:
+                # - if NOT calibrated: each bin is 1 wide
+                # - if calibrated: estimate local bin widths from x spacing
+                if cal_switch:
+                    # x_plot is sorted; estimate spacing
+                    dx = np.diff(x_plot)
+                    if dx.size:
+                        # Use median spacing as "typical" width; guard against weirdness
+                        w = float(np.median(np.abs(dx)))
+                        if not np.isfinite(w) or w <= 0:
+                            w = 1.0
+                    else:
+                        w = 1.0
+                    bar_width = 0.95 * w
+                else:
+                    bar_width = 1.0
+
+                # Baseline:
+                # - normal counts: baseline = 0
+                # - log counts: baseline = log10(0.1) to match your floor
+                bar_bottom = (np.log10(0.1) if log_switch else 0.0)
+
+                # heights must be relative to bottom if using bottom != 0
+                bar_heights = y_plot - bar_bottom
+
+                self.ax.bar(
+                    x_plot,
+                    bar_heights,
+                    width=bar_width,
+                    bottom=bar_bottom,
+                    align="center",
                     color=LIGHT_GREEN,
-                    linewidth=0,
-                    zorder=1
-                )
-                self.ax.plot(
-                    x_plot, y_plot,
-                    linewidth=1.2,
-                    color=LIGHT_GREEN,
+                    alpha=1,
+                    edgecolor="none",
                     zorder=2
                 )
+
 
                 if y_fixed:
                     if log_switch:
