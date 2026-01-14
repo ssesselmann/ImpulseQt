@@ -8,6 +8,7 @@ import shproto
 import threading
 import time
 import csv
+import webbrowser
 
 from qt_compat import QBrush
 from qt_compat import QCheckBox
@@ -36,6 +37,9 @@ from qt_compat import QSlider
 from qt_compat import QGroupBox
 from qt_compat import QIcon
 from viewer_full_hmp import FullRecordingDialog, load_full_hmp_from_json
+
+
+from gps_map_export import write_gps_map_html
 
 
 from pathlib import Path
@@ -361,6 +365,12 @@ class Tab3(QWidget):
         self.dld_gpsvis_button.clicked.connect(self.on_gpsvis_clicked)
         top_right_col.addWidget(self.dld_gpsvis_button)
 
+        self.open_map_btn = QPushButton("Open Map")
+        self.open_map_btn.setProperty("btn", "primary")
+        self.open_map_btn.clicked.connect(self.on_open_map_clicked)
+        top_right_col.addWidget(self.open_map_btn)
+
+
         # self.use_roi_only_chk = QCheckBox("Use ROI only")
         # self.use_roi_only_chk.setChecked(False)
         # top_right_col.addWidget(self.use_roi_only_chk)
@@ -622,6 +632,11 @@ class Tab3(QWidget):
     def on_start_clicked(self):
 
         filename = self.filename_input.text().strip()
+
+        if not filename:
+            QMessageBox.warning(self, "Missing name", "Please enter a filename.")
+            return
+
         file_path = os.path.join(USER_DATA_DIR, f"{filename}_hmp.json")
 
         if os.path.exists(file_path):
@@ -734,33 +749,100 @@ class Tab3(QWidget):
         return total
 
 
+
+    @Slot()
+    def on_open_map_clicked(self):
+        # snapshot once
+        with shared.write_lock:
+            filename = (shared.filename or "map").strip()
+            tint     = int(getattr(shared, "t_interval", 1) or 1)
+            hist     = list(getattr(shared, "histogram_hmp", []) or [])
+            gps_rows = list(getattr(shared, "gps_hmp", []) or [])
+            peaks    = list(getattr(shared, "peak_list", []) or [])
+
+        if not hist:
+            QMessageBox.information(self, "No Data", "No interval histogram data to map yet.")
+            return
+
+        # --- build ROI list (UI order) ---
+        roi_list = []
+        for pk in peaks:
+            if not isinstance(pk, dict):
+                continue
+            try:
+                i0 = int(pk.get("i0")); i1 = int(pk.get("i1"))
+            except Exception:
+                continue
+            if i1 < i0: i0, i1 = i1, i0
+            label = (pk.get("name") or pk.get("label") or pk.get("isotope") or pk.get("desc") or "").strip()
+            roi_list.append({"i0": i0, "i1": i1, "label": label})
+
+        def sum_range(row, i0, i1):
+            if not row:
+                return 0
+            n = len(row)
+            a = max(0, min(i0, n - 1))
+            b = max(0, min(i1, n - 1))
+            if b < a: a, b = b, a
+            return int(sum(row[a:b+1]))
+
+        def get_latlon(g):
+            if not isinstance(g, dict):
+                return (None, None, None)
+            return (g.get("lat"), g.get("lon"), g.get("t") or g.get("epoch"))
+
+        points = []
+        for i, row in enumerate(hist):
+            g = gps_rows[i] if i < len(gps_rows) else None
+            lat, lon, t = get_latlon(g)
+
+            per = [sum_range(row, r["i0"], r["i1"]) for r in roi_list]
+            per_cps = [c / float(max(1, tint)) for c in per]
+
+            total_counts = int(sum(per)) if roi_list else int(sum(row))
+            total_cps = total_counts / float(max(1, tint))
+
+            p = {
+                "lat": float(lat) if lat is not None else None,
+                "lon": float(lon) if lon is not None else None,
+                "t_s": int(t) if isinstance(t, (int, float)) else i * tint,
+                "total_counts": total_counts,
+                "total_cps": round(total_cps, 3),
+            }
+
+            # add per-ROI parameters
+            for k, r in enumerate(roi_list):
+                p[f"n{k+1}"] = int(per[k])
+                p[f"cps{k+1}"] = round(per_cps[k], 3)
+                if r["label"]:
+                    p[f"label{k+1}"] = r["label"]
+
+            points.append(p)
+
+        # fields dropdown for coloring
+        fields = [{"key": "total_cps", "label": "Total CPS"}]
+        for k, r in enumerate(roi_list):
+            lab = r["label"] or f"ROI {k+1}"
+            fields.append({"key": f"cps{k+1}", "label": f"{lab} CPS"})
+
+        out_path = Path(DLD_DIR) / f"{filename}_map.html"
+        write_gps_map_html(out_path, title=f"{filename} — GPS Map", points=points, fields=fields)
+
+        webbrowser.open(out_path.resolve().as_uri())
+
+
+
     @Slot()
     def on_gpsvis_clicked(self):
         from pathlib import Path
-        from datetime import datetime, timezone
 
         # --- snapshot state once ---
         with shared.write_lock:
-            filename   = (shared.filename or "gps_export").strip()
-            tint       = int(getattr(shared, "t_interval", 1) or 1)
-            hist       = list(getattr(shared, "histogram_hmp", []) or [])
-            gps_rows   = list(getattr(shared, "gps_hmp", []) or [])
-            peaks      = list(getattr(shared, "peak_list", []) or [])   # <-- ROI table source
-
-        #print(f"[gpsvis] hist_rows={len(hist)} gps_rows={len(gps_rows)} tint={tint}")
-
-        # --- fallback: if gps_hmp isn't populated, grab ONE live fix now ---
-        gps_last = gps_rows[-1] if gps_rows else None
-
-        if gps_last is None:
-            try:
-                import gps_globalsat
-                live = gps_globalsat.get_fix(timeout_s=1.5)
-                if isinstance(live, dict) and live.get("fix") and live.get("lat") is not None and live.get("lon") is not None:
-                    gps_last = live
-            except Exception:
-                gps_last = None
-
+            filename = (shared.filename or "gps_export").strip()
+            tint     = int(getattr(shared, "t_interval", 1) or 1)
+            hist     = list(getattr(shared, "histogram_hmp", []) or [])
+            gps_rows = list(getattr(shared, "gps_hmp", []) or [])
+            peaks    = list(getattr(shared, "peak_list", []) or [])
 
         if not hist:
             QMessageBox.information(self, "No Data", "No interval histogram data to export yet.")
@@ -777,22 +859,30 @@ class Tab3(QWidget):
             out_path = out_dir / f"{base}_{n}.csv"
             n += 1
 
-        def fmt_latlon(g):
-            # Accept dict OR (lat, lon, epoch?) tuples/lists
+        # --- fallback gps row ---
+        gps_last = gps_rows[-1] if gps_rows else None
+
+        def fmt_latlon_and_t(g):
+            """
+            Return (lat_s, lon_s, t_s) where t_s is elapsed seconds (string) if present.
+            Accept dict or (lat, lon, t) tuples.
+            """
             if g is None:
                 return ("", "", "")
 
-            lat = lon = epoch = None
-
+            lat = lon = t = None
             if isinstance(g, dict):
                 lat = g.get("lat")
                 lon = g.get("lon")
-                epoch = g.get("epoch")
+                # prefer elapsed seconds
+                t = g.get("t")
+                # allow legacy epoch if you still ever store it
+                if t is None:
+                    t = g.get("epoch")
             elif isinstance(g, (list, tuple)) and len(g) >= 2:
-                lat = g[0]
-                lon = g[1]
+                lat, lon = g[0], g[1]
                 if len(g) >= 3:
-                    epoch = g[2]
+                    t = g[2]
             else:
                 return ("", "", "")
 
@@ -805,19 +895,16 @@ class Tab3(QWidget):
             except Exception:
                 return ("", "", "")
 
-            if isinstance(epoch, (int, float)) and epoch > 0:
-                dt = datetime.fromtimestamp(float(epoch), tz=timezone.utc)
-                desc = dt.isoformat().replace("+00:00", "Z")
-            else:
-                desc = ""
+            t_s = ""
+            if isinstance(t, (int, float)):
+                t_s = str(int(t))
 
-            return (lat_s, lon_s, desc)
+            return (lat_s, lon_s, t_s)
 
-
-        def build_roi_ranges(peaks_list):
-            """Return merged inclusive index ranges [(i0,i1), ...] from shared.peak_list."""
-            ranges = []
-            for pk in peaks_list:
+        def build_roi_list(peaks_list):
+            """Keep UI order; output [{'i0':..,'i1':..,'label':..}, ...]."""
+            rois = []
+            for pk in (peaks_list or []):
                 if not isinstance(pk, dict):
                     continue
                 try:
@@ -827,55 +914,95 @@ class Tab3(QWidget):
                     continue
                 if i1 < i0:
                     i0, i1 = i1, i0
-                ranges.append((i0, i1))
 
+                label = (pk.get("name") or pk.get("label") or pk.get("isotope") or pk.get("desc") or "").strip()
+                rois.append({"i0": i0, "i1": i1, "label": label})
+
+            return rois
+
+        def clamp(a, lo, hi):
+            return max(lo, min(int(a), hi))
+
+        def sum_range(row, i0, i1):
+            if not row:
+                return 0
+            nrow = len(row)
+            if nrow <= 0:
+                return 0
+            a = clamp(i0, 0, nrow - 1)
+            b = clamp(i1, 0, nrow - 1)
+            if b < a:
+                a, b = b, a
+            return int(sum(row[a:b+1]))
+
+        def merge_ranges(ranges):
+            """Merge inclusive ranges [(i0,i1),...] to avoid double counting."""
             if not ranges:
                 return []
-
-            ranges.sort()
-            merged = [list(ranges[0])]
-            for a, b in ranges[1:]:
+            norm = [(min(a, b), max(a, b)) for a, b in ranges]
+            norm.sort()
+            merged = [list(norm[0])]
+            for a, b in norm[1:]:
                 if a <= merged[-1][1] + 1:
                     merged[-1][1] = max(merged[-1][1], b)
                 else:
                     merged.append([a, b])
             return [(int(x[0]), int(x[1])) for x in merged]
 
-        def sum_in_ranges(row, ranges):
-            if not row:
-                return 0
-            if not ranges:
-                return int(sum(row))
-            n = len(row)
+        def sum_ranges(row, ranges):
             total = 0
-            for i0, i1 in ranges:
-                a = max(0, min(i0, n - 1))
-                b = max(0, min(i1, n - 1))
-                if b < a:
-                    a, b = b, a
-                total += int(sum(row[a:b+1]))
-            return total
+            for a, b in (ranges or []):
+                total += sum_range(row, a, b)
+            return int(total)
 
-        roi_ranges = build_roi_ranges(peaks)
-        using_roi = bool(roi_ranges)
-        #print(f"[gpsvis] ROI ranges: {roi_ranges} (using_roi={using_roi})")
+        roi_list = build_roi_list(peaks)
+        using_roi = bool(roi_list)
+
+        merged_total_ranges = merge_ranges([(r["i0"], r["i1"]) for r in roi_list]) if using_roi else []
 
         # --- write CSV ---
-        with open(out_path, "w", newline="", encoding="utf-8") as f:
-            w = csv.writer(f)
-            w.writerow(["name", "desc", "latitude", "longitude", "n", "cps", "t_interval_s", "roi_used"])
+        try:
+            with open(out_path, "w", newline="", encoding="utf-8") as f:
+                w = csv.writer(f)
 
-            for i, row in enumerate(hist):
-                counts = sum_in_ranges(row, roi_ranges)
-                cps = counts / float(max(1, tint))
+                n_cols    = [f"n{i+1}" for i in range(len(roi_list))]
+                cps_cols  = [f"cps{i+1}" for i in range(len(roi_list))]
+                lab_cols  = [f"roi{i+1}_label" for i in range(len(roi_list))]
 
-                g = gps_rows[i] if i < len(gps_rows) else gps_last
+                w.writerow([
+                    "name", "t_s", "latitude", "longitude",
+                    "n", "cps", "t_interval_s", "roi_used"
+                ] + n_cols + cps_cols + lab_cols)
 
-                lat_s, lon_s, desc = fmt_latlon(g)
+                roi_labels = [r["label"] for r in roi_list]
 
-                w.writerow([filename, desc, lat_s, lon_s, counts, f"{cps:.3f}", tint, int(using_roi)])
+                for i, row in enumerate(hist):
+                    # choose gps aligned to histogram index
+                    g = gps_rows[i] if i < len(gps_rows) else gps_last
+                    lat_s, lon_s, t_s = fmt_latlon_and_t(g)
 
-        QMessageBox.information(self, "Export Complete", f"Saved:\n{out_path}")
+                    if using_roi:
+                        per = [sum_range(row, r["i0"], r["i1"]) for r in roi_list]
+                        per_cps = [c / float(max(1, tint)) for c in per]
+
+                        total_counts = sum_ranges(row, merged_total_ranges)
+                    else:
+                        per = []
+                        per_cps = []
+                        total_counts = int(sum(row)) if row else 0
+
+                    total_cps = total_counts / float(max(1, tint))
+
+                    w.writerow([
+                        filename, t_s, lat_s, lon_s,
+                        total_counts, f"{total_cps:.3f}", tint, int(using_roi)
+                    ] + per + [f"{x:.3f}" for x in per_cps] + roi_labels)
+
+            QMessageBox.information(self, "Export Complete", f"Saved:\n{out_path}")
+
+        except Exception as e:
+            logger.error(f"❌ GPS CSV export failed: {e}", exc_info=True)
+            QMessageBox.critical(self, "Error", f"Failed to export GPS CSV:\n{e}")
 
 
     def confirm_overwrite(self, file_path, filename_display=None):
@@ -885,7 +1012,7 @@ class Tab3(QWidget):
         msg_box = QMessageBox(self)
         msg_box.setIcon(QMessageBox.Question)
         msg_box.setWindowTitle("Confirm Overwrite")
-        msg_box.setText(f'"{filename_display}.json" already exists. Overwrite?')
+        msg_box.setText(f'"{os.path.basename(file_path)}" already exists. Overwrite?')
         msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
         icon = QPixmap(ICON_PATH).scaled(48, 48)
         msg_box.setIconPixmap(icon)
@@ -918,6 +1045,11 @@ class Tab3(QWidget):
                 shared.filename = base
                 device_type = shared.device_type
                 t_interval  = int(shared.t_interval)
+
+                if hasattr(shared, "gps_hmp") and hasattr(shared.gps_hmp, "clear"):
+                    shared.gps_hmp.clear()
+                else:
+                    shared.gps_hmp = deque(maxlen=getattr(shared, "ring_len_hmp", 3600))
 
                 # Ensure we keep the same deque object; clear for a fresh run
                 if hasattr(shared, "histogram_hmp") and hasattr(shared.histogram_hmp, "clear"):
