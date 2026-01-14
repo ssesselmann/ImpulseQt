@@ -5,6 +5,13 @@ ImpulseQt v3.2.3.0 – Changelog
 –––––––––––––––––––––––––––––
 • Bug Fix - Fixed automatic negative pulse flip.
 • Added Support for Globalsat GPS module
+• Added new plot on tab3 showing interval histogram
+• Added option on tab3 to fix y axis height
+• added slider on tab3 for smoothing of spectrum
+• Added Button on tab3 for GPS data download
+• Added button on tab3 for plotting GPS on map.
+• Changed line plot on tab2 to stepped plot
+• Updated manual to reflect changes
 
 ImpulseQt v3.2.2.0 – Changelog
 –––––––––––––––––––––––––––––
