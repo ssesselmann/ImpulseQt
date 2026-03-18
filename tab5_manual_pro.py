@@ -87,6 +87,10 @@ def get_pro_manual_html():
 
         <h2>Device setup Tab</h2>
 
+        <h3>Choose your theme</h3>
+        <p>The default theme uses a dark blue background, comfortable to look at but not great for screen shots to be included into scientific papers. Select the paper theme to switch to high contrast rendering.</p>
+
+
         <h3>Select input device</h3>
         <p>Select the correct audio input device from the dropdown menu, typically USB AUDIO CODEC if using a GS-PRO (other devices may show up with a different name)</p>
 
