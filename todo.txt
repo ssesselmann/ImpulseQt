@@ -1,17 +1,26 @@
 ImpulseQt
 ---------
 
+ImpulseQt v3.2.4.0 – Changelog (March 2026)
+–––––––––––––––––––––––––––––
+• Update version number							✅
+• Soundcards Filter + deduplicate device list 	✅
+• Fix spectrum plot to allow zooming on x axis 	✅
+• Added new function to tab 1 for paper theme 	✅
+• Loaded histogram now shows end date 			✅
+
+
 ImpulseQt v3.2.3.0 – Changelog (January 2026)
 –––––––––––––––––––––––––––––
-• Bug Fix - Fixed automatic negative pulse flip. ✅
-• Added Support for Globalsat GPS module ✅
-• Added new plot on tab3 showing interval histogram ✅
-• Added option on tab3 to fix y axis height ✅
-• added slider on tab3 for smoothing of spectrum ✅
-• Added Button on tab3 for GPS data download ✅
-• Added button on tab3 for plotting GPS on map. ✅
-• Changed line plot on tab2 to stepped plot ✅
-• Updated manual to reflect changes ✅
+• Bug Fix - Fixed automatic negative pulse flip. 
+• Added Support for Globalsat GPS module 
+• Added new plot on tab3 showing interval histogram 
+• Added option on tab3 to fix y axis height 
+• added slider on tab3 for smoothing of spectrum 
+• Added Button on tab3 for GPS data download 
+• Added button on tab3 for plotting GPS on map. 
+• Changed line plot on tab2 to stepped plot 
+• Updated manual to reflect changes 
 
 ImpulseQt v3.2.2.0 – Changelog (December 2025)
 –––––––––––––––––––––––––––––
@@ -74,12 +83,10 @@ ImpulseQt v3.1.5.0 – Changelog (November 2025)
 
 Things to Do: ⚙️
 ===================================================================
-• Replace comma with semi colon ";" in csv downloads
-• Fix zoom function in GUI
+• Replace comma with semi colon ";" in csv downloads (do nothing)
 • Backup serial device settings (not so simple)
-• Loaded spectrum should show recording date not current date.
-• Fix plot to allow zooming and scrolling without resetting ❌
-👉 Soundcards Filter + deduplicate intelligently in your device list
+
+
 
 
 
