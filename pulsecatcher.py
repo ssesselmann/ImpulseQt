@@ -9,6 +9,7 @@ import datetime
 import logging
 import queue
 import shared
+import struct
 import functions as fn
 import gps_main  # at top of file is better, but ok here for first test
 
@@ -106,8 +107,10 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
     while shared.run_flag.is_set() and local_counts < max_counts and local_elapsed <= max_seconds:
         # Read one chunk of audio data from stream into memory.
         data = stream.read(chunk_size, exception_on_overflow=False)
+        
         # Convert hex values into a list of decimal values
-        values = list(wave.struct.unpack("%dh" % (chunk_size * channels), data))
+        values = list(struct.unpack(f"<{chunk_size * channels}h", data))
+
 
         if channels == 1:
             # Mono: use all samples as left channel
