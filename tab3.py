@@ -41,7 +41,7 @@ from viewer_full_hmp import FullRecordingDialog, load_full_hmp_from_json
 
 from gps_map_export import write_gps_map_html
 
-
+from qss import apply_plot_theme, plot_theme_colors
 from pathlib import Path
 from mpl_toolkits.mplot3d import Axes3D 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -412,26 +412,13 @@ class Tab3(QWidget):
         self.ax     = self.figure.add_subplot(111)
 
         # Initial dummy plot
-        self.ax.set_title("Waterfall Plot", color="white")
-        self.ax.set_xlabel("Bin #", color="white")
-        self.ax.set_ylabel("Time (s)", color="white")
-
-        # Set white tick marks and grid
-        self.ax.tick_params(axis='x', colors='white')
-        self.ax.tick_params(axis='y', colors='white')
-        self.ax.grid(True, color="white", alpha=0.2)
-
-        # Optional: darken spines
-        for spine in self.ax.spines.values():
-            spine.set_color("white")
-
-        # Optional: empty dummy image so canvas shows something
         dummy = np.zeros((10, 10))
-        img = self.ax.imshow(dummy,aspect='auto',origin='lower',cmap='turbo',vmin=0,vmax=1)
+        img  = self.ax.imshow(dummy, aspect='auto', origin='lower', cmap='turbo', vmin=0, vmax=1)
         cbar = self.figure.colorbar(img, ax=self.ax, label="Counts")
-        cbar.ax.yaxis.set_tick_params(color='white')
-        plt.setp(cbar.ax.yaxis.get_ticklabels(), color='white')
-        cbar.set_label("Counts", color='white')
+        fg   = self._style_ax(self.ax, cbar)
+        self.ax.set_title("Waterfall Plot", color=fg)
+        self.ax.set_xlabel("Bin #",         color=fg)
+        self.ax.set_ylabel("Time (s)",       color=fg)
 
         self.canvas.draw()
         tab3_layout.addWidget(self.canvas, stretch=2)
@@ -449,6 +436,36 @@ class Tab3(QWidget):
     # ======================================================================
     #    FUNCTIONS
     # ======================================================================
+    def _style_ax(self, ax, cbar=None):
+        """Apply current theme colours to a matplotlib axes and optional colorbar."""
+        theme = getattr(shared, "theme", "dark")
+        fg = "#000000" if theme == "paper" else "white"
+        bg = "#ffffff" if theme == "paper" else "#0b1d38"
+        ax.set_facecolor(bg)
+        self.figure.set_facecolor(bg)
+        ax.tick_params(axis='x', colors=fg)
+        ax.tick_params(axis='y', colors=fg)
+        ax.grid(True, color=fg, alpha=0.2)
+        for spine in ax.spines.values():
+            spine.set_color(fg)
+        if cbar:
+            cbar.ax.yaxis.set_tick_params(color=fg)
+            import matplotlib.pyplot as plt
+            plt.setp(cbar.ax.yaxis.get_ticklabels(), color=fg)
+            cbar.set_label(cbar.ax.get_ylabel(), color=fg)
+        return fg  # convenience — callers use it for text colour
+
+    def apply_theme_to_plots(self):
+        """Restyle existing axes only — no data reload."""
+        if self.ax is None:
+            return
+        fg = self._style_ax(self.ax)
+        # Update title/label colours on whatever is currently displayed
+        self.ax.set_title(self.ax.get_title(),       color=fg)
+        self.ax.set_xlabel(self.ax.get_xlabel(),     color=fg)
+        self.ax.set_ylabel(self.ax.get_ylabel(),     color=fg)
+        self.canvas.draw_idle()
+
     def load_on_show(self):
         # 1) Always pull live settings from shared
         with shared.write_lock:
@@ -1290,7 +1307,9 @@ class Tab3(QWidget):
 
                 # Draw
                 self.figure.clf()
-                self.ax = self.figure.add_subplot(111, facecolor="#0b1d38")
+                self.ax = self.figure.add_subplot(111)
+                fg = self._style_ax(self.ax)
+                bg = self.ax.get_facecolor()
 
                 self.ax.text(
                     0.99, 0.99,
@@ -1298,8 +1317,8 @@ class Tab3(QWidget):
                     transform=self.ax.transAxes,
                     ha="right", va="top",
                     fontsize=14, fontweight="bold",
-                    color="white",
-                    bbox=dict(boxstyle="round,pad=0.3", facecolor="#0b1d38", edgecolor="white", alpha=0.6)
+                    color=fg,
+                    bbox=dict(boxstyle="round,pad=0.3", facecolor=bg, edgecolor=fg, alpha=0.6)
                 )
 
 
@@ -1360,7 +1379,7 @@ class Tab3(QWidget):
                     width=bar_width,
                     bottom=bar_bottom,
                     align="center",
-                    color=LIGHT_GREEN,
+                    color=(LIGHT_GREEN if getattr(shared, "theme", "dark") != "paper" else "#006600"),
                     alpha=1,
                     edgecolor="none",
                     zorder=2
@@ -1382,15 +1401,9 @@ class Tab3(QWidget):
                     self.ax.autoscale_view(scalex=True, scaley=True)
 
                 title = f"Last interval - {filename}"
-                self.ax.set_title(title, color="white")
-                self.ax.set_xlabel("Energy (keV)" if cal_switch else "Bin #", color="white")
-                self.ax.set_ylabel("log₁₀(Counts)" if log_switch else "Counts", color="white")
-
-                self.ax.tick_params(axis='x', colors='white')
-                self.ax.tick_params(axis='y', colors='white')
-                self.ax.grid(True, color="white", alpha=0.2)
-                for spine in self.ax.spines.values():
-                    spine.set_color("white")
+                self.ax.set_title(title, color=fg)
+                self.ax.set_xlabel("Energy (keV)" if cal_switch else "Bin #", color=fg)
+                self.ax.set_ylabel("log₁₀(Counts)" if log_switch else "Counts", color=fg)
 
                 
                 def _roi_ranges_from_peaks(peaks, bins):
@@ -1539,19 +1552,11 @@ class Tab3(QWidget):
             )
 
             self.hmp_plot_title = f"Waterfall - {filename}"
-            self.ax.set_title(self.hmp_plot_title, color="white")
-            self.ax.set_xlabel("Energy (keV)" if cal_switch else "Bin #", color="white")
-            self.ax.set_ylabel("Time (s)", color="white")
-            self.ax.tick_params(axis='x', colors='white')
-            self.ax.tick_params(axis='y', colors='white')
-            self.ax.grid(True, color="white", alpha=0.2)
-            for spine in self.ax.spines.values():
-                spine.set_color("white")
-
             cbar = self.figure.colorbar(img, ax=self.ax, label="log₁₀(Counts)" if log_switch else "Counts")
-            cbar.ax.yaxis.set_tick_params(color='white')
-            plt.setp(cbar.ax.yaxis.get_ticklabels(), color='white')
-            cbar.set_label(cbar.ax.get_ylabel(), color='white')
+            fg   = self._style_ax(self.ax, cbar)
+            self.ax.set_title(self.hmp_plot_title,                              color=fg)
+            self.ax.set_xlabel("Energy (keV)" if cal_switch else "Bin #",       color=fg)
+            self.ax.set_ylabel("Time (s)",                                      color=fg)
 
             # Scroll upward like a spectrogram
             self.ax.invert_yaxis()
