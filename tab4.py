@@ -4,7 +4,7 @@ import numpy as np
 import shared 
 import json
 import os
-import matplotlib as mpl
+import pyqtgraph as pg
 
 from qt_compat import QWidget
 from qt_compat import QVBoxLayout
@@ -25,11 +25,11 @@ from qt_compat import QPixmap
 from qt_compat import QGroupBox
 from qt_compat import QGridLayout
 
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.figure import Figure
 from shared import logger, START, STOP, BTN, FOOTER, DLD_DIR
 from functions import start_recording, stop_recording, get_filename_options, load_cps_file, resource_path
 from pathlib import Path
+from qss import apply_plot_theme, plot_theme_colors
+
 
 class Tab4(QWidget):
 
@@ -40,10 +40,7 @@ class Tab4(QWidget):
     def __init__(self):
         super().__init__()
 
-        mpl.rcParams["xtick.color"] = "white"
-        mpl.rcParams["ytick.color"] = "white"
-        mpl.rcParams["axes.labelcolor"] = "white"
-        mpl.rcParams["axes.edgecolor"] = "white"
+        # rcParams are set theme-aware in apply_theme_to_plots()
 
         # Timer function
         self.ui_timer = QTimer(self)
@@ -68,11 +65,16 @@ class Tab4(QWidget):
         self.last_loaded_filename = None
         
         # === Plot ===
-        self.figure = Figure()
-        self.canvas = FigureCanvas(self.figure)
-        self.figure.set_facecolor(shared.DARK_BLUE)
+        self.plot_widget = pg.PlotWidget()
+        self.plot_widget.setMouseEnabled(x=True, y=False)
+        apply_plot_theme(self.plot_widget)
+        self.plot_widget.setLabel("left",   "Counts per second")
+        self.plot_widget.setLabel("bottom", "Seconds")
 
-        self.ax = self.figure.add_subplot(111)
+        t = plot_theme_colors()
+        self._curve_counts = self.plot_widget.plot([], pen=t["hist_pen"], name="Counts/sec")
+        self._curve_avg    = self.plot_widget.plot([], pen=t["comp_pen"], name="Avg")
+        self._curve_avg.hide()
 
         # === Unified Control Section (under the plot) ===
         control_box = QGroupBox()
@@ -194,7 +196,7 @@ class Tab4(QWidget):
 
 
         # === Add to aligned layout
-        self.tab4_layout.addWidget(self.canvas)
+        self.tab4_layout.addWidget(self.plot_widget)
         aligned_layout.addWidget(control_box)
         self.tab4_layout.addWidget(aligned_container)
 
@@ -304,9 +306,8 @@ class Tab4(QWidget):
         shared.counts = []
         shared.counts_left = []
         shared.counts_right = []
-
-        self.ax.clear()
-        self.canvas.draw()
+        self._curve_counts.setData([], [])
+        self._curve_avg.setData([], [])
 
     def update_cps_label(self):
         try:
@@ -321,6 +322,13 @@ class Tab4(QWidget):
             logger.warning(f"👆 Failed to update CPS/smooth labels: {e}")
 
 
+    def apply_theme_to_plots(self):
+        """Called by qss.apply_theme() when the user switches theme."""
+        apply_plot_theme(self.plot_widget)
+        t = plot_theme_colors()
+        self._curve_counts.setPen(t["hist_pen"])
+        self._curve_avg.setPen(t["comp_pen"])
+
     def update_plot(self):
         try:
             with shared.write_lock:
@@ -333,62 +341,33 @@ class Tab4(QWidget):
 
             # --- Prepare data ---
             counts = np.array(counts, dtype=float)
-            counts[counts < 0] = np.nan  # defensive guard
+            counts[counts < 0] = 0
 
-            # --- Clear axis first ---
-            self.ax.clear()
-            self.ax.set_facecolor(shared.DARK_BLUE)
+            x = list(range(len(counts)))
 
-            # --- Set scale (must be AFTER clear) ---
+            # --- Log mode ---
             if self.checkbox_log.isChecked():
-                self.ax.set_yscale("log")
-                counts[counts <= 0] = np.nan
+                self.plot_widget.setLogMode(x=False, y=True)
+                counts = np.where(counts > 0, counts, np.nan)
             else:
-                self.ax.set_yscale("linear")
+                self.plot_widget.setLogMode(x=False, y=False)
 
-            # --- Ensure white tick labels even after rescaling ---
-            self.ax.tick_params(axis="x", colors="white")
-            self.ax.tick_params(axis="y", colors="white")
-            for label in self.ax.get_xticklabels() + self.ax.get_yticklabels():
-                label.set_color("white")
+            # --- Main counts curve ---
+            self._curve_counts.setData(x, counts.tolist())
 
-            # --- Style and grid ---
-            self.ax.grid(True, which="both", linestyle="--", linewidth=0.5, color="white")
-            self.ax.tick_params(axis="x", colors="white")
-            self.ax.tick_params(axis="y", colors="white")
-            for spine in self.ax.spines.values():
-                spine.set_color("white")
+            # --- Rolling average ---
+            n = max(1, int(self.sum_n))
+            if n > 1 and len(counts) >= n:
+                rolling_avg = np.convolve(counts, np.ones(n)/n, mode="valid")
+                x_avg = list(range(n - 1, len(counts)))
+                self._curve_avg.setData(x_avg, rolling_avg.tolist())
+                self._curve_avg.show()
+            else:
+                self._curve_avg.hide()
 
-            # --- Plot data ---
-            if len(counts) > 0:
-                self.ax.plot(counts, label="Counts/sec", color=shared.LIGHT_GREEN, linewidth=1.0)
-
-                n = max(1, int(self.sum_n))
-                if n > 1 and len(counts) >= n:
-                    rolling_avg = np.convolve(counts, np.ones(n)/n, mode="valid")
-                    self.ax.plot(
-                        range(n - 1, len(counts)),
-                        rolling_avg,
-                        label=f"Avg {n}s",
-                        color=shared.PINK,
-                        linewidth=1.0
-                    )
-
-            # --- Labels & limits ---
-            self.ax.set_title(f"Count Rate - ({filename})", color="white")
-            self.ax.set_xlabel("Seconds", color="white")
-            self.ax.set_ylabel("Counts per second", color="white")
-            self.ax.set_xlim(left=0, right=max(300, len(counts)))
-
-            # only set bottom limit for linear scale
-            if not self.checkbox_log.isChecked():
-                self.ax.set_ylim(bottom=0)
-
-            handles, labels = self.ax.get_legend_handles_labels()
-            if labels:  # only build a legend if we actually have labeled artists
-                self.ax.legend(facecolor=shared.DARK_BLUE, edgecolor="white", labelcolor="white")
-
-            self.canvas.draw()
+            # --- Title and x range ---
+            self.plot_widget.setTitle(f"Count Rate — {filename}")
+            self.plot_widget.setXRange(0, max(300, len(counts)), padding=0)
 
         except Exception as e:
             logger.error(f"❌ update_plot error: {e}")
