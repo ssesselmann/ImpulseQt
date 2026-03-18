@@ -32,7 +32,6 @@ from qt_compat import QDoubleValidator
 from qt_compat import QDialog
 from qt_compat import QApplication
 
-
 from functions import (
     start_recording, 
     get_filename_options, 
@@ -53,6 +52,8 @@ from pathlib import Path
 from calibration_popup import CalibrationPopup
 from PySide6.QtWidgets import QTableWidget, QTableWidgetItem, QHeaderView, QAbstractScrollArea, QStyledItemDelegate
 from PySide6.QtGui import QBrush, QColor
+from qss import apply_plot_theme, plot_theme_colors
+
 
 
 class _WhiteInputDelegate(QStyledItemDelegate):
@@ -62,6 +63,23 @@ class _WhiteInputDelegate(QStyledItemDelegate):
             option.backgroundBrush = QBrush(QColor("#ffffff"))
 
 class Tab2(QWidget):
+
+        
+    def apply_theme_to_plots(self):
+        theme = plot_theme_colors()
+        apply_plot_theme(self.plot_widget)
+        self.hist_curve.setPen(theme["hist_pen"])
+        self.hist_curve.setBrush(theme["hist_brush"])
+        self.comp_curve.setPen(theme["comp_pen"])
+        self.gauss_curve.setPen(theme["gauss_pen"])
+        self.gauss_curve.setBrush(theme["gauss_brush"])
+        self.vline.setPen(theme["crosshair_pen"])
+        self.hline.setPen(theme["crosshair_pen"])
+        for region in self._peak_regions.values():
+            region.setBrush(theme["roi_brush"])
+            for line in region.lines:
+                line.setPen(theme["roi_pen"])
+                line.setHoverPen(theme["roi_hover_pen"])
 
     def labeled_input(self, label_text, widget):
         label = QLabel(label_text)
@@ -104,6 +122,7 @@ class Tab2(QWidget):
         positive_float_validator.setDecimals(2) 
 
         # === Plot ===
+        
         self.process_thread = None
         self.has_loaded     = False
         self.filename_2     = ""
@@ -112,15 +131,22 @@ class Tab2(QWidget):
         self._linearity_curve   = None
         self._cal_pairs         = []
 
-
-
         # ---- Title Setup ----
-        self.plot_title = QLabel("Histogram")  
-        self.plot_title.setProperty("typo", "p1")  
-        self.plot_title.setAlignment(Qt.AlignRight)
+        self.plot_title_left  = QLabel("")
+        self.plot_title_left.setProperty("typo", "p2")
+        self.plot_title_left.setAlignment(Qt.AlignLeft)
+
+        self.plot_title_right = QLabel("Histogram")
+        self.plot_title_right.setProperty("typo", "p2")
+        self.plot_title_right.setAlignment(Qt.AlignRight)
+
+        title_bar = QHBoxLayout()
+        title_bar.addWidget(self.plot_title_left)
+        title_bar.addWidget(self.plot_title_right)
 
         # --- Create the PlotWidget first ----------
         self.plot_widget = pg.PlotWidget()
+        self.plot_widget.setMouseEnabled(x=True, y=False)
 
         # Guard so we connect only once
         self._scene_hooked = False
@@ -131,7 +157,7 @@ class Tab2(QWidget):
 
 
         plot_layout = QVBoxLayout()
-        plot_layout.addWidget(self.plot_title)
+        plot_layout.addLayout(title_bar)
         plot_layout.addWidget(self.plot_widget)
 
         # --- ROI Controls (buttons) ---
@@ -225,8 +251,6 @@ class Tab2(QWidget):
                 continue
             self._cal_points[uid_i] = keV_f
 
-
-
         # --- ROI signals ---
         self.btn_auto_roi.clicked.connect(self._on_auto_roi_clicked)
         self.btn_clear_roi.clicked.connect(self._on_clear_rois_clicked)
@@ -249,13 +273,18 @@ class Tab2(QWidget):
         self.plot_widget.setLabel('left', 'Counts')
 
         # --- Curves (add main first, then others) -----------------
-        self.style_plot_canvas(self.plot_widget)
+        #apply_plot_theme(self.plot_widget)
+
         self.plot_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
-        # curve step — use your color constants
-        self.hist_curve  = self.plot_widget.plot([], pen=pg.mkPen(LIGHT_GREEN, width=2), fillLevel=0, brush=LIGHT_GREEN, stepMode="left")
-        self.comp_curve  = self.plot_widget.plot([], pen=pg.mkPen(PINK,        width=2))
-        self.gauss_curve = self.plot_widget.plot([], pen=pg.mkPen(RED,         width=2), fillLevel=0, brush=(139,0,0), alpha=1)
+        # # curve step — use your color constants
+        # theme = getattr(shared, "theme", "dark")
+
+        # --- Curves ---
+        _t = plot_theme_colors()
+        self.hist_curve  = self.plot_widget.plot([], pen=_t["hist_pen"], fillLevel=0, brush=_t["hist_brush"], stepMode="left")
+        self.comp_curve  = self.plot_widget.plot([], pen=_t["comp_pen"])
+        self.gauss_curve = self.plot_widget.plot([], pen=_t["gauss_pen"], fillLevel=0, brush=_t["gauss_brush"])
 
         # Z-order so crosshairs/markers sit above lines, backgrounds below lines
         self.hist_curve.setZValue(8)
@@ -272,9 +301,7 @@ class Tab2(QWidget):
         self.plot_widget.addItem(self.hline, ignoreBounds=True)
         self.plot_widget.scene().sigMouseMoved.connect(self.on_mouse_moved)
 
-
         # tab2_layout.addWidget(self.plot_widget)
-        # ======================================================
         # === 9x4 Grid ==========================================
         grid = QGridLayout()
 
@@ -1119,8 +1146,12 @@ class Tab2(QWidget):
             diff_switch= shared.diff_switch
             coeffs     = [shared.coeff_1, shared.coeff_2, shared.coeff_3]
 
-        pen_color = WHITE if diff_switch else LIGHT_GREEN
-        pen = pg.mkPen(color=pen_color, width=1)
+        t = plot_theme_colors()
+        pen = t["crosshair_pen"] if diff_switch else t["hist_pen"]
+        self.vline.setPen(pen)
+        self.hline.setPen(pen)
+
+
         self.vline.setPen(pen)
         self.hline.setPen(pen)
 
@@ -1565,13 +1596,23 @@ class Tab2(QWidget):
 
     
     def style_plot_canvas(self, pw: pg.PlotWidget):
-        pw.setBackground(DARK_BLUE)
+        theme = getattr(shared, "theme", "dark")
+
+        if theme == "paper":
+            pw.setBackground("w")
+            axis_color = "k"
+        else:
+            pw.setBackground(DARK_BLUE)
+            axis_color = WHITE
+
         pi = pw.getPlotItem()
-        pi.getAxis("left").setPen(WHITE)
-        pi.getAxis("left").setTextPen(WHITE)
-        pi.getAxis("bottom").setPen(WHITE)
-        pi.getAxis("bottom").setTextPen(WHITE)
+        pi.getAxis("left").setPen(axis_color)
+        pi.getAxis("left").setTextPen(axis_color)
+        pi.getAxis("bottom").setPen(axis_color)
+        pi.getAxis("bottom").setTextPen(axis_color)
+
         pi.showGrid(x=True, y=True, alpha=0.18)
+
 
     def calibrate_spectrum(self, indices, coeffs, cal_switch):
         if not cal_switch or coeffs is None or not any(np.isfinite(coeffs)):
@@ -2155,6 +2196,34 @@ class Tab2(QWidget):
 
         return "\n".join(out)
 
+    def _plot_theme(self):
+        theme = getattr(shared, "theme", "dark")
+        if theme == "paper":
+            return {
+                "bg": "w",
+                "axis": "k",
+                "hist": "k",
+                "hist_brush": (0, 0, 0, 40),
+                "diff": "k",
+                "comp": "#cc3333",
+                "gauss": "#006600",
+                "gauss_brush": (0, 100, 0, 40),
+                "crosshair": "k",
+                "linearity": "k",
+            }
+        return {
+            "bg": DARK_BLUE,
+            "axis": WHITE,
+            "hist": LIGHT_GREEN,
+            "hist_brush": LIGHT_GREEN,
+            "diff": WHITE,
+            "comp": PINK,
+            "gauss": RED,
+            "gauss_brush": (139, 0, 0, 120),
+            "crosshair": WHITE,
+            "linearity": "w",
+        }
+
 
     def update_histogram(self):
         # 1) Snapshot shared state
@@ -2174,6 +2243,7 @@ class Tab2(QWidget):
             slb_switch     = shared.slb_switch
             filename       = shared.filename
             raw_hist       = list(shared.histogram)
+            theme          = getattr(shared, "theme", "dark")
 
 
         if not histogram:
@@ -2271,11 +2341,11 @@ class Tab2(QWidget):
         self.y_vals_raw  = raw_hist
 
         # Pens (diff → black, otherwise blue)
-        self.hist_curve.setPen(pg.mkPen("white" if (diff_switch and comp_switch) else LIGHT_GREEN, width=1.5))
+        #self.hist_curve.setPen(pg.mkPen("white" if (diff_switch and comp_switch) else LIGHT_GREEN, width=1.5))
 
         # 3) Push data to pyqtgraph (no manual ranges — let it autorange)
-        self.plot_widget.enableAutoRange('x', True)
-        self.plot_widget.enableAutoRange('y', True)
+        # self.plot_widget.enableAutoRange('x', True)
+        # self.plot_widget.enableAutoRange('y', True)
         # main histogram
         self.hist_curve.setData(x_vals, y_vals)
 
@@ -2322,11 +2392,12 @@ class Tab2(QWidget):
 
                 region = self._peak_regions.get(uid)
                 if region is None:
-                    region = pg.LinearRegionItem(values=(x0, x1), brush=(255, 255, 0, 60))
+                    _t = plot_theme_colors()
+                    region = pg.LinearRegionItem(values=(x0, x1), brush=_t["roi_brush"])
                     region.setMovable(True)
                     for line in region.lines:
-                        line.setPen(pg.mkPen('y', width=1.5))
-                        line.setHoverPen(pg.mkPen('w', width=2))
+                        line.setPen(_t["roi_pen"])
+                        line.setHoverPen(_t["roi_hover_pen"])
                     region.setZValue(12)
                     # Update peak_list when user stops dragging
                     region.sigRegionChangeFinished.connect(lambda _=None, u=uid: self._on_region_changed(u))
@@ -2349,11 +2420,32 @@ class Tab2(QWidget):
         self.plot_widget.setLogMode(x=False, y=log_switch)
 
         # Optional: nudge autorange to recompute with the new transform
-        self.plot_widget.autoRange()
+        # self.plot_widget.autoRange()
 
+        # Left: live clock
         now = datetime.now()
-        formatted = now.strftime("%Y-%m-%d %H:%M:%S")
-        self.plot_title.setText(f"{formatted}\n {filename}")
+        self.plot_title_left.setText(now.strftime("%Y-%m-%d %H:%M:%S"))
+
+        # Right: endTime from file if available, otherwise just filename
+        end_str = ""
+        try:
+            import os, json as _json
+            from shared import USER_DATA_DIR
+            fpath = os.path.join(USER_DATA_DIR, f"{filename}.json")
+            if os.path.exists(fpath):
+                with open(fpath) as _f:
+                    _d = _json.load(_f)
+                raw = (_d.get("data", [{}])[0]
+                         .get("resultData", {})
+                         .get("endTime", ""))
+                if raw:
+                    from datetime import timezone
+                    dt = datetime.fromisoformat(raw)
+                    dt_local = dt.astimezone()
+                    end_str = f"Ended: {dt_local.strftime('%Y-%m-%d %H:%M:%S')}  "
+        except Exception:
+            pass
+        self.plot_title_right.setText(f"{filename} {end_str}")
 
         self._recompute_all_peaks()
 
