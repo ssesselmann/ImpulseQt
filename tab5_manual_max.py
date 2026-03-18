@@ -103,10 +103,14 @@ def get_max_manual_html():
             <p>Most computers should already have the FDTI driver installed, if not it should automatically install, however if your doesn't it might be necessary to install it manually from the link below. </p>
             <p><code><p><code>https://ftdichip.com/drivers/</code></p>
             
+
             <h2>Device Setup Tab</h2>
             <p>The device setup tab has two functions, a) Select device and Send Command, the rest of the page is for viewing the responses from your spectrometer.</p>
             <p>When ImpulseQt loads it will find all serial devices connected to your PC ports, it may not immediately be evident which one is your spectrometer, if in doubt, disconnect the device, restart the application, and figure out which device is no longer showing.</P>
             
+            <h3>Choose your theme</h3>
+            <p>The default theme uses a dark blue background, comfortable to look at but not great for screen shots to be included into scientific papers. Select the paper theme to switch to high contrast rendering.</p>
+
             <h3>Send Commands</h3>
             <p>The FDTI micro-processor in your Atom or Max spectrometer takes commands in specific formats, some commands are commonly used and others are mainly for factory calibration and should generally not be changed. These commands are all described in your manual, so we shall only cover the basic ones here.  Changing bias voltage is a common action, the command is -U followed by a number from 0 to 255 and should be input as follows. The number following does not represent voltage but rather the voltage range divided by 255.</p>
             <code>
