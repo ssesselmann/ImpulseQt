@@ -29,6 +29,7 @@ from shared import logger, FOOTER, DARK_BLUE, LIGHT_GREEN, WHITE
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from shproto.dispatcher import process_03
+from qss import apply_plot_theme, plot_theme_colors
 
 BTN_W = 130
 
@@ -364,20 +365,34 @@ class Tab1MaxWidget(QWidget):
         self.current_max_mode = 0
         self.pulse_timer.stop()
 
+    def _style_ax(self):
+        """Apply current theme colours to the axes. Returns (fg, bg, line_color)."""
+        theme = getattr(shared, "theme", "dark")
+        fg   = "#000000" if theme == "paper" else WHITE
+        bg   = "#ffffff" if theme == "paper" else DARK_BLUE
+        line = "#006600" if theme == "paper" else LIGHT_GREEN
+        fig  = self.ax.figure
+        fig.set_facecolor(bg)
+        self.ax.set_facecolor(bg)
+        for spine in self.ax.spines.values():
+            spine.set_color(fg)
+        self.ax.tick_params(axis="both", which="both", colors=fg)
+        self.ax.xaxis.label.set_color(fg)
+        self.ax.yaxis.label.set_color(fg)
+        self.ax.grid(True, which="major", color=fg, alpha=0.25, linewidth=0.8)
+        self.ax.grid(True, which="minor", color=fg, alpha=0.10, linewidth=0.5)
+        return fg, bg, line
+
+    def apply_theme_to_plots(self):
+        """Restyle existing axes only — no data reload."""
+        fg, bg, line = self._style_ax()
+        self.ax.set_title(self.ax.get_title(), color=fg)
+        self.canvas.draw_idle()
+
     def setup_plot(self):
-        # after you create self.fig/self.ax/self.canvas
-        self.canvas.setStyleSheet(f"background-color: {DARK_BLUE};")   # Qt sees this instantly
-
-        fig = self.ax.figure
-        fig.set_facecolor(DARK_BLUE)       # Matplotlib background
-        self.ax.set_facecolor(DARK_BLUE)
-
-        for s in self.ax.spines.values():
-            s.set_color(WHITE)
-        self.ax.tick_params(colors=WHITE)
         self.ax.set_axisbelow(True)
-        self.ax.grid(True, which="major", color=WHITE, alpha=0.25, linewidth=0.8)
-
+        self.ax.minorticks_on()
+        self._style_ax()
         self.canvas.draw()
 
     def update_pulse_plot(self):
@@ -400,26 +415,21 @@ class Tab1MaxWidget(QWidget):
         y_values = pulse_data
 
         self.ax.clear()
-
-        # --- Canvas / axes styling ---
-        fig = self.ax.figure
-        fig.set_facecolor(DARK_BLUE)       
-        self.ax.set_facecolor(DARK_BLUE)       
-        for spine in self.ax.spines.values():
-            spine.set_color(WHITE)
-        self.ax.tick_params(axis="both", which="both", colors=WHITE)
+        self.ax.set_axisbelow(True)
+        self.ax.minorticks_on()
+        fg, bg, line = self._style_ax()
 
         # === Plot style by mode ===
         if mode == 2:
             self.ax.plot(
                 x_values, y_values,
-                color=LIGHT_GREEN, linewidth=1.2, marker="o",
-                markerfacecolor=LIGHT_GREEN, markeredgecolor=LIGHT_GREEN, markersize=2.5
+                color=line, linewidth=1.2, marker="o",
+                markerfacecolor=line, markeredgecolor=line, markersize=2.5
             )
-            self.ax.set_title("Max Pulse Plot", color=WHITE)
+            self.ax.set_title("Max Pulse Plot", color=fg)
         elif mode == 1:
-            self.ax.plot(x_values, y_values, color=LIGHT_GREEN, linewidth=1.2)
-            self.ax.set_title("Oscilloscope Trace", color=WHITE)
+            self.ax.plot(x_values, y_values, color=line, linewidth=1.2)
+            self.ax.set_title("Oscilloscope Trace", color=fg)
 
         # === Axis by mode ===
         if mode == 2:
@@ -432,21 +442,8 @@ class Tab1MaxWidget(QWidget):
 
         # after you style ticks/spines and before self.canvas.draw()
 
-        self.ax.set_axisbelow(True)  # grid behind the trace
-
-        # Major grid
-        self.ax.grid(True, which="major", color="#FFFFFF", linewidth=0.8, alpha=0.25, linestyle="-")
-
-        # Minor grid (optional but nice)
-        self.ax.minorticks_on()
-        self.ax.grid(True, which="minor", color="#FFFFFF", linewidth=0.5, alpha=0.10, linestyle="-")
-
         self.ax.set_xlim(0, max_x)
         self.ax.set_xlabel("Sample Index")
         self.ax.set_ylabel("Amplitude")
-
-        # make axis labels white too
-        self.ax.xaxis.label.set_color(WHITE)
-        self.ax.yaxis.label.set_color(WHITE)
 
         self.canvas.draw()
