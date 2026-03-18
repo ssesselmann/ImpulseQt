@@ -30,7 +30,7 @@ run_flag_lock   = Lock()
 
 # --------------------
 # Versioning
-__version__ = "3.2.3.0"
+__version__ = "3.2.4.0"
 # --------------------
 
 SETTINGS = {}  
@@ -56,7 +56,6 @@ FOOTER      = f"ImpulseQt ({__version__}) by GammaSpectacular.com"
 # At class level (e.g., Tab3Heatmap or similar)
 BIN_OPTIONS = [("128 Bins", 64),("256 Bins", 32), ("512 Bins", 16), ("1024 Bins", 8), ("2048 Bins", 4), ("4096 Bins", 2), ("8192 Bins", 1)]
 
-
 # -------------------------------
 # Application Paths
 # -------------------------------
@@ -77,6 +76,7 @@ LIB_DIR = USER_DATA_DIR / "lib"
 SETTINGS_FILE = DATA_DIR / "settings.json"
 
 ICON_PATH = os.path.join("assets", "favicon.png")
+
 # -------------------------------
 # Logging Setup
 # -------------------------------
@@ -238,7 +238,7 @@ slb_switch = False
 comp_switch = False
 diff_switch = False
 linearity_switch = False
-
+theme = ""
 
 
 # --- Region & Coincidence ---
@@ -387,7 +387,8 @@ SETTINGS_SCHEMA = {
     "tab3_y_fixed": {"type": "bool", "default": False},
     "tab3_ymax": {"type": "int", "default": 100},
     "tab3_smooth_on": {"type": "Bool", "default": False},
-    "tab3_smooth_win": {"type": "int", "default": 3}
+    "tab3_smooth_win": {"type": "int", "default": 3},
+    "theme": {"type": "str", "default": "dark"},
 }
 
 def read_flag_data(path):
