@@ -344,14 +344,22 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(delay, lambda m=msg, lv=level: self._commit_status(m, lv))
             return
 
-        if level >= logging.ERROR:
-            color = "#FF0000" 
+        theme = getattr(shared, "theme", "dark")
 
-        elif level >= logging.WARNING:
-            color = "#FFFF00"
-
+        if theme == "paper":
+            if level >= logging.ERROR:
+                color = "#C62828"      # dark red
+            elif level >= logging.WARNING:
+                color = "#9A6B00"      # amber/brown
+            else:
+                color = "#202020"      # dark grey / black
         else:
-            color = "#9AFF7B"
+            if level >= logging.ERROR:
+                color = "#FF0000"
+            elif level >= logging.WARNING:
+                color = "#FFFF00"
+            else:
+                color = "#9AFF7B"
 
         self.status_label.setStyleSheet(f"padding-left: 10px; color: {color};")
         self.status_label.setText(msg)
