@@ -72,11 +72,19 @@ def capture_pulse_polarity(
     timeout=30, debug=False, report_every=20
 ):
 
+    import traceback, threading
+
     logger.info("🔀 Determining pulse polarity")
+
     p = pyaudio.PyAudio()
+    
+    for i in range(p.get_device_count()):
+        info_i = p.get_device_info_by_index(i)
+
     info = p.get_device_info_by_index(device)
 
     channels = 2 if stereo else 1
+
     if channels > info["maxInputChannels"]:
         raise RuntimeError(
             f"❌ Device {device} only supports {info['maxInputChannels']} channels, "
@@ -119,15 +127,17 @@ def capture_pulse_polarity(
         while pulse_sign_left is None or (stereo and pulse_sign_right is None):
             elapsed = time.time() - start_time
             if elapsed > timeout:
-                print("⚠️ Polarity detection timed out.")
+                logger.info("⚠️ Polarity detection timed out.")
                 break
 
             data = stream.read(chunk_size, exception_on_overflow=False)
 
             # Safety: ensure we got expected bytes
             expected_bytes = chunk_size * channels * 2  # int16 = 2 bytes
+
             if len(data) != expected_bytes and debug:
-                print(f"⚠️ Short read: got {len(data)} bytes, expected {expected_bytes}")
+                logger.info(f"⚠️ Short read: got {len(data)} bytes, expected {expected_bytes}")
+                continue
 
             values = struct.unpack(f"{chunk_size * channels}h", data)
 
@@ -210,7 +220,6 @@ def capture_pulse_polarity(
 
     return pulse_sign_left, pulse_sign_right
 
-
 def shapecatcher(live_update=True, update_interval=1.0):
     with shared.write_lock:
         device          = shared.device
@@ -237,16 +246,10 @@ def shapecatcher(live_update=True, update_interval=1.0):
 
     encoded_pulse_sign = encode_pulse_sign(pulse_sign_left, pulse_sign_right, stereo)
 
-    with shared.write_lock:
-        shared.flip = encoded_pulse_sign
-
     flipL, flipR = flip_multipliers_from_code(encoded_pulse_sign)
 
-    
-    with shared.write_lock:
-        shared.flip = encoded_pulse_sign
-
     p = pyaudio.PyAudio()
+
     info = p.get_device_info_by_index(device)
 
     channels = 2 if stereo else 1
@@ -279,11 +282,10 @@ def shapecatcher(live_update=True, update_interval=1.0):
                 logger.info("   🛑 sc Aborted by user")
                 break
 
-            data = stream.read(chunk_size, exception_on_overflow=False)
-            values = list(wave.struct.unpack(f"{chunk_size * channels}h", data))
-
-            left_channel  = values[::2] if stereo else values
-            right_channel = values[1::2] if stereo else []
+            data            = stream.read(chunk_size, exception_on_overflow=False)
+            values          = list(struct.unpack(f"{chunk_size * channels}h", data))
+            left_channel    = values[::2] if stereo else values
+            right_channel   = values[1::2] if stereo else []
 
             # ✅ apply flip early (so pulses become positive)
             if flipL == -1:
@@ -343,10 +345,10 @@ def shapecatcher(live_update=True, update_interval=1.0):
             shared.shape_n_right    = n_right
             shared.shape_target     = shapecatches
 
-        logger.info(f"   ✅ sc Mean shapes computed and saved (L={n_left}, R={n_right})")
+        logger.info(f"   ✅ Shapecatcher Mean shapes computed and saved (L={n_left}, R={n_right})")
 
     except Exception as e:
-        logger.error(f"  ❌ sc Exception {e} ")
+        logger.error(f"  ❌ Shapecatcher Exception {e} ")
         mean_left, mean_right = [], []
 
     finally:
