@@ -16,6 +16,7 @@ from qt_compat import (
 
 from shapecatcher import shapecatcher
 from distortionchecker import distortion_finder
+from qss import apply_plot_theme, plot_theme_colors
 
 
 class Tab1ProWidget(QWidget):
@@ -286,16 +287,26 @@ class Tab1ProWidget(QWidget):
 
         self.plot_shape()  
 
+    def apply_theme_to_plots(self):
+        """Called by qss.apply_theme() when the user switches theme."""
+        apply_plot_theme(self.pulse_plot)
+        apply_plot_theme(self.curve_plot)
+        t = plot_theme_colors()
+        if hasattr(self, "_shape_curve_left"):
+            self._shape_curve_left.setPen(t["hist_pen"])
+            self._shape_curve_left.setSymbolBrush(t["marker"])
+        if hasattr(self, "_shape_curve_right"):
+            self._shape_curve_right.setPen(t["comp_pen"])
+            self._shape_curve_right.setSymbolBrush(t["marker"])
+        with shared.write_lock:
+            dl = getattr(shared, "distortion_left",  None)
+            dr = getattr(shared, "distortion_right", None)
+        self.plot_distortion(dl, dr)
+
     def style_plot_canvas(self, canvas):
-        canvas.setBackground(DARK_BLUE)
-        pi = canvas.getPlotItem()
-        pi.getAxis("left").setPen(WHITE)
-        pi.getAxis("left").setTextPen(WHITE)
-        pi.getAxis("bottom").setPen(WHITE)
-        pi.getAxis("bottom").setTextPen(WHITE)
-        pi.showGrid(x=True, y=True, alpha=0.18)
-        pi.setTitle("")  # Optional: blank by default
-        pi.clear()
+        apply_plot_theme(canvas)
+        canvas.getPlotItem().setTitle("")
+        canvas.getPlotItem().clear()
 
     def update_device(self, index):
         selected_index = self.device_selector.itemData(index)
@@ -360,73 +371,27 @@ class Tab1ProWidget(QWidget):
 
             
     def plot_distortion(self, left, right):
-        """
-        Plot distortion values (now in % from functions.distortion)
-        for left and right channels.
-        """
+        left  = list(left)  if left  is not None else []
+        right = list(right) if right is not None else []
 
-        # Normalise inputs – never rely on their "truthiness"
-        if left is None:
-            left = []
-        if right is None:
-            right = []
-
-        # Make sure we have plain lists (handles numpy arrays, etc.)
-        left  = list(left)
-        right = list(right)
-
-        n_left  = len(left)
-        n_right = len(right)
-
-        # Clear and style the canvas
         self.curve_plot.clear()
-        self.curve_plot.setBackground(DARK_BLUE)
+        apply_plot_theme(self.curve_plot)
 
         pw = self.curve_plot
         pi = pw.getPlotItem()
-
-        # Axis styling
-        left_axis   = pi.getAxis("left")
-        bottom_axis = pi.getAxis("bottom")
-
-        left_axis.setPen(WHITE)
-        left_axis.setTextPen(WHITE)
-        bottom_axis.setPen(WHITE)
-        bottom_axis.setTextPen(WHITE)
-
-        # Labels – distortion now in percent
         pi.setLabel("left", "Distortion", units="%")
         pi.setLabel("bottom", "Pulse index")
-
-        # Grid
         pi.showGrid(x=True, y=True, alpha=0.18)
 
-        # X = sample index (1-based)
-        if n_left > 0:
-            x_vals_left = list(range(1, n_left + 1))
-            pw.plot(
-                x_vals_left,
-                left,
-                pen=pg.mkPen(LIGHT_GREEN, width=2),
-                symbol=None,
-                symbolBrush=LIGHT_GREEN,
-                name="Left",
-            )
+        t = plot_theme_colors()
+        if left:
+            pw.plot(list(range(1, len(left)+1)),  left,
+                    pen=t["hist_pen"], symbol=None, name="Left")
+        if right:
+            pw.plot(list(range(1, len(right)+1)), right,
+                    pen=t["comp_pen"], symbol=None, name="Right")
 
-        if n_right > 0:
-            x_vals_right = list(range(1, n_right + 1))
-            pw.plot(
-                x_vals_right,
-                right,
-                pen=pg.mkPen(PINK, width=2),
-                symbol=None,
-                symbolBrush=PINK,
-                name="Right",
-            )
-
-        # Let pyqtgraph choose sensible ranges automatically
         pi.enableAutoRange(x=True, y=True)
-
 
     def draw_mean_shape_plot(self):
         with shared.write_lock:
@@ -444,46 +409,36 @@ class Tab1ProWidget(QWidget):
 
     def init_pulse_plot(self):
         pw = self.pulse_plot
-        pw.setBackground(DARK_BLUE)
+        apply_plot_theme(pw)
 
         pi = pw.getPlotItem()
         pi.showGrid(x=True, y=True, alpha=0.18)
-
-        left_axis   = pi.getAxis("left")
-        bottom_axis = pi.getAxis("bottom")
-        left_axis.setPen(WHITE);   left_axis.setTextPen(WHITE)
-        bottom_axis.setPen(WHITE); bottom_axis.setTextPen(WHITE)
-
         pi.setLabel("left", "Amplitude", units="% FS")
         pi.setLabel("bottom", "Sample")
 
-        # safer across pyqtgraph versions: use positional args
         try:
-            left_axis.setTickSpacing(1, 0.5)
+            pi.getAxis("left").setTickSpacing(1, 0.5)
         except TypeError:
-            # some versions only accept kwargs
-            left_axis.setTickSpacing(major=1, minor=0.5)
+            pi.getAxis("left").setTickSpacing(major=1, minor=0.5)
 
-        # Create persistent curves (don’t recreate every update)
+        t = plot_theme_colors()
         self._shape_curve_left = pi.plot(
             [], [],
-            pen=pg.mkPen(LIGHT_GREEN, width=2),
-            symbol='o', symbolSize=6, symbolBrush=LIGHT_GREEN,
+            pen=t["hist_pen"],
+            symbol='o', symbolSize=6, symbolBrush=t["marker"],
             name="Left"
         )
         self._shape_curve_right = pi.plot(
             [], [],
-            pen=pg.mkPen(PINK, width=2),
-            symbol='o', symbolSize=6, symbolBrush=PINK,
+            pen=t["comp_pen"],
+            symbol='o', symbolSize=6, symbolBrush=t["marker"],
             name="Right"
         )
         self._shape_curve_right.hide()
 
-        # Optional: a small status overlay
-        self._shape_text = pg.TextItem("", color=WHITE, anchor=(0, 1))
+        self._shape_text = pg.TextItem("", anchor=(0, 1))
         pi.addItem(self._shape_text)
-        self._shape_text.setPos(0, 0)   # will be repositioned each update
-
+        self._shape_text.setPos(0, 0)
 
     def _set_btn_role(self, button, role: str):
         if button.property("btn") == role:
