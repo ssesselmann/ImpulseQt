@@ -347,7 +347,6 @@ def get_serial_device_list():
         out.append((label, dev))   # <-- IMPORTANT: dev is the VALUE
     return out
 
-# functions.py
 
 def get_device_list():
     try:
@@ -357,14 +356,25 @@ def get_device_list():
 
     pa = pyaudio.PyAudio()
     out = []
+    seen = set()
+
     try:
         n = pa.get_device_count()
         for i in range(n):
             info = pa.get_device_info_by_index(i)
-            # input-capable devices only
-            if int(info.get("maxInputChannels", 0)) > 0:
-                name = info.get("name", f"Device {i}")
-                out.append((name, i))
+
+            if int(info.get("maxInputChannels", 0)) <= 0:
+                continue
+
+            name = info.get("name", f"Device {i}").strip()
+
+            # Exact-name dedupe
+            if name in seen:
+                continue
+
+            seen.add(name)
+            out.append((name, i))
+
     finally:
         try:
             pa.terminate()
