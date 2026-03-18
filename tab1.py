@@ -21,10 +21,13 @@ from qt_compat import QColor
 from qt_compat import QIntValidator
 from qt_compat import QPixmap
 from qt_compat import QPushButton
+from qt_compat import QCheckBox
+from qt_compat import QTimer
 
 from tab1_pro import Tab1ProWidget 
 from tab1_max import Tab1MaxWidget
 from shared import logger, MONO, FOOTER, ICON_PATH
+from qss import apply_theme
 
 class Tab1(QWidget):
     def __init__(self):
@@ -32,6 +35,7 @@ class Tab1(QWidget):
 
         with shared.write_lock:
             device_type = shared.device_type
+            theme = getattr(shared, "theme", "dark")
 
         # === Top controls ===
         
@@ -53,9 +57,15 @@ class Tab1(QWidget):
         self.selector.setSizeAdjustPolicy(QComboBox.AdjustToContents)
         self.selector.currentTextChanged.connect(self.switch_device_type)
 
+        self.theme_toggle = QCheckBox("Paper theme")
+        self.theme_toggle.setChecked(theme == "paper")
+        self.theme_toggle.toggled.connect(self.toggle_theme)
+
         header_layout = QHBoxLayout()
         header_layout.addWidget(header_label)
         header_layout.addWidget(self.selector)
+        header_layout.addSpacing(20)
+        header_layout.addWidget(self.theme_toggle)
         header_layout.addStretch()
 
         # === Main content container ===
@@ -82,8 +92,14 @@ class Tab1(QWidget):
         device_tab_layout.addWidget(self.main_area)
         device_tab_layout.addWidget(footer)
 
-        self.setLayout(device_tab_layout) 
+        self.setLayout(device_tab_layout)
+        QTimer.singleShot(0, lambda: apply_theme(self.window()))
 
+
+    def toggle_theme(self, checked):
+        with shared.write_lock:
+            shared.theme = "paper" if checked else "dark"
+        apply_theme(self.window())
 
     def switch_device_type(self):
         value = self.selector.currentData()  # "PRO" or "MAX"
