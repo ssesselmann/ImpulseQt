@@ -74,9 +74,12 @@ ImpulseQt v3.1.5.0 – Changelog (November 2025)
 
 Things to Do: ⚙️
 ===================================================================
+• Replace comma with semi colon ";" in csv downloads
+• Fix zoom function in GUI
 • Backup serial device settings (not so simple)
 • Loaded spectrum should show recording date not current date.
 • Fix plot to allow zooming and scrolling without resetting ❌
+👉 Soundcards Filter + deduplicate intelligently in your device list
 
 
 
