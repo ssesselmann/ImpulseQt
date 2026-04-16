@@ -204,7 +204,7 @@ class Tab2(QWidget):
             "Centroid",       # 0
             "Ref E (keV)",    # 1 (editable)
             "Peak E (keV)",   # 2 (computed)
-            "ΔE (keV)",       # 3 (computed)
+            "dE (keV)",       # 3 (computed)
             "Resolution (%)", # 4
             "Width",          # 5
             "Net counts",     # 6
@@ -1857,7 +1857,7 @@ class Tab2(QWidget):
                     it0.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                     it0.setTextAlignment(Qt.AlignCenter)
 
-                    # Compute Peak E / ΔE texts safely
+                    # Compute Peak E / dE texts safely
                     if cal_on and any(np.isfinite(coeffs)):
                         peak_e = centroid_gui
                         peak_e_txt = f"{peak_e:.3f}"
@@ -1896,7 +1896,7 @@ class Tab2(QWidget):
                     it2.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                     it2.setTextAlignment(Qt.AlignCenter)
 
-                    # c=3: ΔE (keV) — computed
+                    # c=3: dE (keV) — computed
                     it3 = self._cell(r, 3)
                     it3.setText(delta_txt)
                     it3.setToolTip(delta_txt)

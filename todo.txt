@@ -1,13 +1,17 @@
 ImpulseQt
 ---------
 
+Impulse v3.2.5.0
+–––––––––––––––––––––––––––––
+• Fixed Windows error in Export peaks to csv ("∆E" replaced with "dE") ✅
+
 ImpulseQt v3.2.4.0 – Changelog (March 2026)
 –––––––––––––––––––––––––––––
-• Update version number							✅
-• Soundcards Filter + deduplicate device list 	✅
-• Fix spectrum plot to allow zooming on x axis 	✅
-• Added new function to tab 1 for paper theme 	✅
-• Loaded histogram now shows end date 			✅
+• Update version number							
+• Soundcards Filter + deduplicate device list 	
+• Fix spectrum plot to allow zooming on x axis 	
+• Added new function to tab 1 for paper theme 	
+• Loaded histogram now shows end date 			
 
 
 ImpulseQt v3.2.3.0 – Changelog (January 2026)
