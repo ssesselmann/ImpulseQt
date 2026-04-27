@@ -708,6 +708,20 @@ def export_csv(filename, data_directory, calib_switch):
                 energy = i
             writer.writerow([energy, value])
 
+def load_histogram_csv(filepath):
+    """Load a spectrum CSV (Bin,Counts) and return histogram as a list."""
+    histogram = []
+    try:
+        with open(filepath, newline='') as f:
+            reader = csv.reader(f)
+            next(reader)  # skip header
+            for row in reader:
+                if len(row) >= 2:
+                    histogram.append(int(row[1]))
+    except Exception as e:
+        logger.error(f"  ❌ fn load_histogram_csv: {e}")
+        return []
+    return histogram
 
 # removes the path from serial device list Mac only
 def cleanup_serial_options(options):
