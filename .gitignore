@@ -4,6 +4,7 @@
 *.plist
 
 dist/*
+venv310/*
 build/*
 MSIX/*
 stage/*
