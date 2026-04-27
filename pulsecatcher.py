@@ -39,9 +39,9 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
         device          = shared.device
         sample_rate     = shared.sample_rate
         chunk_size      = shared.chunk_size
-        threshold       = (shared.threshold * shared.bin_size)
+        threshold       = (shared.threshold * int(shared.bin_size))
         tolerance       = shared.tolerance
-        bin_size        = shared.bin_size
+        bin_size        = int(shared.bin_size)
         max_counts      = shared.max_counts
         sample_length   = shared.sample_length
         coeff_1         = shared.coeff_1
@@ -144,7 +144,6 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
         for i in range(len(left_channel) - sample_length):
             height = fn.pulse_height(samples)
             if samples[peak] == max(samples) and abs(height) > threshold and samples[peak] < 32768:
-                
                 # Optimize coincident pulse check by using binary search or range filter
                 if mode == 4:
                     coincident_pulse = next((rp for rp in right_pulses if i + peak - coi_window <= rp[0] <= i + peak + coi_window), None)
@@ -158,7 +157,7 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
                 if distortion > tolerance:
                     dropped_counts += 1
                 elif distortion < tolerance:
-                    bin_index = int(height / bin_size)
+                    bin_index = int(height) // bin_size #drift bug was here
                     if bin_index < bins:
                         full_histogram[bin_index] += 1
                         local_counts += 1

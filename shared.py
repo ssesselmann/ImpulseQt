@@ -30,7 +30,7 @@ run_flag_lock   = Lock()
 
 # --------------------
 # Versioning
-__version__ = "3.2.4.0"
+__version__ = "3.2.5.0"
 # --------------------
 
 SETTINGS = {}  
@@ -288,8 +288,8 @@ tab3_smooth_win = 5
 # -------------------------------
 
 SETTINGS_SCHEMA = {
-    "bin_size": {"type": "float", "default": 10},
-    "bin_size_2": {"type": "float", "default": 10},
+    "bin_size": {"type": "int", "default": 8},
+    "bin_size_2": {"type": "int", "default": 8},
     "bins_abs": {"type": "int", "default": 8192},
     "bins": {"type": "int", "default": 1024},
     "bins_2": {"type": "int", "default": 1024},
@@ -355,8 +355,8 @@ SETTINGS_SCHEMA = {
     "sample_length": {"type": "int", "default": 51},
     "sample_rate": {"type": "int", "default": 192000},
     "serial_number": {"type": "str", "default": ""},
-    "shape_lld": {"type": "int", "default": 1000},
-    "shape_uld": {"type": "int", "default": 25000},
+    "shape_lld": {"type": "int", "default": 3000},
+    "shape_uld": {"type": "int", "default": 20000},
     "shapecatches": {"type": "int", "default": 500},
     "sigma": {"type": "float", "default": 0},
     "spec_notes": {"type": "str", "default": ""},
