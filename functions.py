@@ -152,6 +152,27 @@ def write_histogram_npesv2(t0, t1, bins, counts, dropped_counts, elapsed, filena
     with open(jsonfile, "w+") as f:
         json.dump(data, f, separators=(',', ':'))
 
+def update_calibration_in_json(filename, coeff_1, coeff_2, coeff_3):
+    """Update only the calibration coefficients in an existing JSON file."""
+    jsonfile = _user_dir() / f"{filename}.json"
+    if not jsonfile.exists():
+        logger.warning(f"  ⚠️ fn update_calibration_in_json: {filename}.json not found")
+        return
+    try:
+        with open(jsonfile, "r") as f:
+            data = json.load(f)
+        # NPESv2 stores coefficients as [c, b, a] — reverse of shared.coeff order
+        data["data"][0]["resultData"]["energySpectrum"]["energyCalibration"]["coefficients"] = [coeff_3, coeff_2, coeff_1]
+        with open(jsonfile, "w") as f:
+            json.dump(data, f, separators=(',', ':'))
+        logger.info(f"   ✅ fn Calibration updated in {filename}.json")
+    except Exception as e:
+        import traceback
+        logger.error(f"  ❌ fn update_calibration_in_json: {e}")
+        logger.error(traceback.format_exc())
+
+
+
 # Function to create a blank JSON NPESv2 schema filename.json
 def write_blank_json_schema_hmp(filename, device):
     jsonfile = _user_dir() / f"{filename}_hmp.json"
