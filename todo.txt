@@ -3,7 +3,17 @@ ImpulseQt
 
 Impulse v3.2.5.0
 –––––––––––––––––––––––––––––
+**CRITICAL**
+• BugFix - Slight peak drift caused by rounding error in bin index ⚠️
 • Fixed Windows error in Export peaks to csv ("∆E" replaced with "dE") ✅
+• Increase stop at counts digits ✅
+• increase stop at time digits ✅
+• Highlight ULD and LLD in plot ✅
+• File navigator for open spectrum file ✅
+• File navigator for open comparison file ✅
+• Open csv spectrum file ✅
+• cosmetic changes ✅
+
 
 ImpulseQt v3.2.4.0 – Changelog (March 2026)
 –––––––––––––––––––––––––––––
@@ -87,8 +97,10 @@ ImpulseQt v3.1.5.0 – Changelog (November 2025)
 
 Things to Do: ⚙️
 ===================================================================
-• Replace comma with semi colon ";" in csv downloads (do nothing)
 • Backup serial device settings (not so simple)
+• Device calibration list
+• Optional fetch and save coefficients from ATOM device
+
 
 
 
