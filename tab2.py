@@ -34,11 +34,10 @@ from qt_compat import QApplication
 
 from functions import (
     start_recording, 
-    get_filename_options, 
-    get_filename_2_options, 
     stop_recording, 
     load_histogram, 
     load_histogram_2, 
+    load_histogram_csv,
     gaussian_correl,
     peak_finder,
     get_isotope_options,
@@ -50,7 +49,7 @@ from functions import (
 from shared import logger, MONO, FOOTER, DLD_DIR, USER_DATA_DIR, BIN_OPTIONS, LIGHT_GREEN, PINK, RED, WHITE, DARK_BLUE, ICON_PATH
 from pathlib import Path
 from calibration_popup import CalibrationPopup
-from PySide6.QtWidgets import QTableWidget, QTableWidgetItem, QHeaderView, QAbstractScrollArea, QStyledItemDelegate
+from PySide6.QtWidgets import QTableWidget, QTableWidgetItem, QHeaderView, QAbstractScrollArea, QStyledItemDelegate, QFileDialog
 from PySide6.QtGui import QBrush, QColor
 from qss import apply_plot_theme, plot_theme_colors
 
@@ -64,7 +63,49 @@ class _WhiteInputDelegate(QStyledItemDelegate):
 
 class Tab2(QWidget):
 
-        
+    def on_open_file_clicked(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Open Spectrum", str(shared.USER_DATA_DIR),
+            "Spectrum files (*.json *.csv)"
+        )
+        if not path:
+            return
+        stem = Path(path).stem
+        if path.endswith(".csv"):
+            histogram = load_histogram_csv(path)
+            if histogram:
+                with shared.write_lock:
+                    shared.histogram = histogram
+                    shared.bins      = len(histogram)
+                    shared.filename  = stem
+        else:
+            with shared.write_lock:
+                shared.filename = stem        # set filename inside lock
+            load_histogram(stem)              # call outside lock
+        self.update_histogram()
+
+
+    def on_open_file_2_clicked(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Open Comparison Spectrum", str(shared.USER_DATA_DIR),
+            "Spectrum files (*.json *.csv)"
+        )
+        if not path:
+            return
+        stem = Path(path).stem
+        if path.endswith(".csv"):
+            histogram = load_histogram_csv(path)
+            if histogram:
+                with shared.write_lock:
+                    shared.histogram_2 = histogram
+                    shared.bins_2      = len(histogram)
+                    shared.filename_2  = stem
+        else:
+            with shared.write_lock:
+                shared.filename_2 = stem      # set filename inside lock
+            load_histogram_2(stem)            # call outside lock
+        self.update_histogram()
+
     def apply_theme_to_plots(self):
         theme = plot_theme_colors()
         apply_plot_theme(self.plot_widget)
@@ -151,10 +192,8 @@ class Tab2(QWidget):
         # Guard so we connect only once
         self._scene_hooked = False
         scene = self.plot_widget.scene()
-        if not self._scene_hooked:
-            scene.sigMouseClicked.connect(self._on_scene_clicked)
-            self._scene_hooked = True
-
+        scene.sigMouseClicked.connect(self._on_scene_clicked)
+        self._scene_hooked = True
 
         plot_layout = QVBoxLayout()
         plot_layout.addLayout(title_bar)
@@ -171,9 +210,6 @@ class Tab2(QWidget):
         self.btn_clear_roi.setProperty("btn", "primary")
         self.btn_download_roi.setProperty("btn", "primary")
 
-
-        # for b in (self.btn_auto_roi, self.btn_clear_roi, ):
-        #     b.setProperty("btn", "primary")
 
         self.roi_controls.addWidget(self.btn_auto_roi)
         self.roi_controls.addWidget(self.btn_clear_roi)
@@ -292,8 +328,8 @@ class Tab2(QWidget):
         self.gauss_curve.setZValue(10)
 
         # --- Crosshair lines (add after curves, make sure they’re on top) -----------
-        self.vline = pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen('gray', width=1))
-        self.hline = pg.InfiniteLine(angle=0,  movable=False, pen=pg.mkPen('gray', width=1))
+        self.vline = pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen('#CCCCCC', width=1))
+        self.hline = pg.InfiniteLine(angle=0,  movable=False, pen=pg.mkPen('#CCCCCC', width=1))
         self.vline.setZValue(30)
         self.hline.setZValue(30)
 
@@ -352,7 +388,7 @@ class Tab2(QWidget):
         # Col 1 Row 3 
         self.max_counts_input = QLineEdit(str(int(max_counts)))
         self.max_counts_input.setAlignment(Qt.AlignCenter)
-        self.max_counts_input.setValidator(QIntValidator(0, 9999999))
+        self.max_counts_input.setValidator(QIntValidator(0, 99999999))
         self.max_counts_input.textChanged.connect(lambda text: self.on_text_changed(text, "max_counts"))
         grid.addWidget(self.labeled_input("Stop at counts.", self.max_counts_input), 2, 0)
 
@@ -377,7 +413,7 @@ class Tab2(QWidget):
         # Col 2 Row 3
         self.max_seconds_input = QLineEdit(str(int(max_seconds)))
         self.max_seconds_input.setAlignment(Qt.AlignCenter)
-        self.max_seconds_input.setValidator(QIntValidator(0, 9999999))  
+        self.max_seconds_input.setValidator(QIntValidator(0, 99999999))  
         self.max_seconds_input.textChanged.connect(lambda text: self.on_text_changed(text, "max_seconds"))
         grid.addWidget(self.labeled_input("Stop at seconds", self.max_seconds_input), 2, 1)
 
@@ -390,7 +426,7 @@ class Tab2(QWidget):
         clean_filename = filename.removesuffix(".json") if filename else ""
         self.filename_input = QLineEdit(clean_filename)
         self.filename_input.textChanged.connect(lambda text: self.on_text_changed(text, "filename"))
-        grid.addWidget(self.labeled_input("Filename", self.filename_input), 0, 2)
+        grid.addWidget(self.labeled_input("Filename", self.filename_input), 1, 2)
 
         self.pro_only_widgets = []
         self.max_only_widgets = []
@@ -398,17 +434,22 @@ class Tab2(QWidget):
         # =====================================================
         # PRO wrapper
         # =====================================================
-        # Col 3 Row 2: PRO-only Pitch (bin-size) input
+        # NEW - QComboBox with integer power-of-2 options
         self.bin_size_container = QWidget()
-        self.bin_size_container.setObjectName("bin_size_container")  # For debugging
+        self.bin_size_container.setObjectName("bin_size_container")
         bin_size_layout = QVBoxLayout(self.bin_size_container)
         bin_size_layout.setContentsMargins(0, 0, 0, 0)
-        self.bin_size = QLineEdit(str(bin_size))
-        self.bin_size.setAlignment(Qt.AlignCenter)
-        self.bin_size.setValidator(positive_float_validator)
-        self.bin_size.textChanged.connect(lambda text: self.on_text_changed(text, "bin_size"))
+        self.bin_size = QComboBox()
+        for v in [1, 2, 4, 8, 16, 32, 64]:
+            self.bin_size.addItem(str(v), v)
+        # Select current value
+        idx = self.bin_size.findData(int(bin_size))
+        self.bin_size.setCurrentIndex(idx if idx >= 0 else 3)  # default to 8
+        self.bin_size.currentIndexChanged.connect(
+            lambda _: self.on_text_changed(str(self.bin_size.currentData()), "bin_size")
+        )
         bin_size_layout.addWidget(self.labeled_input("Pitch (bin size)", self.bin_size))
-        grid.addWidget(self.bin_size_container, 1, 2)
+        grid.addWidget(self.bin_size_container, 2, 2)
         self.pro_only_widgets.append(self.bin_size_container)
         # PRO CLOSE WRAPPER ===================================
 
@@ -432,13 +473,13 @@ class Tab2(QWidget):
 
         # Place in your grid per device type
         if device_type == "MAX":
-            grid.addWidget(self.bins_container, 1, 2)
+            grid.addWidget(self.bins_container, 2, 2)
             self.max_only_widgets.append(self.bins_container)
         elif device_type == "PRO":
-            grid.addWidget(self.bins_container, 2, 2)
+            grid.addWidget(self.bins_container, 3, 2)
             self.pro_only_widgets.append(self.bins_container)
         else:
-            grid.addWidget(self.bins_container, 1, 2)
+            grid.addWidget(self.bins_container, 2, 2)
 
         self.bins_selector.currentIndexChanged.connect(self.on_select_bins_changed)
 
@@ -452,7 +493,7 @@ class Tab2(QWidget):
         self.slb_switch.setChecked(slb_switch)
         self.slb_switch.stateChanged.connect(lambda state, key="slb_switch": self.on_checkbox_toggle(key, state))
 
-        grid.addWidget(self.slb_switch, 2, 2)
+        grid.addWidget(self.slb_switch, 3, 2)
 
         self.max_only_widgets.append(self.slb_switch)
         #================================================================
@@ -472,19 +513,17 @@ class Tab2(QWidget):
         self.cmd_selector.addItem("Reset Histogram", "-rst")
         self.cmd_selector.currentIndexChanged.connect(lambda _idx: self.send_selected_command())
         cmd_field = self.labeled_input("Serial Command:", self.cmd_selector)
-        grid.addWidget(cmd_field, 1, 3)
+        grid.addWidget(cmd_field, 3, 3)
         self.max_only_widgets.append(cmd_field)
         # CLOSE MAX WRAPPER ======================================================
 
 
         # Col 3 Row 3
-        self.select_file = QComboBox()
-        self.select_file.setEditable(False)
-        self.select_file.setInsertPolicy(QComboBox.NoInsert)
-        self.select_file.setProperty("typo", "p2")
-        self.select_file.addItem("— Select file —", "")  # default entry
-        self.select_file.currentIndexChanged.connect(self.on_select_filename_changed)
-        grid.addWidget(self.labeled_input("Open spectrum file", self.select_file), 3, 2)
+        self.btn_open_file = QPushButton("Open spectrum file")
+        self.btn_open_file.setProperty("btn", "primary")
+        self.btn_open_file.clicked.connect(self.on_open_file_clicked)
+        grid.addWidget(self.labeled_input("Primary spectrum", self.btn_open_file), 0, 2)
+
 
         # ==== Col 4 Row 1 =============================================================
         # OPEN PRO wrapper for LLD + Interval
@@ -503,8 +542,8 @@ class Tab2(QWidget):
         self.interval_input_max.textChanged.connect(
             lambda text: self.on_text_changed(text, "t_interval")
         )
-        interval_field_max = self.labeled_input("Interval (s)", self.interval_input_max)
-        grid.addWidget(interval_field_max, 0, 3)
+        interval_field_max = self.labeled_input("Refresh Interval (s)", self.interval_input_max)
+        grid.addWidget(interval_field_max, 1, 4)
         self.max_only_widgets.append(interval_field_max)
 
         # ==== LLD threshold PRO ONLY (left box) ==================
@@ -527,7 +566,7 @@ class Tab2(QWidget):
         row.addWidget(lld_widget, 1)
         row.addWidget(interval_field_pro, 1)
 
-        grid.addWidget(self.threshold_container, 0, 3)
+        grid.addWidget(self.threshold_container, 2, 4)
         self.pro_only_widgets.append(self.threshold_container)
         # PRO CLOSE wrapper =============================================================
 
@@ -547,7 +586,7 @@ class Tab2(QWidget):
         self.tolerance_input.textChanged.connect(lambda text: self.on_text_changed(text, "tolerance"))
 
         tolerance_layout.addWidget(self.labeled_input("Distortion tolerance (%)", self.tolerance_input))
-        grid.addWidget(self.tolerance_container, 1, 3)
+        grid.addWidget(self.tolerance_container, 3, 3)
         self.pro_only_widgets.append(self.tolerance_container)
         # PRO CLOSE wrapper =======================================================
 
@@ -558,21 +597,19 @@ class Tab2(QWidget):
         grid.addWidget(self.labeled_input("Download csv File", self.dld_csv_btn), 0, 4)
 
         # Col 4 Row 4
-        self.select_comparison = QComboBox()
-        self.select_comparison.setEditable(False)
-        self.select_comparison.setInsertPolicy(QComboBox.NoInsert)
-        self.select_comparison.addItem("— Select file —", "")  # placeholder
-        self.select_comparison.currentIndexChanged.connect(lambda _:self.on_select_comparison_changed(self.select_comparison.currentData() or ""))
-        grid.addWidget(self.labeled_input("Comparison spectrum", self.select_comparison), 3, 3)
+        self.btn_open_file_2 = QPushButton("Open comparison file")
+        self.btn_open_file_2.setProperty("btn", "primary")
+        self.btn_open_file_2.clicked.connect(self.on_open_file_2_clicked)
+        grid.addWidget(self.labeled_input("Comparison spectrum", self.btn_open_file_2), 0, 3)
 
 
         # Col 5 Row 1 ---------------------------------------------------------------------
         # Col 4 Row 3
-        self.comp_switch = QCheckBox("Show\ncomparison")
+        self.comp_switch = QCheckBox("Show comparison")
         self.comp_switch.setChecked(comp_switch)
         self.comp_switch.stateChanged.connect(lambda state, key="comp_switch": self.on_checkbox_toggle(key, state))
 
-        grid.addWidget(self.comp_switch, 2, 3)
+        grid.addWidget(self.comp_switch, 1, 3)
 
         # =================================================
         # PRO OPEN WRAPPER 
@@ -588,11 +625,11 @@ class Tab2(QWidget):
         # PRO CLOSE WRAPPER ==============================
 
         # Col 5 Row 3
-        self.diff_switch = QCheckBox("Subtract\ncomparison")
+        self.diff_switch = QCheckBox("Subtract comparison")
         self.diff_switch.setChecked(diff_switch)
         self.diff_switch.stateChanged.connect(lambda state, key="diff_switch": self.on_checkbox_toggle(key, state))
 
-        grid.addWidget(self.diff_switch, 2, 4)
+        grid.addWidget(self.diff_switch, 2, 3)
 
         # Col 5 Row 4
         # --- Initialization (run once at UI setup) ---
@@ -749,7 +786,6 @@ class Tab2(QWidget):
         footer.setProperty("typo", "h2")
         tab2_layout.addWidget(footer)
 
-        self.refresh_file_dropdowns()
         self.setLayout(tab2_layout)
 
         # === Timer to update live data ===
@@ -1123,7 +1159,6 @@ class Tab2(QWidget):
         if (not self.process_thread) or (not self.process_thread.is_alive()):
             if shared.save_done.is_set():
                 self.process_thread = None
-                self.refresh_file_dropdowns()
                 logger.info("   ✅ Recording stopped & saved ")
                 return
 
@@ -1148,10 +1183,6 @@ class Tab2(QWidget):
 
         t = plot_theme_colors()
         pen = t["crosshair_pen"] if diff_switch else t["hist_pen"]
-        self.vline.setPen(pen)
-        self.hline.setPen(pen)
-
-
         self.vline.setPen(pen)
         self.hline.setPen(pen)
 
@@ -1181,63 +1212,6 @@ class Tab2(QWidget):
             self.plot_widget.setToolTip(f"Bin: {ch_idx}\ncts: {y}")
 
 
-    def refresh_file_dropdowns(self):
-        options  = get_filename_options()
-        options2 = get_filename_2_options()
-
-        with shared.write_lock:
-            want2 = shared.filename_2 or ""
-
-        def populate_combo(combo, file_options, label="— Select file —", want=None):
-            combo.blockSignals(True)
-            combo.clear()
-            combo.addItem(label, "")
-            for opt in file_options:
-                combo.addItem(opt['label'], opt['value'])
-            # restore selection if possible
-            if want:
-                idx = combo.findData(want)
-                combo.setCurrentIndex(idx if idx >= 0 else 0)
-            else:
-                combo.setCurrentIndex(0)
-            combo.blockSignals(False)
-
-        populate_combo(self.select_file, options)
-        populate_combo(self.select_comparison, options2, want=want2)
-        # Manually notify comparison change once
-        self.on_select_comparison_changed(self.select_comparison.currentData() or "")
-
-
-    def on_select_comparison_changed(self, value: str):
-        value = (value or "").strip()
-
-        if not value:
-            with shared.write_lock:
-                shared.filename_2    = ""
-                shared.histogram_2   = []
-                shared.bins_2        = 0
-                shared.comp_coeff_1  = 0.0
-                shared.comp_coeff_2  = 0.0
-                shared.comp_coeff_3  = 0.0
-                shared.counts_2      = 0
-                shared.compression_2 = 1
-            self.filename_2 = ""
-            self.update_histogram()
-            return
-
-        if value.startswith("lib/"):
-            iso = value.split("/", 1)[1]
-            ok = generate_synthetic_histogram(iso)
-        else:
-            ok = load_histogram_2(value)
-
-        if ok:
-            with shared.write_lock:
-                shared.filename_2 = value   # <- persist for next app launch
-            self.filename_2 = value
-            self.update_histogram()
-
-
     def on_checkbox_toggle(self, name, state):
         value = bool(state)
         logger.info(f"   ✅ {name} set to {value} ")
@@ -1259,8 +1233,10 @@ class Tab2(QWidget):
 
     def on_text_changed(self, text, key):
         try:
-            if key in {"bin_size", "tolerance"}:
+            if key == "tolerance":
                 setattr(shared, key, float(text))
+            elif key == "bin_size":
+                setattr(shared, key, int(text))
             elif key in {"threshold", "max_counts", "max_seconds", "t_interval"}:
                 if text.strip():
                     setattr(shared, key, int(text))
@@ -2195,34 +2171,6 @@ class Tab2(QWidget):
             out.append(f"{iso['isotope']} {iso_e:.1f} keV ({inten_pct:.0f}%), Δ{d:.2f} keV")
 
         return "\n".join(out)
-
-    def _plot_theme(self):
-        theme = getattr(shared, "theme", "dark")
-        if theme == "paper":
-            return {
-                "bg": "w",
-                "axis": "k",
-                "hist": "k",
-                "hist_brush": (0, 0, 0, 40),
-                "diff": "k",
-                "comp": "#cc3333",
-                "gauss": "#006600",
-                "gauss_brush": (0, 100, 0, 40),
-                "crosshair": "k",
-                "linearity": "k",
-            }
-        return {
-            "bg": DARK_BLUE,
-            "axis": WHITE,
-            "hist": LIGHT_GREEN,
-            "hist_brush": LIGHT_GREEN,
-            "diff": WHITE,
-            "comp": PINK,
-            "gauss": RED,
-            "gauss_brush": (139, 0, 0, 120),
-            "crosshair": WHITE,
-            "linearity": "w",
-        }
 
 
     def update_histogram(self):
