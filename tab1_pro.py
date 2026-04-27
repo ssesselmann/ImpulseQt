@@ -421,6 +421,52 @@ class Tab1ProWidget(QWidget):
         except TypeError:
             pi.getAxis("left").setTickSpacing(major=1, minor=0.5)
 
+        # --- LLD / ULD shaded regions ---
+        with shared.write_lock:
+            shape_lld = shared.shape_lld
+            shape_uld = shared.shape_uld
+
+        scale = 100.0 / 32767.0
+        lld_pct = shape_lld * scale
+        uld_pct = shape_uld * scale
+
+        # Shaded region below LLD (negative infinity to lld)
+        lld_region = pg.LinearRegionItem(
+            values=(-1000, lld_pct),
+            orientation='horizontal',
+            movable=False,
+            brush=pg.mkBrush(255, 80, 80, 40),
+            pen=pg.mkPen(255, 80, 80, 120, width=1, style=Qt.DashLine)
+        )
+
+        # Shaded region above ULD (uld to positive infinity)
+        uld_region = pg.LinearRegionItem(
+            values=(uld_pct, 1000),
+            orientation='horizontal',
+            movable=False,
+            brush=pg.mkBrush(255, 80, 80, 40),
+            pen=pg.mkPen(255, 80, 80, 120, width=1, style=Qt.DashLine)
+        )
+
+
+        lld_region.setZValue(-10)
+        pi.addItem(lld_region, ignoreBounds=True)
+
+        uld_region.setZValue(-10)
+        pi.addItem(uld_region, ignoreBounds=True)
+
+        # Labels
+        lld_label = pg.TextItem(
+            f"LLD {shape_lld} (in settings.json)", color=(255, 120, 120), anchor=(0, 1)
+        )
+        uld_label = pg.TextItem(
+            f"ULD {shape_uld} (in settings.json)", color=(255, 120, 120), anchor=(0, 0)
+        )
+        pi.addItem(lld_label)
+        pi.addItem(uld_label)
+        lld_label.setPos(0, lld_pct)
+        uld_label.setPos(0, uld_pct)
+
         t = plot_theme_colors()
         self._shape_curve_left = pi.plot(
             [], [],
@@ -519,6 +565,13 @@ class Tab1ProWidget(QWidget):
 
             # keep X fixed; let Y auto-range if you prefer
             pi.setXRange(0, sample_length - 1, padding=0.0)
+
+            # Y autorange based on actual pulse data, not the sentinel region bounds
+            if left_pct:
+                y_min = min(left_pct)
+                y_max = max(left_pct)
+                padding = (y_max - y_min) * 0.2 or 5.0   # 20% padding, min 5%
+                pi.setYRange(y_min - padding, y_max + padding, padding=0)
             # pi.enableAutoRange(axis='y', enable=True)
 
         except Exception as e:
