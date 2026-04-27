@@ -43,7 +43,8 @@ from functions import (
     get_isotope_options,
     resource_path,
     sanitize_for_log,
-    generate_synthetic_histogram
+    generate_synthetic_histogram,
+    update_calibration_in_json
     )
 
 from shared import logger, MONO, FOOTER, DLD_DIR, USER_DATA_DIR, BIN_OPTIONS, LIGHT_GREEN, PINK, RED, WHITE, DARK_BLUE, ICON_PATH
@@ -80,8 +81,10 @@ class Tab2(QWidget):
                     shared.filename  = stem
         else:
             with shared.write_lock:
-                shared.filename = stem        # set filename inside lock
-            load_histogram(stem)              # call outside lock
+                shared.filename = stem
+            load_histogram(stem)
+
+        self.filename_input.setText(stem)   # ← update the filename field
         self.update_histogram()
 
 
@@ -102,8 +105,11 @@ class Tab2(QWidget):
                     shared.filename_2  = stem
         else:
             with shared.write_lock:
-                shared.filename_2 = stem      # set filename inside lock
-            load_histogram_2(stem)            # call outside lock
+                shared.filename_2 = stem
+            load_histogram_2(stem)
+
+        # Update checkbox label to reflect new filename
+        self.comp_switch.setText(f"Show\n{stem}")
         self.update_histogram()
 
     def apply_theme_to_plots(self):
@@ -167,6 +173,9 @@ class Tab2(QWidget):
         self.process_thread = None
         self.has_loaded     = False
         self.filename_2     = ""
+
+        if shared.filename_2:
+            load_histogram_2(shared.filename_2)
 
         self._linearity_enabled = False
         self._linearity_curve   = None
@@ -605,7 +614,8 @@ class Tab2(QWidget):
 
         # Col 5 Row 1 ---------------------------------------------------------------------
         # Col 4 Row 3
-        self.comp_switch = QCheckBox("Show comparison")
+        label = f"Show\n{filename_2}" if filename_2 else "Comparison"
+        self.comp_switch = QCheckBox(label)
         self.comp_switch.setChecked(comp_switch)
         self.comp_switch.stateChanged.connect(lambda state, key="comp_switch": self.on_checkbox_toggle(key, state))
 
@@ -1989,7 +1999,6 @@ class Tab2(QWidget):
 
 
     def _set_coeffs_if_changed(self, a, b, c):
-        # round a bit to avoid noisy refreshes
         a = float(a); b = float(b); c = float(c)
         with shared.write_lock:
             old = (float(shared.coeff_1), float(shared.coeff_2), float(shared.coeff_3))
@@ -2001,8 +2010,13 @@ class Tab2(QWidget):
             shared.coeff_2 = b
             shared.coeff_3 = c
             coeff_1, coeff_2, coeff_3 = a, b, c
+            filename = shared.filename
 
         self.poly_label.setText(f"E = {coeff_1:.6f}x² + {coeff_2:.6f}x + {coeff_3:.6f}")
+
+        if filename and not shared.run_flag.is_set():
+            update_calibration_in_json(filename, a, b, c)
+
         return True
 
 
@@ -2178,7 +2192,7 @@ class Tab2(QWidget):
         with shared.write_lock:
             histogram      = list(shared.histogram)
             elapsed        = shared.elapsed
-            histogram_2    = list(shared.histogram_2) if shared.comp_switch else []
+            histogram_2    = list(shared.histogram_2)
             elapsed_2      = shared.elapsed_2
             sigma          = shared.sigma
             coeff_abc      = [shared.coeff_1, shared.coeff_2, shared.coeff_3]
