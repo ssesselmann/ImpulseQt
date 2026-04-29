@@ -157,8 +157,11 @@ def get_pro_manual_html():
         <li><strong>Filename</strong></li>
         User defined filename input - enter a filename without the [.json] extension.<br> 
 
+        <li><strong>Pitch (Bin Size)</strong></li>
+        This function gives the user some control over how wide the channels in arbitrary units. The 16 bit pulse height range is from zero to half 16 bit or 32768, therefore if you choose 4096 channels a reasonable pitch is (32768/4096) = 8, however the user may for whatever reason choose a different pitch.
+
         <li><strong>Select bins</strong></li>
-        Sets the resolution of the x axis (shared with waterfall). Bins are commonly called channels, higher bin counts improve resolution but increases file size and CPU load.<br> 
+        Sets the resolution of the x axis (shared with waterfall). Bins are commonly called channels, higher bin counts improve resolution but increases file size and CPU load. Changing the number of channels does not change the pulse height range in arb.u which is always zero to 32768<br> 
 
         <li><strong>Open spectrum file</strong></li>
         Select and plot a previously recorded spectrum file, the plot line will render in light green.<br>

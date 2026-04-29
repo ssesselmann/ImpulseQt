@@ -2206,6 +2206,7 @@ class Tab2(QWidget):
             filename       = shared.filename
             raw_hist       = list(shared.histogram)
             theme          = getattr(shared, "theme", "dark")
+            bins           = shared.bins
 
 
         if not histogram:
@@ -2301,29 +2302,14 @@ class Tab2(QWidget):
         self.x_vals      = list(x_vals)
         self.y_vals_plot = list(y_vals)
         self.y_vals_raw  = raw_hist
-
-        # Pens (diff → black, otherwise blue)
-        #self.hist_curve.setPen(pg.mkPen("white" if (diff_switch and comp_switch) else LIGHT_GREEN, width=1.5))
-
-        # 3) Push data to pyqtgraph (no manual ranges — let it autorange)
-        # self.plot_widget.enableAutoRange('x', True)
-        # self.plot_widget.enableAutoRange('y', True)
         # main histogram
         self.hist_curve.setData(x_vals, y_vals)
-
-        # comparison histogram
-        if comp_switch and not diff_switch:
-            self.comp_curve.setData(x_vals2, y_vals2)
-        else:
-            self.comp_curve.setData([], [])
-
     
         # gaussian curve
         if corr and not diff_switch:
             self.gauss_curve.setData(x_vals_corr, corr)
         else:
             self.gauss_curve.setData([], [])
-
 
         # --- Sync draggable ROI regions from shared.peak_list ---
 
@@ -2373,10 +2359,19 @@ class Tab2(QWidget):
                         region.blockSignals(False)
 
 
+                # comparison histogram
+        if comp_switch and not diff_switch:
+            self.comp_curve.setData(x_vals2, y_vals2)
+        else:
+            self.comp_curve.setData([], [])
+
+
         if cal_switch:
             self.plot_widget.setLabel('bottom', 'Energy (KeV)')
         else:
             self.plot_widget.setLabel('bottom', 'Bins/Channels')
+        
+        self.plot_widget.setXRange(0, bins - 1, padding=0)
 
         # 4) Toggle log transform LAST so it picks up the just-set data
         self.plot_widget.setLogMode(x=False, y=log_switch)

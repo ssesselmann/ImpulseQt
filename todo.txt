@@ -1,6 +1,12 @@
 ImpulseQt
 ---------
 
+Impulse v3.2.6.0
+–––––––––––––––––––––––––––––
+• Fixed histogram plot x range default
+• Updated manual
+
+
 Impulse v3.2.5.0
 –––––––––––––––––––––––––––––
 **CRITICAL**
