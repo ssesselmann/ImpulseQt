@@ -62,6 +62,14 @@ class _WhiteInputDelegate(QStyledItemDelegate):
         if index.column() == 1:  # Ref E (keV) column
             option.backgroundBrush = QBrush(QColor("#ffffff"))
 
+class FixedRangePlotWidget(pg.PlotWidget):
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_A:
+            bins = shared.bins
+            self.setXRange(0, bins - 1, padding=0)
+        else:
+            super().keyPressEvent(event)
+
 class Tab2(QWidget):
 
     def on_open_file_clicked(self):
@@ -86,6 +94,7 @@ class Tab2(QWidget):
 
         self.filename_input.setText(stem)   # ← update the filename field
         self.update_histogram()
+
 
 
     def on_open_file_2_clicked(self):
@@ -195,8 +204,12 @@ class Tab2(QWidget):
         title_bar.addWidget(self.plot_title_right)
 
         # --- Create the PlotWidget first ----------
-        self.plot_widget = pg.PlotWidget()
+        with shared.write_lock:
+            bins = shared.bins
+        self.plot_widget = FixedRangePlotWidget()
         self.plot_widget.setMouseEnabled(x=True, y=False)
+        self.plot_widget.enableAutoRange('x', False)
+        self.plot_widget.setXRange(0, bins - 1, padding=0)
 
         # Guard so we connect only once
         self._scene_hooked = False
@@ -2371,7 +2384,9 @@ class Tab2(QWidget):
         else:
             self.plot_widget.setLabel('bottom', 'Bins/Channels')
         
-        self.plot_widget.setXRange(0, bins - 1, padding=0)
+        if bins != getattr(self, '_last_bins', None):
+            self._last_bins = bins
+            self.plot_widget.setXRange(0, bins - 1, padding=0)
 
         # 4) Toggle log transform LAST so it picks up the just-set data
         self.plot_widget.setLogMode(x=False, y=log_switch)
