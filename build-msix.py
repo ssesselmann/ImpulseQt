@@ -15,7 +15,7 @@ from textwrap import dedent
 from shared import __version__
 
 # ========= EDIT THESE VALUES =========
-DIST   = Path(r"C:\Users\steven-elitedesk\Documents\ImpulseQt\dist")
+DIST   = Path(r"C:\Users\steven-elitedesk\Documents\ImpulseQt\dist\ImpulseQt")
 OUT    = Path(r"C:\Users\steven-elitedesk\Documents\ImpulseQt\MSIX")
 STAGE  = Path(r"C:\Users\steven-elitedesk\Documents\ImpulseQt\stage")
 
