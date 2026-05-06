@@ -160,6 +160,7 @@ distortion_left  = []
 distortion_right = []
 
 isotope_tbl           = ""
+isotope_key           = ""
 isotope_flags         = []
 
 # --- Histogram Settings ---
@@ -389,6 +390,7 @@ SETTINGS_SCHEMA = {
     "tab3_smooth_on": {"type": "Bool", "default": False},
     "tab3_smooth_win": {"type": "int", "default": 3},
     "theme": {"type": "str", "default": "dark"},
+    "isotope_key": {"type": "str", "default": ""},
 }
 
 def read_flag_data(path):

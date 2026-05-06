@@ -50,7 +50,17 @@ from functions import (
 from shared import logger, MONO, FOOTER, DLD_DIR, USER_DATA_DIR, BIN_OPTIONS, LIGHT_GREEN, PINK, RED, WHITE, DARK_BLUE, ICON_PATH
 from pathlib import Path
 from calibration_popup import CalibrationPopup
-from PySide6.QtWidgets import QTableWidget, QTableWidgetItem, QHeaderView, QAbstractScrollArea, QStyledItemDelegate, QFileDialog
+from PySide6.QtWidgets import (
+    QTableWidget, 
+    QTableWidgetItem, 
+    QHeaderView, 
+    QAbstractScrollArea, 
+    QStyledItemDelegate, 
+    QFileDialog,
+    QDialog,
+    QListWidget,
+    QListWidgetItem
+    )
 from PySide6.QtGui import QBrush, QColor
 from qss import apply_plot_theme, plot_theme_colors
 
@@ -104,6 +114,10 @@ class Tab2(QWidget):
         )
         if not path:
             return
+
+        with shared.write_lock:
+            shared.isotope_key = ""
+
         stem = Path(path).stem
         if path.endswith(".csv"):
             histogram = load_histogram_csv(path)
@@ -185,6 +199,10 @@ class Tab2(QWidget):
 
         if shared.filename_2:
             load_histogram_2(shared.filename_2)
+
+        if shared.isotope_key:
+            generate_synthetic_histogram(shared.isotope_key)
+            # self.comp_switch.setText(f"Show {shared.isotope_key}")    
 
         self._linearity_enabled = False
         self._linearity_curve   = None
@@ -619,12 +637,23 @@ class Tab2(QWidget):
         grid.addWidget(self.labeled_input("Download csv File", self.dld_csv_btn), 0, 4)
 
         # Col 4 Row 4
-        self.btn_open_file_2 = QPushButton("Open comparison file")
+        comp_btn_container = QWidget()
+        comp_btn_layout = QHBoxLayout(comp_btn_container)
+        comp_btn_layout.setContentsMargins(0, 0, 0, 0)
+        comp_btn_layout.setSpacing(4)
+
+        self.btn_open_file_2 = QPushButton("Compare")
         self.btn_open_file_2.setProperty("btn", "primary")
         self.btn_open_file_2.clicked.connect(self.on_open_file_2_clicked)
-        grid.addWidget(self.labeled_input("Comparison spectrum", self.btn_open_file_2), 0, 3)
 
+        self.btn_library = QPushButton("Library")
+        self.btn_library.setProperty("btn", "primary")
+        self.btn_library.clicked.connect(self.on_library_clicked)
 
+        comp_btn_layout.addWidget(self.btn_open_file_2)
+        comp_btn_layout.addWidget(self.btn_library)
+
+        grid.addWidget(self.labeled_input("Comparison spectrum", comp_btn_container), 0, 3)
         # Col 5 Row 1 ---------------------------------------------------------------------
         # Col 4 Row 3
         label = f"Show\n{filename_2}" if filename_2 else "Comparison"
@@ -816,6 +845,62 @@ class Tab2(QWidget):
         self.ui_timer.timeout.connect(self.update_ui)  
         self.ui_timer.start(1000)
 
+
+    
+    def on_library_clicked(self):
+        from functions import _load_isotope_db
+
+        try:
+            db = _load_isotope_db()
+        except Exception as e:
+            logger.error(f"  ❌ on_library_clicked: could not load isotope db: {e}")
+            return
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Isotope Library")
+        dialog.setMinimumWidth(280)
+        layout = QVBoxLayout(dialog)
+
+        label = QLabel("Select an isotope:")
+        label.setProperty("typo", "p2")
+        layout.addWidget(label)
+
+        listbox = QListWidget()
+        for key, val in sorted(db.items()):
+            display = val.get("display", key)
+            item = QListWidgetItem(f"{display}  ({key})")
+            item.setData(Qt.UserRole, key)
+            listbox.addItem(item)
+        layout.addWidget(listbox)
+
+        btn_row = QHBoxLayout()
+        btn_ok     = QPushButton("Select")
+        btn_cancel = QPushButton("Cancel")
+        btn_ok.setProperty("btn", "primary")
+        btn_cancel.setProperty("btn", "secondary")
+        btn_row.addWidget(btn_ok)
+        btn_row.addWidget(btn_cancel)
+        layout.addLayout(btn_row)
+
+        btn_cancel.clicked.connect(dialog.reject)
+        btn_ok.clicked.connect(dialog.accept)
+        listbox.itemDoubleClicked.connect(lambda _: dialog.accept())
+
+        if dialog.exec() == QDialog.Accepted:
+            selected = listbox.currentItem()
+            if selected:
+                isotope_key = selected.data(Qt.UserRole)
+                logger.info(f"   ✅ Isotope selected: {isotope_key}")
+                success = generate_synthetic_histogram(isotope_key)
+                if success:
+                    with shared.write_lock:
+                        shared.comp_switch = True
+                        shared.isotope_key = isotope_key
+                    self.comp_switch.setChecked(True)
+                    self.comp_switch.setText(f"Show {isotope_key}")
+                    self.update_histogram()
+                else:
+                    logger.error(f"  ❌ Failed to generate synthetic spectrum for {isotope_key}")
 
     def _configure_roi_table_for_dialog(self):
         table = self.roi_table
