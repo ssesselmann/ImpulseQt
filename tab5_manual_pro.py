@@ -163,13 +163,16 @@ def get_pro_manual_html():
         <li><strong>Select bins</strong></li>
         Sets the resolution of the x axis (shared with waterfall). Bins are commonly called channels, higher bin counts improve resolution but increases file size and CPU load. Changing the number of channels does not change the pulse height range in arb.u which is always zero to 32768<br> 
 
-        <li><strong>Open spectrum file</strong></li>
+        <li><strong>Open Spectrum Button</strong></li>
         Select and plot a previously recorded spectrum file, the plot line will render in light green.<br>
 
-        <li><strong>Comparison spectrum</strong></li>
+        <li><strong>Compare Button</strong></li>
         Select a second file for comparison, this feature allows the user to super-impose a second spectrum. The dropdown selection menu lists all compatible files in the user data directory followed by synthetic gamma line spectra of almost 400 known isotopes. Synthetic spectra are prefixed by "•" i.e. • cs137.
         The isotope library lives in the user data directory at /lib/isotopes.json. 
-        To see the comparison spectrum (red line plot) check the box called 'Show Comparison'.<br>
+        To see the comparison spectrum (red line plot) check the box called 'Show'.<br>
+
+        <li><strong>Library Button</strong></li>
+        Select from isotope library. This button opens the isotope library and by selecting a single isotope the function will generate a synthetic peak spectrum and super-impose it when 'Show' is ticked.<br>
 
         <li><strong>Subtract comparison</strong></li>
         After selecting a comparison plot, checking the 'Subtract comparison' box, will subtract the comparison spectrum from the main spectrum, bin for bin. This feature is useful for background subtraction. When 'Subract comparison' is active, the plot line will render in white.<br>  

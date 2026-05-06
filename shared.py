@@ -30,7 +30,7 @@ run_flag_lock   = Lock()
 
 # --------------------
 # Versioning
-__version__ = "3.2.5.0"
+__version__ = "3.2.6.0"
 # --------------------
 
 SETTINGS = {}  

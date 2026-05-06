@@ -159,9 +159,13 @@ def get_max_manual_html():
             <li><strong>Open spectrum file</strong></li>
             Select and plot a previously recorded spectrum file, the plot line will render in light green.<br>
 
-            <li><strong>Comparison spectrum</strong></li>
-            Select a second file for comparison, this feature allows the user to super-impose a second spectrum. The dropdown selection menu lists all compatible files in the user data directory followed by synthetic gamma line spectra of almost 400 known isotopes. Synthetic spectra are prefixed by "•" i.e. • cs137 . 
-            The isotope library lives in the user data directory at /lib/isotopes.json. To see the comparison spectrum (red line plot) check the box called 'Show Comparison'.<br>
+            <li><strong>Compare Button</strong></li>
+            Select a second file for comparison, this feature allows the user to super-impose a second spectrum. The dropdown selection menu lists all compatible files in the user data directory followed by synthetic gamma line spectra of almost 400 known isotopes. Synthetic spectra are prefixed by "•" i.e. • cs137.
+            The isotope library lives in the user data directory at /lib/isotopes.json. 
+            To see the comparison spectrum (red line plot) check the box called 'Show'.<br>
+
+            <li><strong>Library Button</strong></li>
+            This button opens the isotope library and by selecting a single isotope the function will super-impose a synthetic peak spectrum and show it when 'Show' is ticked.<br>
 
             <li><strong>Subtract comparison</strong></li>
             After selecting a comparison plot, checking the 'Subtract comparison' box, will subtract the comparison spectrum from the main spectrum, bin for bin. This feature is useful for background subtraction. When 'Subract comparison' is active, the plot line will render in white.<br>  
