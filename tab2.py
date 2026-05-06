@@ -50,7 +50,17 @@ from functions import (
 from shared import logger, MONO, FOOTER, DLD_DIR, USER_DATA_DIR, BIN_OPTIONS, LIGHT_GREEN, PINK, RED, WHITE, DARK_BLUE, ICON_PATH
 from pathlib import Path
 from calibration_popup import CalibrationPopup
-from PySide6.QtWidgets import QTableWidget, QTableWidgetItem, QHeaderView, QAbstractScrollArea, QStyledItemDelegate, QFileDialog
+from PySide6.QtWidgets import (
+    QTableWidget, 
+    QTableWidgetItem, 
+    QHeaderView, 
+    QAbstractScrollArea, 
+    QStyledItemDelegate, 
+    QFileDialog,
+    QDialog,
+    QListWidget,
+    QListWidgetItem
+    )
 from PySide6.QtGui import QBrush, QColor
 from qss import apply_plot_theme, plot_theme_colors
 
@@ -61,6 +71,14 @@ class _WhiteInputDelegate(QStyledItemDelegate):
         super().initStyleOption(option, index)
         if index.column() == 1:  # Ref E (keV) column
             option.backgroundBrush = QBrush(QColor("#ffffff"))
+
+class FixedRangePlotWidget(pg.PlotWidget):
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_A:
+            bins = shared.bins
+            self.setXRange(0, bins - 1, padding=0)
+        else:
+            super().keyPressEvent(event)
 
 class Tab2(QWidget):
 
@@ -88,6 +106,7 @@ class Tab2(QWidget):
         self.update_histogram()
 
 
+
     def on_open_file_2_clicked(self):
         path, _ = QFileDialog.getOpenFileName(
             self, "Open Comparison Spectrum", str(shared.USER_DATA_DIR),
@@ -95,6 +114,10 @@ class Tab2(QWidget):
         )
         if not path:
             return
+
+        with shared.write_lock:
+            shared.isotope_key = ""
+
         stem = Path(path).stem
         if path.endswith(".csv"):
             histogram = load_histogram_csv(path)
@@ -177,6 +200,10 @@ class Tab2(QWidget):
         if shared.filename_2:
             load_histogram_2(shared.filename_2)
 
+        if shared.isotope_key:
+            generate_synthetic_histogram(shared.isotope_key)
+            # self.comp_switch.setText(f"Show {shared.isotope_key}")    
+
         self._linearity_enabled = False
         self._linearity_curve   = None
         self._cal_pairs         = []
@@ -195,8 +222,12 @@ class Tab2(QWidget):
         title_bar.addWidget(self.plot_title_right)
 
         # --- Create the PlotWidget first ----------
-        self.plot_widget = pg.PlotWidget()
+        with shared.write_lock:
+            bins = shared.bins
+        self.plot_widget = FixedRangePlotWidget()
         self.plot_widget.setMouseEnabled(x=True, y=False)
+        self.plot_widget.enableAutoRange('x', False)
+        self.plot_widget.setXRange(0, bins - 1, padding=0)
 
         # Guard so we connect only once
         self._scene_hooked = False
@@ -606,12 +637,23 @@ class Tab2(QWidget):
         grid.addWidget(self.labeled_input("Download csv File", self.dld_csv_btn), 0, 4)
 
         # Col 4 Row 4
-        self.btn_open_file_2 = QPushButton("Open comparison file")
+        comp_btn_container = QWidget()
+        comp_btn_layout = QHBoxLayout(comp_btn_container)
+        comp_btn_layout.setContentsMargins(0, 0, 0, 0)
+        comp_btn_layout.setSpacing(4)
+
+        self.btn_open_file_2 = QPushButton("Compare")
         self.btn_open_file_2.setProperty("btn", "primary")
         self.btn_open_file_2.clicked.connect(self.on_open_file_2_clicked)
-        grid.addWidget(self.labeled_input("Comparison spectrum", self.btn_open_file_2), 0, 3)
 
+        self.btn_library = QPushButton("Library")
+        self.btn_library.setProperty("btn", "primary")
+        self.btn_library.clicked.connect(self.on_library_clicked)
 
+        comp_btn_layout.addWidget(self.btn_open_file_2)
+        comp_btn_layout.addWidget(self.btn_library)
+
+        grid.addWidget(self.labeled_input("Comparison spectrum", comp_btn_container), 0, 3)
         # Col 5 Row 1 ---------------------------------------------------------------------
         # Col 4 Row 3
         label = f"Show\n{filename_2}" if filename_2 else "Comparison"
@@ -803,6 +845,62 @@ class Tab2(QWidget):
         self.ui_timer.timeout.connect(self.update_ui)  
         self.ui_timer.start(1000)
 
+
+    
+    def on_library_clicked(self):
+        from functions import _load_isotope_db
+
+        try:
+            db = _load_isotope_db()
+        except Exception as e:
+            logger.error(f"  ❌ on_library_clicked: could not load isotope db: {e}")
+            return
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Isotope Library")
+        dialog.setMinimumWidth(280)
+        layout = QVBoxLayout(dialog)
+
+        label = QLabel("Select an isotope:")
+        label.setProperty("typo", "p2")
+        layout.addWidget(label)
+
+        listbox = QListWidget()
+        for key, val in sorted(db.items()):
+            display = val.get("display", key)
+            item = QListWidgetItem(f"{display}  ({key})")
+            item.setData(Qt.UserRole, key)
+            listbox.addItem(item)
+        layout.addWidget(listbox)
+
+        btn_row = QHBoxLayout()
+        btn_ok     = QPushButton("Select")
+        btn_cancel = QPushButton("Cancel")
+        btn_ok.setProperty("btn", "primary")
+        btn_cancel.setProperty("btn", "secondary")
+        btn_row.addWidget(btn_ok)
+        btn_row.addWidget(btn_cancel)
+        layout.addLayout(btn_row)
+
+        btn_cancel.clicked.connect(dialog.reject)
+        btn_ok.clicked.connect(dialog.accept)
+        listbox.itemDoubleClicked.connect(lambda _: dialog.accept())
+
+        if dialog.exec() == QDialog.Accepted:
+            selected = listbox.currentItem()
+            if selected:
+                isotope_key = selected.data(Qt.UserRole)
+                logger.info(f"   ✅ Isotope selected: {isotope_key}")
+                success = generate_synthetic_histogram(isotope_key)
+                if success:
+                    with shared.write_lock:
+                        shared.comp_switch = True
+                        shared.isotope_key = isotope_key
+                    self.comp_switch.setChecked(True)
+                    self.comp_switch.setText(f"Show {isotope_key}")
+                    self.update_histogram()
+                else:
+                    logger.error(f"  ❌ Failed to generate synthetic spectrum for {isotope_key}")
 
     def _configure_roi_table_for_dialog(self):
         table = self.roi_table
@@ -2206,6 +2304,7 @@ class Tab2(QWidget):
             filename       = shared.filename
             raw_hist       = list(shared.histogram)
             theme          = getattr(shared, "theme", "dark")
+            bins           = shared.bins
 
 
         if not histogram:
@@ -2301,29 +2400,14 @@ class Tab2(QWidget):
         self.x_vals      = list(x_vals)
         self.y_vals_plot = list(y_vals)
         self.y_vals_raw  = raw_hist
-
-        # Pens (diff → black, otherwise blue)
-        #self.hist_curve.setPen(pg.mkPen("white" if (diff_switch and comp_switch) else LIGHT_GREEN, width=1.5))
-
-        # 3) Push data to pyqtgraph (no manual ranges — let it autorange)
-        # self.plot_widget.enableAutoRange('x', True)
-        # self.plot_widget.enableAutoRange('y', True)
         # main histogram
         self.hist_curve.setData(x_vals, y_vals)
-
-        # comparison histogram
-        if comp_switch and not diff_switch:
-            self.comp_curve.setData(x_vals2, y_vals2)
-        else:
-            self.comp_curve.setData([], [])
-
     
         # gaussian curve
         if corr and not diff_switch:
             self.gauss_curve.setData(x_vals_corr, corr)
         else:
             self.gauss_curve.setData([], [])
-
 
         # --- Sync draggable ROI regions from shared.peak_list ---
 
@@ -2373,10 +2457,21 @@ class Tab2(QWidget):
                         region.blockSignals(False)
 
 
+                # comparison histogram
+        if comp_switch and not diff_switch:
+            self.comp_curve.setData(x_vals2, y_vals2)
+        else:
+            self.comp_curve.setData([], [])
+
+
         if cal_switch:
             self.plot_widget.setLabel('bottom', 'Energy (KeV)')
         else:
             self.plot_widget.setLabel('bottom', 'Bins/Channels')
+        
+        if bins != getattr(self, '_last_bins', None):
+            self._last_bins = bins
+            self.plot_widget.setXRange(0, bins - 1, padding=0)
 
         # 4) Toggle log transform LAST so it picks up the just-set data
         self.plot_widget.setLogMode(x=False, y=log_switch)

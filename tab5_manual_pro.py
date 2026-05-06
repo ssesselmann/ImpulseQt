@@ -157,16 +157,22 @@ def get_pro_manual_html():
         <li><strong>Filename</strong></li>
         User defined filename input - enter a filename without the [.json] extension.<br> 
 
-        <li><strong>Select bins</strong></li>
-        Sets the resolution of the x axis (shared with waterfall). Bins are commonly called channels, higher bin counts improve resolution but increases file size and CPU load.<br> 
+        <li><strong>Pitch (Bin Size)</strong></li>
+        This function gives the user some control over how wide the channels in arbitrary units. The 16 bit pulse height range is from zero to half 16 bit or 32768, therefore if you choose 4096 channels a reasonable pitch is (32768/4096) = 8, however the user may for whatever reason choose a different pitch.
 
-        <li><strong>Open spectrum file</strong></li>
+        <li><strong>Select bins</strong></li>
+        Sets the resolution of the x axis (shared with waterfall). Bins are commonly called channels, higher bin counts improve resolution but increases file size and CPU load. Changing the number of channels does not change the pulse height range in arb.u which is always zero to 32768<br> 
+
+        <li><strong>Open Spectrum Button</strong></li>
         Select and plot a previously recorded spectrum file, the plot line will render in light green.<br>
 
-        <li><strong>Comparison spectrum</strong></li>
+        <li><strong>Compare Button</strong></li>
         Select a second file for comparison, this feature allows the user to super-impose a second spectrum. The dropdown selection menu lists all compatible files in the user data directory followed by synthetic gamma line spectra of almost 400 known isotopes. Synthetic spectra are prefixed by "•" i.e. • cs137.
         The isotope library lives in the user data directory at /lib/isotopes.json. 
-        To see the comparison spectrum (red line plot) check the box called 'Show Comparison'.<br>
+        To see the comparison spectrum (red line plot) check the box called 'Show'.<br>
+
+        <li><strong>Library Button</strong></li>
+        Select from isotope library. This button opens the isotope library and by selecting a single isotope the function will generate a synthetic peak spectrum and super-impose it when 'Show' is ticked.<br>
 
         <li><strong>Subtract comparison</strong></li>
         After selecting a comparison plot, checking the 'Subtract comparison' box, will subtract the comparison spectrum from the main spectrum, bin for bin. This feature is useful for background subtraction. When 'Subract comparison' is active, the plot line will render in white.<br>  
