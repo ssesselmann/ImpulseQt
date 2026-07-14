@@ -8,6 +8,8 @@ import json
 import platform
 import datetime
 import logging
+import appnope
+appnope.nope()
 
 from tab1 import Tab1
 from tab2 import Tab2
@@ -45,7 +47,6 @@ from send_feedback import send_feedback_email
 from functions import resource_path
 
 from shared import logger, USER_DATA_DIR, BASE_DIR, ICON_PATH
-
 
 def copy_lib_if_needed():
     dest = Path(USER_DATA_DIR) / "lib"
