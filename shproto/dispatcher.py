@@ -14,6 +14,7 @@ import os
 import platform
 import shared
 import gps_main
+import save
 
 from threading import Event
 from struct import *
@@ -194,8 +195,11 @@ def ensure_running(sn=None):
 #===========================================================
 
 def start(sn=None):
+
     global _stat_version, _stat_tick, _histogram_covered, _histogram_cov_count, serial_number
 
+    logger.info("   🚀 Dispatcher started")
+    
     _init_runtime()
 
     READ_BUFFER = 16384 
@@ -227,6 +231,8 @@ def start(sn=None):
 
     noted_timeout = False
     byte_misses = 0
+
+    _last_loop_mark = time.perf_counter()   # NEW
 
     while not stopflag:
         
@@ -279,11 +285,30 @@ def start(sn=None):
                 pass
 
         # blocking read with timeout; returns b'' on timeout
+        _gap_before_read = time.perf_counter() - _last_loop_mark   # NEW
+        if _gap_before_read > 1.0:                                  # NEW
+            logger.warning(                                          # NEW
+                " ⚠️ LOOP STALL before read(): %.2fs elapsed since previous iteration",  # NEW
+                _gap_before_read,                                     # NEW
+            )                                                         # NEW
+
+        _read_start = time.perf_counter()   # NEW
+
         try:
             rx = nano.read(READ_BUFFER)
         except serial.SerialException as e:
             logger.warning(f"👆 Serial read failed (likely disconnected or busy): {e}")
             break  # or `continue`, depending on how you want to handle it
+
+        
+        _read_dur = time.perf_counter() - _read_start   # NEW
+        if _read_dur > 1.0:                                # NEW
+            logger.warning(                                 # NEW
+                " ⚠️ READ() BLOCKED: nano.read() took %.2fs (nano.timeout=%.2f) bytes_returned=%d",  # NEW
+                _read_dur, nano.timeout, len(rx) if rx else 0,   # NEW
+            )                                                  # NEW
+
+        _last_loop_mark = time.perf_counter()   # NEW
 
         if not rx:
             continue  # silent: normal timeout / no bytes yet
@@ -377,9 +402,10 @@ def start(sn=None):
                                 break
                     if sn:
                         serial_number = sn
+                        with shared.write_lock:
+                            shared.serial_number = sn
                         logger.info(f"   ✅ Found MAX serial # {serial_number} ")
-                    # else:
-                    #     logger.warning(f"[WARN] Serial number not found in MODE_TEXT (nlines={len(lines)})")
+
 
                 except Exception as e:
                     logger.warning(f"👆 MODE_TEXT decode issue: {e}")
@@ -514,10 +540,33 @@ def start(sn=None):
                 # 3) Subsequent STATs: CPS = (new counts since last STAT) / (device seconds elapsed)
                 else:
                     dt = curr_tt - prev_tt
+
+                    # Only log abnormal STAT timing
+                    if dt <= 0 or dt > 2.0:
+                        logger.warning(
+                            "STAT anomaly: raw=%d curr=%.3f prev=%.3f dt=%.3f delta=%d",
+                            total_time_raw,
+                            curr_tt,
+                            prev_tt,
+                            dt,
+                            shproto.dispatcher._hist_delta_since_stat,
+                        )
+
                     if dt <= 0:
                         dt = 1.0  # safety fallback
 
                     cps_int = int(round(shproto.dispatcher._hist_delta_since_stat / dt))
+
+                    if shproto.dispatcher._histogram_cov_count < 8192:
+                        logger.warning(
+                            " ⚠️ INCOMPLETE FRAME at STAT: covered=%d/8192 delta=%d dt=%.3f cps=%d dropped_total=%d",
+                            shproto.dispatcher._histogram_cov_count,
+                            shproto.dispatcher._hist_delta_since_stat,
+                            dt,
+                            cps_int,
+                            shproto.dispatcher.dropped,
+                        )
+
 
                     with shared.write_lock:
                         shared.cps = cps_int
@@ -562,7 +611,7 @@ def process_01(filename, compression, device, t_interval):
 
     # Working buffers
     hst      = [0] * max_bins
-    comp_hst = [0] * compressed_bins
+    compressed_histogram = [0] * compressed_bins
 
     # Drive by device STAT
     last_stat_version = -1
@@ -582,7 +631,22 @@ def process_01(filename, compression, device, t_interval):
         # === Wait for device STAT (1 Hz) ===
         if not _stat_tick.wait(timeout=max(2.0, t_interval + 0.5)):
             if not timeout_logged:
-                logger.warning("👆 process_01 waiting for process to complete")
+                
+                logger.warning(
+                    "👆 process_01 STAT timeout: "
+                    "stat_version=%d last_stat_version=%d "
+                    "device_time=%s accumulated_delta=%d "
+                    "dispatcher_alive=%s",
+                    _stat_version,
+                    last_stat_version,
+                    total_time,
+                    _hist_delta_since_stat,
+                    bool(
+                        _dispatcher_thread is not None
+                        and _dispatcher_thread.is_alive()
+                    ),
+                )
+
                 timeout_logged = True
             continue
 
@@ -603,13 +667,13 @@ def process_01(filename, compression, device, t_interval):
             tt  = total_time  # device time ticks, seconds on your scale
 
         # Compress to requested channels
-        comp_hst = [sum(hst[i:i + compression]) for i in range(0, max_bins, compression)]
-        counts   = sum(comp_hst)
+        compressed_histogram = [sum(hst[i:i + compression]) for i in range(0, max_bins, compression)]
+        counts   = sum(compressed_histogram)
 
         # Publish to UI (device-synchronous)
         with shared.write_lock:
             shared.counts    = counts
-            shared.histogram = comp_hst
+            shared.histogram = compressed_histogram
             # keep shared.elapsed tied to device seconds if you want:
             shared.elapsed   = int(tt)
 
@@ -630,10 +694,10 @@ def process_01(filename, compression, device, t_interval):
                 # if you prefer device seconds in file:
                 elapsed_for_file = int(tt)
 
-            save_spectrum_json(
+            save_histogram_json(
                 filename=filename,
                 device=device,
-                comp_hst=comp_hst,
+                histogram=compressed_histogram,
                 counts=counts,
                 elapsed=elapsed_for_file,
                 coeffs=[coeff_3, coeff_2, coeff_1],
@@ -644,8 +708,8 @@ def process_01(filename, compression, device, t_interval):
             stats_since_save = 0
 
     # Final save on exit
-    comp_hst = [sum(hst[i:i + compression]) for i in range(0, max_bins, compression)]
-    counts   = sum(comp_hst)
+    compressed_histogram = [sum(hst[i:i + compression]) for i in range(0, max_bins, compression)]
+    counts   = sum(compressed_histogram)
     dt_now   = datetime.fromtimestamp(time.time())
     with shared.write_lock:
         coeff_1 = shared.coeff_1
@@ -653,10 +717,10 @@ def process_01(filename, compression, device, t_interval):
         coeff_3 = shared.coeff_3
         spec_notes = shared.spec_notes
         elapsed_for_file = int(tt)  # device seconds
-    save_spectrum_json(
+    save_histogram_json(
         filename=filename,
         device=device,
-        comp_hst=comp_hst,
+        histogram=compressed_histogram,
         counts=counts,
         elapsed=elapsed_for_file,
         coeffs=[coeff_3, coeff_2, coeff_1],
@@ -687,8 +751,8 @@ def process_02(filename, compression3d, device, t_interval):
     last_counts = 0
 
     # full history for JSON saves
-    hst3d = []
-
+    hst3d           = []
+    gps_hmp_full    = []
     max_bins        = 8192
     compressed_bins = int(max_bins / compression3d)
     last_hst        = [0] * compressed_bins
@@ -719,14 +783,16 @@ def process_02(filename, compression3d, device, t_interval):
     def _save_checkpoint():
         try:
             dt_now = datetime.fromtimestamp(time.time())
-            save_spectrum_hmp_json(
-                filename    = filename,
-                hst3d       = hst3d,
-                counts      = counts,
-                dt_start    = dt_start,
-                dt_now      = dt_now,
-                coeffs      = coeffs,   # NPES order supplied by caller per your saver
-                device      = device
+            save.save_histogram_hmp_json(
+                filename       = filename,
+                histogram_rows = hst3d,
+                gps_rows       = gps_hmp_full,
+                counts         = counts,
+                elapsed        = int(shproto.dispatcher.total_time * _TIME_SCALE),
+                coeffs         = coeffs,
+                dt_start       = dt_start,
+                dt_now         = dt_now,
+                device         = device
             )
         except Exception as e:
             logger.error(f"❌ Failed to save JSON checkpoint: {e}", exc_info=True)
@@ -757,10 +823,10 @@ def process_02(filename, compression3d, device, t_interval):
                 tt  = shproto.dispatcher.total_time  # device seconds, monotonic
 
             # 2) compress and compute delta row
-            comp_hst = [sum(hst[i:i+compression3d]) for i in range(0, max_bins, compression3d)]
-            counts   = sum(comp_hst)
-            this_hst = [a - b for a, b in zip(comp_hst, last_hst)]
-            last_hst = comp_hst
+            compressed_histogram = [sum(hst[i:i+compression3d]) for i in range(0, max_bins, compression3d)]
+            counts   = sum(compressed_histogram)
+            this_hst = [a - b for a, b in zip(compressed_histogram, last_hst)]
+            last_hst = compressed_histogram
 
             # 3) stop conditions (now that counts & tt are known)
             if counts >= max_counts or tt >= max_seconds:
@@ -795,6 +861,7 @@ def process_02(filename, compression3d, device, t_interval):
                        "t": int(tt)}
                 
                 shared.gps_hmp.append(row)
+                gps_hmp_full.append(row)
 
             # 5) periodic JSON checkpoint
             if rows_since_save >= SAVE_EVERY_ROWS:
@@ -854,63 +921,22 @@ def clear():
         shared.count_history      = []
 
 
-def save_spectrum_json(filename, device, comp_hst, counts, elapsed, coeffs, spec_notes, dt_start, dt_now):
-    try:
-        data = {
-            "schemaVersion": "NPESv2",
-            "data": [
-                {
-                    "deviceData": {
-                        "softwareName": "IMPULSE",
-                        "deviceName": f"{device}{shproto.dispatcher.serial_number}"
-                    },
-                    "sampleInfo": {
-                        "name": filename,
-                        "location": "",
-                        "note": spec_notes,
-                    },
-                    "resultData": {
-                        "startTime": dt_start.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
-                        "endTime": dt_now.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
-                        "energySpectrum": {
-                            "numberOfChannels": len(comp_hst),
-                            "energyCalibration": {
-                                "polynomialOrder": 2,
-                                "coefficients": coeffs
-                            },
-                            "validPulseCount": counts,
-                            "measurementTime": elapsed,
-                            "spectrum": comp_hst
-                        }
-                    }
-                }
-            ]
-        }
-
-        json_path = os.path.join(USER_DATA_DIR, f"{filename}.json")
-
-        with open(json_path, "w") as f:
-
-            json.dump(data, f, separators=(",", ":"))
-
-        logger.info(f"   ✅ Spectrum saved to {json_path} ")
-
-        cps_data = {
-            "filename": filename,
-            "count_history": count_history,
-            "elapsed": elapsed,
-            "droppedPulseCount": 0
-        }
-
-        cps_path = os.path.join(USER_DATA_DIR, f"{filename}_cps.json")
-
-        with open(cps_path, "w") as f:
-            json.dump(cps_data, f, indent=2)
-
-        logger.info(f"   ✅ CPS saved to {cps_path} ")
-
-    except Exception as e:
-        logger.error(f"  ❌ Failed to save spectrum: {e} ")
+def save_histogram_json(filename, device, histogram, counts, elapsed, coeffs, spec_notes, dt_start, dt_now):
+    save.save_histogram_json(
+        filename=filename,
+        device=device,
+        histogram=histogram,
+        counts=counts,
+        dropped_counts=0,
+        elapsed=elapsed,
+        coeff_1=coeffs[0],
+        coeff_2=coeffs[1],
+        coeff_3=coeffs[2],
+        spec_notes=spec_notes,
+        dt_start=dt_start,
+        dt_now=dt_now,
+    )
+    save.save_count_history_csv(filename)
 
 def load_json_data(file_path):
     logger.info(f'   ✅ dispatcher.load_json_data({file_path}) ')
@@ -938,61 +964,7 @@ def load_json_data(file_path):
         }
 
 
-def save_spectrum_hmp_json(filename, hst3d, counts, dt_start, dt_now, coeffs, device):
-    elapsed_for_save = int(shproto.dispatcher.total_time * _TIME_SCALE)
-    compressed_bins  = len(hst3d[0]) if hst3d else 0
-    nrows            = len(hst3d)
 
-    # --- snapshot gps rows (aligned to hst3d length) ---
-    try:
-        with shared.write_lock:
-            gps_rows = list(getattr(shared, "gps_hmp", []))
-    except Exception:
-        gps_rows = []
-
-    # Ensure gps_rows matches nrows (pad with None rows or trim)
-    if nrows > 0:
-        if len(gps_rows) < nrows:
-            gps_rows += [{"lat": None, "lon": None, "t": None}] * (nrows - len(gps_rows))
-        elif len(gps_rows) > nrows:
-            gps_rows = gps_rows[-nrows:]   # keep most recent rows (matches hst3d which grows)
-
-    data = {
-        "schemaVersion": "NPESv2",
-        "data": [
-            {
-                "deviceData": {
-                    "softwareName": "IMPULSE",
-                    "deviceName": f"{device}{shproto.dispatcher.serial_number}"
-                },
-                "sampleInfo": {
-                    "name": filename,
-                    "location": "",
-                    "note": ""
-                },
-                "resultData": {
-                    "startTime": dt_start.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
-                    "endTime":   dt_now.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
-                    "energySpectrum": {
-                        "numberOfChannels": compressed_bins,
-                        "energyCalibration": {
-                            "polynomialOrder": 2,
-                            "coefficients": coeffs
-                        },
-                        "validPulseCount": counts,
-                        "measurementTime": elapsed_for_save,
-                        "spectrum": hst3d,
-                        "gps": gps_rows,   # ✅ add gps
-                    }
-                }
-            }
-        ]
-    }
-
-    file_path = os.path.join(USER_DATA_DIR, f"{filename}_hmp.json")
-    logger.info(f"   ✅ Saving HMP JSON: {file_path}")
-    with open(file_path, "w") as wjf:
-        json.dump(data, wjf, separators=(",", ":"))
 
 def stop():
     global spec_stopflag
