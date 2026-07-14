@@ -24,36 +24,26 @@ from array import array
 from shared import USER_DATA_DIR, logger, run_flag
 
 max_bins            = 8192
-
 stopflag            = 0
 stopflag_lock       = threading.Lock()
-
 spec_stopflag       = 0
 spec_stopflag_lock  = threading.Lock()
-
 histogram           = [0] * max_bins
 histogram_lock      = threading.Lock()
-
 command             = ""
 command_lock        = threading.Lock()
-
 cps                 = 0
 cps_lock            = threading.Lock()
-
 calibration_updated = 0
 calibration_lock    = threading.Lock()
-
 _start_lock         = threading.Lock()
-
 _TIME_SCALE         = 1
-
 # ---- local elapsed timer (host based) ----
 _elapsed_lock       = threading.Lock()
 _elapsed_accum      = 0.0       # seconds accumulated while stopped or between runs
 _elapsed_start_host = None      # perf_counter() when running, else None
 _elapsed_running    = False     # True while "started"
 _elapsed_last_push  = 0.0       # last time we pushed shared.elapsed
-
 # CPS from full-spectrum (between STATs)
 _hist_delta_since_stat = 0      # sum of bin deltas since last STAT
 
@@ -103,17 +93,13 @@ _last_cmd_sent = ""
 _runtime_init = False   # module-private guard
 
 def _init_runtime():
-
     global _runtime_init,raw_hist, cps_total_counts, stat_prev_tt, _hist_delta_since_stat
 
     if _runtime_init:
         return
 
     raw_hist = array('I', [0]) * max_bins
-
     cps_total_counts = 0
-
-
     _runtime_init = True
 
 
@@ -121,14 +107,17 @@ def _elapsed_now_seconds() -> float:
     """Compute total elapsed seconds using host monotonic clock."""
     with _elapsed_lock:
         total = _elapsed_accum
+
         if _elapsed_running and _elapsed_start_host is not None:
             total += (time.perf_counter() - _elapsed_start_host)
+
         return total
 
 def _elapsed_push_if_needed(period=0.25):
     """Publish shared.elapsed as an integer, throttled (default 4 Hz)."""
     global _elapsed_last_push
     now = time.perf_counter()
+
     if (now - _elapsed_last_push) >= period:
         val = int(_elapsed_now_seconds())
 
@@ -1015,9 +1004,6 @@ def load_json_data(file_path):
                 }
             }
         }
-
-
-
 
 def stop():
     global spec_stopflag
