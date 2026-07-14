@@ -61,20 +61,21 @@ def crc16bytes(crc, st):
 
 # Define a class named 'packet' to handle communication packets
 class packet:
-    # Initialize class attributes
-    payload = []
-    raw_data = []
-    crc = 0xFFFF
-    cmd = 0x00
-    ready = 0
-    len = 0
-    esc = 0
-    dropped = 0
+    def __init__(self):
+        self.payload = []
+        self.raw_data = []
+        self.crc = 0xFFFF
+        self.cmd = 0x00
+        self.ready = 0
+        self.len = 0
+        self.esc = 0
+        self.dropped = 0
 
-    # Method to clear/reset packet attributes
     def clear(self):
         self.payload = []
+        self.raw_data = []
         self.crc = 0xFFFF
+        self.cmd = 0x00
         self.ready = 0
         self.len = 0
         self.esc = 0
@@ -115,29 +116,45 @@ class packet:
     # Method to read a byte from the received data and process it
     def read(self, rx_byte):
         self.raw_data.append(rx_byte)
+
+        # Start of a new packet: discard any incomplete previous packet
         if rx_byte == SHPROTO_START:
             self.clear()
             return
+
         if rx_byte == SHPROTO_ESC:
             self.esc = 1
             return
+
         if rx_byte == SHPROTO_FINISH:
-            self.crc = crc16bytes(self.crc, [self.cmd] + self.payload)
-            self.len -= 3  # Subtract command (1 byte) and CRC16 (2 bytes)
-            if not self.crc:
+            self.crc = crc16bytes(
+                self.crc,
+                [self.cmd] + self.payload
+            )
+
+            self.len -= 3
+
+            if self.crc == 0:
                 self.ready = 1
             else:
                 self.dropped = 1
 
             self.raw_data = []
             return
+
         if self.esc:
             self.esc = 0
             rx_byte = (~rx_byte) & 0xFF
+
+        # Reject an oversized or incomplete packet
+        if self.len >= BUFFER_SIZE:
+            self.clear()
+            self.dropped = 1
+            return
+
         if self.len:
             self.payload.append(rx_byte)
         else:
             self.cmd = rx_byte
-        if self.len < BUFFER_SIZE:
-            self.len += 1
-            #self.crc = crc16(self.crc, rx_byte)
+
+        self.len += 1
