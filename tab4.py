@@ -26,7 +26,7 @@ from qt_compat import QGroupBox
 from qt_compat import QGridLayout
 
 from shared import logger, START, STOP, BTN, FOOTER, DLD_DIR
-from functions import start_recording, stop_recording, get_filename_options, load_cps_file, resource_path
+from functions import start_recording, stop_recording, get_filename_options, load_cps_file, load_cps_csv, resource_path
 from pathlib import Path
 from qss import apply_plot_theme, plot_theme_colors
 
@@ -224,26 +224,30 @@ class Tab4(QWidget):
         self.update_plot()
 
     def on_select_filename_changed(self, index):
-        rel_path = self.select_file.itemData(index)
-        if not rel_path:
-            return
+            rel_path = self.select_file.itemData(index)
+            if not rel_path:
+                return
 
-        try:
-            full_path = os.path.join(shared.USER_DATA_DIR, rel_path)
-            load_cps_file(full_path)
+            try:
+                full_path = os.path.join(shared.USER_DATA_DIR, rel_path)
 
-            self.last_loaded_filename = Path(rel_path).stem
-            self.update_plot()
+                if rel_path.lower().endswith(".csv"):
+                    load_cps_csv(full_path)
+                else:
+                    load_cps_file(full_path)   # legacy JSON fallback
 
-            logger.info(f"   ✅ fileneme selected {rel_path}")
+                self.last_loaded_filename = Path(rel_path).stem
+                self.update_plot()
 
-        except Exception as e:
-            QMessageBox.critical(self, "File Error", str(e))
-            logger.error(f"   ❌ error {e}")
+                logger.info(f"   ✅ fileneme selected {rel_path}")
 
-        QTimer.singleShot(0, lambda: self.select_file.setCurrentIndex(0))
+            except Exception as e:
+                QMessageBox.critical(self, "File Error", str(e))
+                logger.error(f"   ❌ error {e}")
 
-    
+            QTimer.singleShot(0, lambda: self.select_file.setCurrentIndex(0))
+
+        
     def compute_smooth_cps(self, decimals: int = 0):
         try:
             with shared.write_lock:
