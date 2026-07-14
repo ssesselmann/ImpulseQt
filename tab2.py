@@ -544,7 +544,6 @@ class Tab2(QWidget):
         # ===================================================
         # OPEN MAX WRAPPER
         # ===================================================
-
         # --- Serial Command (MAX-only) at (3,3)
         self.cmd_selector = QComboBox()
         self.cmd_selector.addItem("- Select Command -", None)
@@ -1118,7 +1117,7 @@ class Tab2(QWidget):
             widget.setVisible(device_type == "PRO")
 
         for widget in getattr(self, "max_only_widgets", []):
-            widget.setVisible(device_type == "MAX")
+            widget.setVisible(device_type in ("MAX", "TEENSY"))
 
     def update_labels(self):
         with shared.write_lock:
