@@ -237,8 +237,8 @@ def start(sn=None):
     while not stopflag:
         
         # Energy saver
-        if not shared.run_flag.is_set(): time.sleep(0.2)
-        else: time.sleep(0.05)
+        if not shared.run_flag.is_set(): time.sleep(0.1)
+        else: time.sleep(0.01)
 
         _elapsed_push_if_needed(period=0.95)
 
