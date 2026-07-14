@@ -25,6 +25,7 @@ import serial.tools.list_ports
 import shared
 import numpy as np
 import shproto.dispatcher as disp
+import save
 
 from scipy.signal import find_peaks, peak_widths
 from collections import defaultdict
@@ -34,7 +35,6 @@ from shproto.dispatcher import process_03, start
 from pathlib import Path
 from shared import logger, LIB_DIR
 
-cps_list        = []
 
 def _user_dir() -> Path:
     with shared.write_lock:
@@ -115,43 +115,6 @@ def update_bin(n, bins, bin_counts):
     bin_counts[bin_num] += 1
     return bin_counts
 
-# This function writes a 2D histogram to JSON file according to NPESv2 schema.
-def write_histogram_npesv2(t0, t1, bins, counts, dropped_counts, elapsed, filename, histogram, coeff_1, coeff_2, coeff_3, device, location, spec_notes):
-    jsonfile = _user_dir() / f"{filename}.json"
-    data = {
-        "schemaVersion": "NPESv2",
-        "data": [
-            {
-                "deviceData": {
-                    "softwareName": "IMPULSE",
-                    "deviceName": "AUDIO-CODEC",
-                },
-                "sampleInfo": {
-                    "name": filename,
-                    "location": location,
-                    "note": spec_notes,
-                },
-                "resultData": {
-                    "startTime": t0.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
-                    "endTime": t1.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
-                    "energySpectrum": {
-                        "numberOfChannels": bins,
-                        "energyCalibration": {
-                            "polynomialOrder": 2,
-                            "coefficients": [coeff_3, coeff_2, coeff_1],
-                        },
-                        "validPulseCount": counts,
-                        "droppedPulseCounts": dropped_counts,
-                        "measurementTime": elapsed,
-                        "spectrum": histogram,
-                    }
-                }
-            }
-        ]
-    }
-    with open(jsonfile, "w+") as f:
-        json.dump(data, f, separators=(',', ':'))
-
 def update_calibration_in_json(filename, coeff_1, coeff_2, coeff_3):
     """Update only the calibration coefficients in an existing JSON file."""
     jsonfile = _user_dir() / f"{filename}.json"
@@ -170,8 +133,6 @@ def update_calibration_in_json(filename, coeff_1, coeff_2, coeff_3):
         import traceback
         logger.error(f"  ❌ fn update_calibration_in_json: {e}")
         logger.error(traceback.format_exc())
-
-
 
 # Function to create a blank JSON NPESv2 schema filename.json
 def write_blank_json_schema_hmp(filename, device):
@@ -218,108 +179,107 @@ def write_blank_json_schema_hmp(filename, device):
         logger.error(f"  ❌ fn writing blank JSON file: {e} ")
 
 
-def update_json_hmp_file(
-    t0, t1, bins, counts, elapsed, filename,
-    last_histogram, coeff_1, coeff_2, coeff_3, device,
-    gps=None
+# Appends 1-second slices to shared.histogram_hmp (mode 3 = waterfall)
+def update_mode_3_data(
+    mode, shared, full_histogram, last_histogram,
+    hmp_buffer, interval_counter, t_interval, bins,
+    now, save_queue, meta, filename, hst3d, gps_hmp_full
 ):
-    if gps is None:
-        gps = {}  # or None, but dict is convenient
+    """
+    Returns: (interval_counter, last_histogram)
 
-    
-    with shared.write_lock:
-        data_directory = shared.USER_DATA_DIR
+    Behavior:
+      - Build a 1s delta row from the absolute counters.
+      - Buffer each 1s row.
+      - Every t_interval seconds, aggregate buffered rows into one slice,
+        push to shared.histogram_hmp (UI ring), and enqueue a save job:
+          data["filename"] = filename
+          data["last_minute"]  = aggregated      # keeps existing save_data contract
+    """
+    # Only active for waterfall mode
+    if mode != 3:
+        return interval_counter, last_histogram
 
-    jsonfile = _user_dir() / f"{filename}_hmp.json"
+    # --- Defensive shape handling (bins may change if compression changed) ---
+    if len(full_histogram) < bins:
+        # pad right if the device produced fewer bins unexpectedly
+        full_histogram = list(full_histogram) + [0] * (bins - len(full_histogram))
+    elif len(full_histogram) > bins:
+        full_histogram = full_histogram[:bins]
 
-    if os.path.isfile(jsonfile):
-        try:
-            with open(jsonfile, "r") as f:
-                data = json.load(f)
-        except Exception as e:
-            logger.error(f"  ❌ fn reading JSON file: {e} ")
-            return
+    if len(last_histogram) != bins:
+        # Reset delta baseline if bins changed
+        last_histogram[:] = [0] * bins
+        hmp_buffer.clear()
+        interval_counter = 0
 
-        result_data = data["data"][0]["resultData"]
-        result_data["startTime"] = t0.strftime("%Y-%m-%dT%H:%M:%S+00:00")
-        result_data["endTime"]   = t1.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+    # --- Build 1-second delta row (no locks; clamp negatives to 0) ---
+    interval_hist = [max(full_histogram[i] - last_histogram[i], 0) for i in range(bins)]
+    last_histogram[:] = full_histogram
 
-        es = result_data["energySpectrum"]
-        es["numberOfChannels"] = bins
-        es["energyCalibration"]["coefficients"] = [coeff_3, coeff_2, coeff_1]
-        es["validPulseCount"]  = counts
-        es["measurementTime"]  = elapsed
+    # Buffer only if there was activity
+    if any(interval_hist):
+        hmp_buffer.append(interval_hist)
+    # else: stay quiet (no data this second)
 
-        # ensure arrays exist (handles old files)
-        if "spectrum" not in es or not isinstance(es["spectrum"], list):
-            es["spectrum"] = []
-        if "gps" not in es or not isinstance(es["gps"], list):
-            es["gps"] = []
+    interval_counter += 1
 
-        es["spectrum"].append(last_histogram)
-        es["gps"].append(gps)
+    # --- Flush every t_interval seconds ---
+    if interval_counter >= max(1, int(t_interval)):
+        if hmp_buffer:
+            # Aggregate N seconds into one slice (per-bin sums)
+            aggregated = [sum(col) for col in zip(*hmp_buffer)]
 
-    else:
-        logger.info(f"   ✅ fn creating new json file: {jsonfile} ")
-        data = {
-            "schemaVersion": "NPESv2",
-            "data": [
-                {
-                    "deviceData": {"softwareName": "IMPULSE", "deviceName": device},
-                    "sampleInfo": {"name": filename, "location": "", "note": ""},
-                    "resultData": {
-                        "startTime": t0.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
-                        "endTime": t1.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
-                        "energySpectrum": {
-                            "numberOfChannels": bins,
-                            "energyCalibration": {
-                                "polynomialOrder": 2,
-                                "coefficients": [coeff_3, coeff_2, coeff_1],
-                            },
-                            "validPulseCount": counts,
-                            "measurementTime": elapsed,
-                            "spectrum": [last_histogram],
-                            "gps": [gps],
-                        },
-                    },
+            from collections import deque
+
+            # Take a snapshot of the most recent GPS fix (could be None)
+            # dict(...) makes a shallow copy so it doesn't mutate later.
+            with shared.write_lock:
+                if not hasattr(shared, "histogram_hmp") or not hasattr(shared.histogram_hmp, "append"):
+                    shared.histogram_hmp = deque(maxlen=getattr(shared, "ring_len_hmp", 3600))
+
+                if not hasattr(shared, "gps_hmp") or not hasattr(shared.gps_hmp, "append"):
+                    shared.gps_hmp = deque(maxlen=getattr(shared, "ring_len_hmp", 3600))
+
+                # 1) append the interval spectrum slice
+                shared.histogram_hmp.append(aggregated)
+
+                # 2) append ONE gps row for the same slice (same lock => indices always match)
+                fix = getattr(shared, "last_gps_fix", None)
+                ok = isinstance(fix, dict) and fix.get("fix") and (fix.get("lat") is not None) and (fix.get("lon") is not None)
+
+                row = {
+                    "lat": fix.get("lat") if ok else None,
+                    "lon": fix.get("lon") if ok else None,
+                    "t": shared.elapsed,
                 }
-            ],
-        }
 
-    try:
-        with open(jsonfile, "w") as f:
-            json.dump(data, f, separators=(",", ":"))
-        logger.info(f"   ✅ fn 3D file created: {filename}_hmp.json ")
-    except Exception as e:
-        logger.error(f"  ❌ fn writing json file: {e} ")
+                shared.gps_hmp.append(row)
+
+            #print(f"[GPS/HMP] rows hist={len(shared.histogram_hmp)} gps={len(shared.gps_hmp)} last={row}")
 
 
-# This function writes counts per second to JSON
-def write_cps_json(filename, count_history, elapsed, valid_counts, dropped_counts):
-    with shared.write_lock:
-        data_directory = shared.USER_DATA_DIR
-    cps_file_path = os.path.join(data_directory, f"{filename}_cps.json")
-    # Ensure count_history is a flat list of integers
-    valid_count_history = [int(item) for sublist in count_history for item in (sublist if isinstance(sublist, list) else [sublist]) if isinstance(item, int) and item >= 0]
-    cps_data = {
-        "count_history": valid_count_history,
-        "elapsed": elapsed,
-        "validPulseCount": valid_counts,
-        "droppedPulseCount": dropped_counts
-    }
-    try:
-        with open(cps_file_path, 'w') as file:
-            json.dump(cps_data, file, separators=(',', ':'))
-    except Exception as e:
-        logger.error(f"  ❌ fn saving CPS data to {cps_file_path}: {e} ")
-     
-    return    
+            # Enqueue save job (keeps your existing saver contract)
+            payload = meta.copy()
+            payload["filename"] = filename
+            payload["last_minute"]  = aggregated
+            payload["gps"]          = row   # <-- add this now (harmless if saver ignores it)
+            save_queue.put(payload)
+
+            # Reset buffer and counter
+            hmp_buffer.clear()
+            interval_counter = 0
+        else:
+            interval_counter = 0
+
+    return interval_counter, last_histogram  
 
 # Clears global counts per second list
 def clear_global_cps_list():
     with shared.write_lock:
         shared.counts          = 0
         shared.count_history   = []
+        shared.count_history_saved_index = 0
         shared.dropped_counts  = 0
 
 
@@ -494,6 +454,9 @@ def start_recording(mode, device_type):
     elif device_type == "PRO":
         return start_pro_recording(mode)
 
+    elif device_type == "TEENSY":          
+        return start_teensy_recording(mode)
+        
     else:
         logger.error(f"  ❌ fn Unsupported device_type: {device_type} ")
         return None
@@ -513,6 +476,7 @@ def start_max_recording(mode):
         shared.elapsed        = 0
         shared.run_flag.set()
 
+
         filename     = shared.filename
         #filename_hmp = shared.filename_hmp
         compression  = shared.compression
@@ -528,8 +492,7 @@ def start_max_recording(mode):
 
     # everything below is slow -> no lock
     shproto.dispatcher.spec_stopflag = 0
-    dispatcher_thread = threading.Thread(target=shproto.dispatcher.start, daemon=True)
-    dispatcher_thread.start()
+    shproto.dispatcher.ensure_running()
 
     time.sleep(0.15)
     shproto.dispatcher.process_03("-mode 0")
@@ -539,45 +502,201 @@ def start_max_recording(mode):
     shproto.dispatcher.process_03("-sta")
     time.sleep(0.15)
 
-
-    # Create a recording thread to run process_01 or process_02
     def run_dispatcher():
         try:
             if mode == 3:
                 logger.info("   ✅ fn Launching MAX 3D process_02 ")
-
                 shproto.dispatcher.process_02(filename, compression, device, t_interval)
-
             else:
                 logger.info("   ✅ fn Launching MAX 2D process_01 ")
-
                 shproto.dispatcher.process_01(filename, compression, device, t_interval)
-
         except Exception as e:
             logger.error(f"  ❌ fn MAX process thread crashed: {e} ")
 
     process_thread = threading.Thread(target=run_dispatcher, daemon=True)
     process_thread.start()
-
     shared.max_process_thread = process_thread
     return process_thread
 
-    def run_dispatcher():
+
+def start_teensy_recording(mode=2):
+    """Send 's' to Teensy and poll spectrum into shared.histogram."""
+    import serial
+
+    with shared.write_lock:
+        shared.counts         = 0
+        shared.elapsed        = 0
+        shared.dropped_counts = 0
+        shared.histogram = []
+        shared.run_flag.set()
+        shared.save_done.clear()
+        port_str   = shared.device_port
+        bins       = shared.bins
+        filename   = shared.filename
+        ser        = shared.teensy_serial
+        coeff_1    = shared.coeff_1        # NEW
+        coeff_2    = shared.coeff_2        # NEW
+        coeff_3    = shared.coeff_3        # NEW
+        spec_notes = shared.spec_notes     # NEW
+
+    logger.info(f"   ✅ fn Starting Teensy recording on {port_str}")
+
+    last_histogram   = [0] * bins
+    hmp_buffer       = []
+    interval_counter = 0
+
+    with shared.write_lock:
+        t_interval = int(getattr(shared, "t_interval", 1))
+
+    import queue
+    save_queue = queue.Queue()
+
+    meta = {
+        "bins":     bins,
+        "filename": filename,
+    }
+
+
+    if not ser or not ser.is_open:
+        logger.error("  ❌ fn Teensy not connected — connect on tab1 first")
+        return None
+
+    try:
+        ser.write(b"s\n")
+        ser.flush()
+        shared.teensy_recording.set()    # <-- pause tab1 reader
+    except Exception as e:
+        logger.error(f"  ❌ fn Teensy send failed: {e}")
+        return None
+
+    def run():
+        nonlocal bins, interval_counter, last_histogram
+        from datetime import datetime
+        
+        start_time       = time.time()
+        dt_start         = datetime.utcnow()
+        last_save_time   = start_time
+        first_tick       = True   # NEW
+
+        while shared.run_flag.is_set():
+            try:
+                #ser.reset_input_buffer()
+                ser.write(b"d\n")
+                ser.flush()
+                raw = ser.readline()
+                if not raw:
+                    time.sleep(1.0)
+                    continue
+                line = raw.decode("utf-8", errors="replace").strip()
+                if "|" in line:
+                    parts = line.split("|", 2)
+                    try:
+                        live_cps = int(float(parts[0]))
+                    except ValueError:
+                        live_cps = 0
+                    try:
+                        pileup = int(parts[1])
+                    except (ValueError, IndexError):
+                        pileup = 0
+                    data_str = parts[2] if len(parts) > 2 else ""
+                else:
+                    data_str = line
+                    live_cps = 0
+                    pileup   = 0
+
+                counts = [int(x) for x in data_str.split(",") if x.strip().isdigit()]
+
+                if counts:
+                    bins = len(counts)
+                    compressed = counts
+                    total   = sum(compressed)
+                    elapsed = int(time.time() - start_time)
+
+                    with shared.write_lock:
+                        shared.bins           = bins
+                        shared.histogram      = compressed
+                        shared.counts         = total
+                        shared.elapsed        = elapsed
+                        shared.cps            = live_cps
+                        shared.dropped_counts = pileup
+                        if not first_tick:  
+                            shared.count_history.append(live_cps)
+                        first_tick = False
+
+                    if mode == 3:
+                        interval_counter, last_histogram = update_mode_3_data(
+                            mode=3,
+                            shared=shared,
+                            full_histogram=compressed,
+                            last_histogram=last_histogram,
+                            hmp_buffer=hmp_buffer,
+                            interval_counter=interval_counter,
+                            t_interval=t_interval,
+                            bins=bins,
+                            now=None,
+                            save_queue=save_queue,
+                            meta=meta,
+                            filename=filename,
+                        )
+
+                    now = time.time()
+                    if now - last_save_time >= 60:
+                        save.save_histogram_json(
+                            filename=filename,
+                            device="TEENSY",
+                            histogram=compressed,
+                            counts=total,
+                            dropped_counts=pileup,
+                            elapsed=elapsed,
+                            coeff_1=coeff_1,
+                            coeff_2=coeff_2,
+                            coeff_3=coeff_3,
+                            spec_notes=spec_notes,
+                            dt_start=dt_start,
+                            dt_now=datetime.utcnow(),
+                        )
+                        save.save_count_history_csv(filename)   # NEW
+                        logger.info(f"    ✅ {filename} saved ")
+                        last_save_time = now
+
+            except Exception as e:
+                logger.warning(f"👆 fn Teensy poll error: {e}")
+            time.sleep(1.0)
+        # Send stop command — do NOT close the port (tab1 owns it)
         try:
-            if mode == 3:
-                logger.info("   ✅ fn Launching MAX 3D process_02 ")
-                shproto.dispatcher.process_02(filename, compression3d, device, t_interval)
+            ser.write(b"x\n")
+            ser.flush()
+        except Exception:
+            pass
 
-            else:
-                logger.info("   ✅ fn Launching MAX 2D process_01 ")
-                shproto.dispatcher.process_01(filename, compression, device, t_interval)
+        # Final save
+        with shared.write_lock:
+            histogram = list(shared.histogram)
+            total     = shared.counts
+            elapsed   = shared.elapsed
+            pileup    = shared.dropped_counts
+        save.save_histogram_json(
+            filename=filename,
+            device="TEENSY",
+            histogram=histogram,
+            counts=total,
+            dropped_counts=pileup,
+            elapsed=elapsed,
+            coeff_1=coeff_1,
+            coeff_2=coeff_2,
+            coeff_3=coeff_3,
+            spec_notes=spec_notes,
+            dt_start=dt_start,
+            dt_now=datetime.utcnow(),
+        )
+        save.save_count_history_csv(filename)   # NEW
+        shared.teensy_recording.clear()  # <-- resume tab1 reader
+        shared.save_done.set()
+        logger.info("   ✅ fn Teensy recording stopped")
 
-        except Exception as e:
-            logger.error(f"   ✅ fn run_dispatcher: {e}")
-
-    process_thread = threading.Thread(target=run_dispatcher, daemon=True)
-    process_thread.start()
-    return process_thread
+    thread = threading.Thread(target=run, daemon=True, name="teensy-recorder")
+    thread.start()
+    return thread
 
 def start_pro_recording(mode):
 
@@ -632,8 +751,12 @@ def stop_recording():
     if device_type == "MAX":
         shproto.dispatcher.spec_stopflag = 1
         shproto.dispatcher.stop()
+
+    # TEENSY: run_flag.clear() is enough — the thread sends 'x' itself
         
     logger.info(f"   ✅ fn Recording stopped [{device_type}] ")
+
+
 
 # clear variables
 def clear_shared(mode):
@@ -915,19 +1038,38 @@ def is_valid_json(file_path):
 from pathlib import Path
 
 def get_filename_options(kind="user"):
-    # Returns a list of file options for dropdowns, based on file type.
     def match(filename: str) -> bool:
         if kind == "user":
             excluded = ["_cps.json", "-cps.json", "_hmp.json", "_user.json"]
             return not any(filename.endswith(sfx) for sfx in excluded)
         elif kind == "cps":
-            return filename.endswith("_cps.json")
+            return filename.endswith("_cps.json") or filename.endswith("_cps.csv")
         elif kind == "3d":
             return filename.endswith("_hmp.json")
         elif kind == "all":
             return filename.endswith(".json")
         else:
             return False
+
+    def make_option(file_path: Path, base_dir: Path):
+        try:
+            rel = file_path.relative_to(base_dir)
+        except ValueError:
+            rel = file_path.name
+        label = Path(rel).stem
+        value = str(rel).replace("\\", "/")
+        return {'label': label, 'value': value}
+
+    patterns = ["*.csv", "*.json"] if kind == "cps" else ["*.json"]
+    files = []
+    for pattern in patterns:
+        files.extend(
+            make_option(f, shared.USER_DATA_DIR)
+            for f in shared.USER_DATA_DIR.glob(pattern)
+            if match(f.name)
+        )
+    files.sort(key=lambda x: x['label'].lower())
+    return files
 
     def make_option(file_path: Path, base_dir: Path):
         try:
@@ -1246,6 +1388,36 @@ def load_cps_file(filepath):
         raise ValueError(f"[ERROR] loading cps JSON from {filepath}: {e}")
     except Exception as e:
         raise RuntimeError(f"[ERROR] while loading CPS data from {filepath}: {e}")  
+
+def load_cps_csv(filepath):
+    if not os.path.exists(filepath):
+        logging.info(f"   ✅ fn File does not exist: {filepath} ")
+        return
+
+    try:
+        count_history = []
+        with open(filepath, 'r', newline='') as file:
+            reader = csv.reader(file)
+            next(reader, None)  # skip "second,cps" header
+            for row in reader:
+                if len(row) < 2:
+                    continue
+                try:
+                    cps_val = int(row[1])
+                except ValueError:
+                    continue
+                if cps_val >= 0:
+                    count_history.append(cps_val)
+
+        shared.count_history   = count_history
+        shared.counts          = sum(count_history)
+        shared.elapsed         = len(count_history)
+        shared.dropped_counts  = 0
+
+        return {"count_history": count_history, "elapsed": len(count_history), "droppedPulseCount": 0}
+
+    except Exception as e:
+        raise RuntimeError(f"[ERROR] while loading CPS CSV data from {filepath}: {e}")
 
 def format_date(iso_datetime_str):
     # Parse the datetime string to a datetime object
