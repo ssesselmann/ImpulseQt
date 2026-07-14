@@ -62,6 +62,13 @@ pkts03              = 0
 pkts04              = 0
 total_pkts          = 0
 dropped             = 0
+dropped_by_cmd      = {}
+PACKET_NAMES = {
+    shproto.MODE_HISTOGRAM: "HISTOGRAM",
+    shproto.MODE_TEXT: "TEXT",
+    shproto.MODE_STAT: "STAT",
+    shproto.MODE_PULSE: "PULSE",
+}
 total_time          = 0
 cpu_load            = 0
 lost_impulses       = 0
@@ -232,13 +239,9 @@ def start(sn=None):
     noted_timeout = False
     byte_misses = 0
 
-    _last_loop_mark = time.perf_counter()   # NEW
+    _last_loop_mark = time.perf_counter()   
 
     while not stopflag:
-        
-        # Energy saver
-        if not shared.run_flag.is_set(): time.sleep(0.1)
-        else: time.sleep(0.01)
 
         _elapsed_push_if_needed(period=0.95)
 
@@ -285,41 +288,69 @@ def start(sn=None):
                 pass
 
         # blocking read with timeout; returns b'' on timeout
-        _gap_before_read = time.perf_counter() - _last_loop_mark   # NEW
-        if _gap_before_read > 1.0:                                  # NEW
-            logger.warning(                                          # NEW
-                " ⚠️ LOOP STALL before read(): %.2fs elapsed since previous iteration",  # NEW
-                _gap_before_read,                                     # NEW
-            )                                                         # NEW
+        _gap_before_read = time.perf_counter() - _last_loop_mark   
+        if _gap_before_read > 1.0:                                  
+            logger.warning(                                          
+                " ⚠️ LOOP STALL before read(): %.2fs elapsed since previous iteration",  
+                _gap_before_read,                                     
+            )                                                         
 
-        _read_start = time.perf_counter()   # NEW
+        _read_start = time.perf_counter()   
 
         try:
-            rx = nano.read(READ_BUFFER)
+            waiting = nano.in_waiting
+            rx = nano.read(waiting if waiting > 0 else 1)
         except serial.SerialException as e:
-            logger.warning(f"👆 Serial read failed (likely disconnected or busy): {e}")
-            break  # or `continue`, depending on how you want to handle it
+            logger.warning("👆 Serial read failed, likely disconnected or busy: %s", e,)
+            break
 
         
-        _read_dur = time.perf_counter() - _read_start   # NEW
-        if _read_dur > 1.0:                                # NEW
-            logger.warning(                                 # NEW
-                " ⚠️ READ() BLOCKED: nano.read() took %.2fs (nano.timeout=%.2f) bytes_returned=%d",  # NEW
-                _read_dur, nano.timeout, len(rx) if rx else 0,   # NEW
-            )                                                  # NEW
+        _read_dur = time.perf_counter() - _read_start   
+        if _read_dur > 1.0:                                
+            logger.warning(                                 
+                " ⚠️ READ() BLOCKED: nano.read() took %.2fs (nano.timeout=%.2f) bytes_returned=%d",  
+                _read_dur, nano.timeout, len(rx) if rx else 0,   
+            )                                                  
 
-        _last_loop_mark = time.perf_counter()   # NEW
+        _last_loop_mark = time.perf_counter()   
 
         if not rx:
             continue  # silent: normal timeout / no bytes yet
 
         for b in rx:
             response.read(b)
+
             if response.dropped:
+                cmd = response.cmd
+
                 shproto.dispatcher.dropped += 1
                 shproto.dispatcher.total_pkts += 1
+
+                shproto.dispatcher.dropped_by_cmd[cmd] = (
+                    shproto.dispatcher.dropped_by_cmd.get(cmd, 0) + 1
+                )
+
+                packet_name = shproto.dispatcher.PACKET_NAMES.get(
+                    cmd,
+                    f"UNKNOWN_0x{cmd:02X}",
+                )
+
+                logger.warning(
+                    "⚠️ CRC failure: type=%s cmd=0x%02X dropped_for_cmd=%d "
+                    "dropped_total=%d raw_bytes=%d",
+                    packet_name,
+                    cmd,
+                    shproto.dispatcher.dropped_by_cmd[cmd],
+                    shproto.dispatcher.dropped,
+                    len(response.raw_data),
+                )
+
+                response.clear()
+                continue
+
             if not response.ready:
                 continue
+
             shproto.dispatcher.total_pkts += 1
 
 
@@ -356,7 +387,7 @@ def start(sn=None):
 
                         last_cmd = getattr(shproto.dispatcher, "_last_cmd_sent", "?")
 
-                        # NEW: skip compare if device reports a sentinel/no-CRC
+                        # skip compare if device reports a sentinel/no-CRC
                         if crc_str.upper() in ("FFFFFFFF", "00000000"):
                             logger.info("   ✅ Device reports no CAL CRC (got %r); skipping compare (after cmd=%r)",
                                          crc_str, getattr(shproto.dispatcher, "_last_cmd_sent", "?"))
@@ -913,6 +944,7 @@ def clear():
         shproto.dispatcher.lost_impulses            = 0
         shproto.dispatcher.total_pulse_width        = 0
         shproto.dispatcher.dropped                  = 0
+        shproto.dispatcher.dropped_by_cmd.clear()
         shproto.dispatcher.cps_total_counts         = 0
 
     with shared.write_lock:
