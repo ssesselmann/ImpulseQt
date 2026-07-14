@@ -12,7 +12,7 @@ import shared
 import struct
 import functions as fn
 import gps_main  # at top of file is better, but ok here for first test
-
+import save
 
 from shared import logger
 
@@ -81,7 +81,9 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
     local_count_history = []
     right_pulses    = []
     hmp_buffer      = []
-    interval_counter = 0  
+    interval_counter = 0 
+    hst3d         = []   # was: array_hmp = []
+    gps_hmp_full  = []   # NEW 
 
     # Open the selected audio input device
     channels = 2 if stereo else 1
@@ -185,7 +187,7 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
                     shared.histogram    = full_histogram.copy()  
                 shared.count_history.append(counts_per_sec)
 
-            interval_counter, last_histogram = update_mode_3_data(
+            interval_counter, last_histogram = fn.update_mode_3_data(
                 mode, shared, full_histogram, last_histogram,
                 hmp_buffer, interval_counter, t_interval, bins,
                 time_this_save, save_queue,
@@ -204,7 +206,9 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
                     'spec_notes': spec_notes,
                     'local_count_history': local_count_history
                 },
-                filename
+                filename,
+                hst3d,          # NEW
+                gps_hmp_full    # NEW
             )
 
 
@@ -278,121 +282,41 @@ def save_data(save_queue):
         gps                 = data.get('gps')
 
         if 'filename' in data and 'full_histogram' in data:
-            filename        = data['filename']
-            full_histogram  = data['full_histogram']
-            fn.write_histogram_npesv2(t0, t1, bins, local_counts, dropped_counts, local_elapsed, filename, full_histogram, coeff_1, coeff_2, coeff_3, device, location, spec_notes)
-            fn.write_cps_json(filename, local_count_history, local_elapsed, local_counts, dropped_counts)
+                    filename        = data['filename']
+                    full_histogram  = data['full_histogram']
+                    save.save_histogram_json(
+                        filename=filename,
+                        device=device,
+                        histogram=full_histogram,
+                        counts=local_counts,
+                        dropped_counts=dropped_counts,
+                        elapsed=local_elapsed,
+                        coeff_1=coeff_1,
+                        coeff_2=coeff_2,
+                        coeff_3=coeff_3,
+                        spec_notes=spec_notes,
+                        dt_start=t0,
+                        dt_now=t1,
+                    )
+                    save.save_count_history_csv(filename)
 
-        if 'filename' in data and 'last_minute' in data:
-            filename = data['filename']
-            last_minute  = data['last_minute']
-            fn.update_json_hmp_file(t0, t1, bins, local_counts, local_elapsed, filename, last_minute, coeff_1, coeff_2, coeff_3, device, gps)
-            #fn.write_cps_json(filename, local_count_history, local_elapsed, local_counts, dropped_counts)
-
-
-# Appends 1-second slices to shared.histogram_hmp (mode 3 = waterfall)
-def update_mode_3_data(
-    mode,
-    shared,
-    full_histogram,         # absolute counts per bin (running total)
-    last_histogram,         # same length as full_histogram; mutated in place
-    hmp_buffer,             # list of per-second delta rows (lists)
-    interval_counter,       # int: seconds accumulated since last flush
-    t_interval,             # int: aggregate period in seconds
-    bins,                   # int: expected number of bins (after compression)
-    now,                    # (unused here; kept for signature compatibility)
-    save_queue,             # queue for JSON saver thread
-    meta,                   # dict with metadata for save thread
-    filename            # base name for JSON file (without _hmp.json)
-):
-    """
-    Returns: (interval_counter, last_histogram)
-
-    Behavior:
-      - Build a 1s delta row from the absolute counters.
-      - Buffer each 1s row.
-      - Every t_interval seconds, aggregate buffered rows into one slice,
-        push to shared.histogram_hmp (UI ring), and enqueue a save job:
-          data["filename"] = filename
-          data["last_minute"]  = aggregated      # keeps existing save_data contract
-    """
-    # Only active for waterfall mode
-    if mode != 3:
-        return interval_counter, last_histogram
-
-    # --- Defensive shape handling (bins may change if compression changed) ---
-    if len(full_histogram) < bins:
-        # pad right if the device produced fewer bins unexpectedly
-        full_histogram = list(full_histogram) + [0] * (bins - len(full_histogram))
-    elif len(full_histogram) > bins:
-        full_histogram = full_histogram[:bins]
-
-    if len(last_histogram) != bins:
-        # Reset delta baseline if bins changed
-        last_histogram[:] = [0] * bins
-        hmp_buffer.clear()
-        interval_counter = 0
-
-    # --- Build 1-second delta row (no locks; clamp negatives to 0) ---
-    interval_hist = [max(full_histogram[i] - last_histogram[i], 0) for i in range(bins)]
-    last_histogram[:] = full_histogram
-
-    # Buffer only if there was activity
-    if any(interval_hist):
-        hmp_buffer.append(interval_hist)
-    # else: stay quiet (no data this second)
-
-    interval_counter += 1
-
-    # --- Flush every t_interval seconds ---
-    if interval_counter >= max(1, int(t_interval)):
-        if hmp_buffer:
-            # Aggregate N seconds into one slice (per-bin sums)
-            aggregated = [sum(col) for col in zip(*hmp_buffer)]
-
-            from collections import deque
-
-            # Take a snapshot of the most recent GPS fix (could be None)
-            # dict(...) makes a shallow copy so it doesn't mutate later.
-            with shared.write_lock:
-                if not hasattr(shared, "histogram_hmp") or not hasattr(shared.histogram_hmp, "append"):
-                    shared.histogram_hmp = deque(maxlen=getattr(shared, "ring_len_hmp", 3600))
-
-                if not hasattr(shared, "gps_hmp") or not hasattr(shared.gps_hmp, "append"):
-                    shared.gps_hmp = deque(maxlen=getattr(shared, "ring_len_hmp", 3600))
-
-                # 1) append the interval spectrum slice
-                shared.histogram_hmp.append(aggregated)
-
-                # 2) append ONE gps row for the same slice (same lock => indices always match)
-                fix = getattr(shared, "last_gps_fix", None)
-                ok = isinstance(fix, dict) and fix.get("fix") and (fix.get("lat") is not None) and (fix.get("lon") is not None)
-
-                row = {
-                    "lat": fix.get("lat") if ok else None,
-                    "lon": fix.get("lon") if ok else None,
-                    "t": shared.elapsed,
-                }
-
-                shared.gps_hmp.append(row)
-
-            #print(f"[GPS/HMP] rows hist={len(shared.histogram_hmp)} gps={len(shared.gps_hmp)} last={row}")
+        if 'filename' in data and 'histogram_rows' in data:
+            filename       = data['filename']
+            histogram_rows = data['histogram_rows']
+            gps_rows       = data['gps_rows']
+            save.save_histogram_hmp_json(
+                filename=filename,
+                histogram_rows=histogram_rows,
+                gps_rows=gps_rows,
+                counts=local_counts,
+                elapsed=local_elapsed,
+                coeffs=[coeff_3, coeff_2, coeff_1],
+                dt_start=t0,
+                dt_now=t1,
+                device=device,
+            )
 
 
-            # Enqueue save job (keeps your existing saver contract)
-            payload = meta.copy()
-            payload["filename"] = filename
-            payload["last_minute"]  = aggregated
-            payload["gps"]          = row   # <-- add this now (harmless if saver ignores it)
-            save_queue.put(payload)
-
-            # Reset buffer and counter
-            hmp_buffer.clear()
-            interval_counter = 0
-        else:
-            interval_counter = 0
-
-    return interval_counter, last_histogram
 
 
 
