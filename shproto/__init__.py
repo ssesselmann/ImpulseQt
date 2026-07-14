@@ -71,6 +71,10 @@ class packet:
         self.esc = 0
         self.dropped = 0
 
+        # Receiver synchronisation state
+        self.in_packet = False
+        self.saw_ff = False
+
     def clear(self):
         self.payload = []
         self.raw_data = []
@@ -80,6 +84,9 @@ class packet:
         self.len = 0
         self.esc = 0
         self.dropped = 0
+
+        self.in_packet = False
+        self.saw_ff = False
 
     # Method to add a byte to the packet payload with CRC calculation
     def add(self, tx_byte):
@@ -115,46 +122,83 @@ class packet:
 
     # Method to read a byte from the received data and process it
     def read(self, rx_byte):
-        self.raw_data.append(rx_byte)
 
-        # Start of a new packet: discard any incomplete previous packet
-        if rx_byte == SHPROTO_START:
-            self.clear()
+        # ------------------------------------------------------
+        # Wait for the packet start sequence: 0xFF 0xFE
+        # ------------------------------------------------------
+        if not self.in_packet:
+
+            if self.saw_ff:
+                if rx_byte == SHPROTO_START:
+                    # A complete 0xFF 0xFE start sequence was received.
+                    self.clear()
+                    self.in_packet = True
+                    return
+
+                # Another 0xFF may be the beginning of a new start sequence.
+                self.saw_ff = rx_byte == 0xFF
+                return
+
+            if rx_byte == 0xFF:
+                self.saw_ff = True
+
             return
 
-        if rx_byte == SHPROTO_ESC:
+        # Store received bytes for diagnostics.
+        self.raw_data.append(rx_byte)
+
+        # ------------------------------------------------------
+        # Escaped byte
+        # ------------------------------------------------------
+        if self.esc:
+            self.esc = 0
+            rx_byte = (~rx_byte) & 0xFF
+
+        elif rx_byte == SHPROTO_ESC:
             self.esc = 1
             return
 
-        if rx_byte == SHPROTO_FINISH:
+        # ------------------------------------------------------
+        # An unexpected unescaped 0xFE means a new packet began.
+        # Discard the incomplete packet and start again.
+        # ------------------------------------------------------
+        elif rx_byte == SHPROTO_START:
+            self.clear()
+            self.in_packet = True
+            return
+
+        # ------------------------------------------------------
+        # End of packet
+        # ------------------------------------------------------
+        elif rx_byte == SHPROTO_FINISH:
             self.crc = crc16bytes(
                 self.crc,
                 [self.cmd] + self.payload
             )
-
-            self.len -= 3
 
             if self.crc == 0:
                 self.ready = 1
             else:
                 self.dropped = 1
 
-            self.raw_data = []
+            # Do not accept more packet bytes until the dispatcher
+            # processes ready/dropped and calls clear().
+            self.in_packet = False
+            self.saw_ff = False
             return
 
-        if self.esc:
-            self.esc = 0
-            rx_byte = (~rx_byte) & 0xFF
-
-        # Reject an oversized or incomplete packet
+        # ------------------------------------------------------
+        # Protect against a malformed oversized packet
+        # ------------------------------------------------------
         if self.len >= BUFFER_SIZE:
             self.clear()
             self.dropped = 1
             return
 
-        if self.len:
-            self.payload.append(rx_byte)
-        else:
+        # First byte after the start marker is the command.
+        if self.len == 0:
             self.cmd = rx_byte
+        else:
+            self.payload.append(rx_byte)
 
         self.len += 1
