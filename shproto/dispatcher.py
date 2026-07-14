@@ -223,7 +223,14 @@ def start(sn=None):
         return
 
     # ---- moved here (after connect) ----
-    nano.timeout = 0.1  # blocking read up to 100 ms
+    nano.timeout = 0.1
+
+    if platform.system() == "Windows":
+        try:
+            nano.set_buffer_size(rx_size=131072, tx_size=16384)
+            logger.info("   ✅ Windows serial buffers enlarged")
+        except Exception as e:
+            logger.warning("👆 Could not enlarge Windows serial buffers: %s", e)
 
     nano.flushInput()
     nano.flushOutput()
@@ -299,11 +306,25 @@ def start(sn=None):
 
         try:
             waiting = nano.in_waiting
-            rx = nano.read(waiting if waiting > 0 else 1)
-        except serial.SerialException as e:
-            logger.warning("👆 Serial read failed, likely disconnected or busy: %s", e,)
-            break
 
+            # If the receive queue starts growing, log it.
+            if waiting > 32768:
+                logger.warning(
+                    "⚠️ SERIAL BACKLOG: %d bytes waiting in receive buffer",
+                    waiting,
+                )
+
+            if waiting > 0:
+                rx = nano.read(min(waiting, 8192))
+            else:
+                rx = nano.read(1)
+
+        except serial.SerialException as e:
+            logger.warning(
+                "👆 Serial read failed, likely disconnected or busy: %s",
+                e,
+            )
+            break
         
         _read_dur = time.perf_counter() - _read_start   
         if _read_dur > 1.0:                                
@@ -337,7 +358,7 @@ def start(sn=None):
 
                 logger.warning(
                     "⚠️ CRC failure: type=%s cmd=0x%02X dropped_for_cmd=%d "
-                    "dropped_total=%d raw_bytes=%d",
+                    "dropped_total=%d",
                     packet_name,
                     cmd,
                     shproto.dispatcher.dropped_by_cmd[cmd],
