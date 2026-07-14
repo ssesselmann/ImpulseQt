@@ -6,6 +6,7 @@ import sys
 import json
 import datetime
 import os
+import threading
 
 from os import getenv
 from pathlib import Path
@@ -23,14 +24,19 @@ last_gps_fix = None
 gps_hmp = deque(maxlen=3600)
 
 # --- Thread Control ---
-run_flag        = Event()
-save_done       = Event()
-write_lock      = Lock()
-run_flag_lock   = Lock()
+run_flag         = Event()
+save_done        = Event()
+write_lock       = Lock()
+run_flag_lock    = Lock()
+teensy_recording = Event()
+teensy_serial    = None
+
+
+
 
 # --------------------
 # Versioning
-__version__ = "3.2.6.0"
+__version__ = "3.2.7.0"
 # --------------------
 
 SETTINGS = {}  
@@ -260,6 +266,7 @@ tempcal_table = []
 
 # --- Other ---
 serial_number = 0
+count_history_saved_index = 0
 cached_device_info = None
 cached_device_info_ts = 0.0
 flags_selected = ""
