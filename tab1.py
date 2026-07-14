@@ -26,6 +26,8 @@ from qt_compat import QTimer
 
 from tab1_pro import Tab1ProWidget 
 from tab1_max import Tab1MaxWidget
+from tab1_teensy import Tab1TeensyWidget
+
 from shared import logger, MONO, FOOTER, ICON_PATH
 from qss import apply_theme
 
@@ -46,6 +48,7 @@ class Tab1(QWidget):
         self.selector = QComboBox()
         self.selector.addItem("Audio Device", "PRO")
         self.selector.addItem("Serial Device", "MAX")
+        self.selector.addItem("Teensy Device", "TEENSY")
 
         index = self.selector.findData(shared.device_type)
         if index != -1:
@@ -154,3 +157,5 @@ class Tab1(QWidget):
             self.main_layout.addWidget(Tab1ProWidget())
         elif device_type == "MAX":
             self.main_layout.addWidget(Tab1MaxWidget())  # Use Tab1MaxWidget
+        elif device_type == "TEENSY":
+            self.main_layout.addWidget(Tab1TeensyWidget())
