@@ -9,6 +9,7 @@ import threading
 import time
 import csv
 import webbrowser
+import save
 
 from qt_compat import QBrush
 from qt_compat import QCheckBox
@@ -75,6 +76,15 @@ class Tab3(QWidget):
         self.init_ui()
         self.refresh_timer    = QTimer()
         self.refresh_timer.timeout.connect(self.update_graph)
+        self._hmp_img          = None
+        self._hmp_cbar         = None
+        self._hmp_fg           = None
+        self._last_render_mode = None
+        self._last_bins        = None
+        self._hist_line        = None
+        self._hist_fill        = None
+        self._hist_text        = None
+        self._hist_roi_artists = []
 
     def init_ui(self):
 
@@ -467,42 +477,40 @@ class Tab3(QWidget):
         self.canvas.draw_idle()
 
     def load_on_show(self):
-        # 1) Always pull live settings from shared
-        with shared.write_lock:
-            ms           = int(shared.max_seconds)
-            mc           = int(shared.max_counts)
-            compression  = int(shared.compression)
-            filename     = shared.filename
+            # 1) Always pull live settings from shared
+            with shared.write_lock:
+                ms           = int(shared.max_seconds)
+                mc           = int(shared.max_counts)
+                compression  = int(shared.compression)
+                filename     = shared.filename
 
-        # Update inputs without firing signals
-        self.max_seconds_input.blockSignals(True)
-        self.max_seconds_input.setText(str(ms))
-        self.max_seconds_input.blockSignals(False)
+            # Update inputs without firing signals
+            self.max_seconds_input.blockSignals(True)
+            self.max_seconds_input.setText(str(ms))
+            self.max_seconds_input.blockSignals(False)
 
-        self.max_counts_input.blockSignals(True)
-        self.max_counts_input.setText(str(mc))
-        self.max_counts_input.blockSignals(False)
+            self.max_counts_input.blockSignals(True)
+            self.max_counts_input.setText(str(mc))
+            self.max_counts_input.blockSignals(False)
 
-        self.filename_input.blockSignals(True)
-        self.filename_input.setText(filename)
-        self.filename_input.blockSignals(False)
+            self.filename_input.blockSignals(True)
+            self.filename_input.setText(filename)
+            self.filename_input.blockSignals(False)
 
 
-        # Update bins selector to current compression
-        idx = self.bins_selector.findData(compression)
-        if idx != -1 and idx != self.bins_selector.currentIndex():
-            self.bins_selector.blockSignals(True)
-            self.bins_selector.setCurrentIndex(idx)
-            self.bins_selector.blockSignals(False)
+            # Update bins selector to current compression
+            idx = self.bins_selector.findData(compression)
+            if idx != -1 and idx != self.bins_selector.currentIndex():
+                self.bins_selector.blockSignals(True)
+                self.bins_selector.setCurrentIndex(idx)
+                self.bins_selector.blockSignals(False)
 
-        # 2) Heavy loads only once
-        if not self.has_loaded:
-            load_histogram_hmp(filename)
-            self.refresh_bin_selector()
-            self.has_loaded = True
+            # 2) Heavy loads only once
+            if not self.has_loaded:
+                self.has_loaded = True
 
-        # 3) ALWAYS redraw on tab show (this is the key)
-        self.update_graph()
+            # 3) ALWAYS redraw on tab show (this is the key)
+            self.update_graph()
 
 
     def load_switches(self):
@@ -1084,7 +1092,10 @@ class Tab3(QWidget):
             self.figure.clear()
             self.ax = self.figure.add_subplot(111)
             self.canvas.draw()
-
+            self._hmp_img          = None
+            self._hmp_cbar         = None
+            self._last_render_mode = None
+            self._last_bins        = None
             # Start periodic UI refresh
             self.refresh_timer.start(t_interval * 1000)
 
@@ -1216,360 +1227,686 @@ class Tab3(QWidget):
     # ------------------------------------------------------------------
 
     def update_graph(self):
-        if not self.ready_to_plot:
-            return
-
-        try:
-            # Snapshot shared state
-            with shared.write_lock:
-                run_flag     = shared.run_flag
-                data         = list(shared.histogram_hmp)
-                filename     = shared.filename
-                t_interval   = shared.t_interval
-                log_switch   = shared.log_switch
-                epb_switch   = shared.epb_switch
-                cal_switch   = shared.cal_switch
-                counts       = shared.counts
-                elapsed      = shared.elapsed
-                bins         = shared.bins
-                coeffs       = [shared.coeff_1, shared.coeff_2, shared.coeff_3]
-                hist_view    = shared.tab3_hist_view
-                y_fixed      = shared.tab3_y_fixed
-                y_max_user   = shared.tab3_ymax
-                smooth_on    = shared.tab3_smooth_on
-                win          = shared.tab3_smooth_win
-                gps = shared.gps_hmp[-1] if getattr(shared, "gps_hmp", None) else None
-                peaks = list(getattr(shared, "peak_list", []) or [])
-
-               
-            # Ensure we have something to display
-            if not data or bins <= 0:
-                logger.warning("👆 Plot data empty or bins <= 0")
+            if not self.ready_to_plot:
                 return
 
-            # Always show the live tail (last N rows)
-            total_rows   = len(data)
-            visible_rows = self.plot_window_size  # e.g., 60
-            rows = data[-visible_rows:] if total_rows > 0 else []
-            n_rows = len(rows)
-            if n_rows == 0:
-                return
+            try:
+                # Snapshot shared state; slice history under the lock so we
+                # never copy more rows than we're actually going to use.
+                with shared.write_lock:
+                    run_flag     = shared.run_flag
+                    visible_rows = self.plot_window_size
+                    data         = list(shared.histogram_hmp)[-visible_rows:]
+                    filename     = shared.filename
+                    t_interval   = shared.t_interval
+                    log_switch   = shared.log_switch
+                    epb_switch   = shared.epb_switch
+                    cal_switch   = shared.cal_switch
+                    counts       = shared.counts
+                    elapsed      = shared.elapsed
+                    bins         = shared.bins
+                    coeffs       = [shared.coeff_1, shared.coeff_2, shared.coeff_3]
+                    hist_view    = shared.tab3_hist_view
+                    y_fixed      = shared.tab3_y_fixed
+                    y_max_user   = shared.tab3_ymax
+                    win          = shared.tab3_smooth_win
+                    gps          = shared.gps_hmp[-1] if getattr(shared, "gps_hmp", None) else None
+                    peaks        = list(getattr(shared, "peak_list", []) or [])
 
-
-            # ---------------------------------------------------------
-            # HISTOGRAM VIEW (plot LAST ROW ONLY as a line)
-            # ---------------------------------------------------------
-            if hist_view:
-                # --- take LAST ROW only ---
-                last = rows[-1]
-                y = np.zeros(bins, dtype=float)
-
-                if isinstance(last, (list, tuple)):
-                    rlen = len(last)
-                    if rlen >= bins:
-                        y[:] = last[:bins]
-                    elif rlen > 0:
-                        y[:rlen] = last
-                else:
-                    logger.warning(f"👆 Unexpected last-row type: {type(last)}")
+                if not data or bins <= 0:
+                    logger.warning("👆 Plot data empty or bins <= 0")
                     return
 
-                total_counts = float(np.sum(y))                 # raw sum of counts in this interval
-                cps = total_counts / max(1, int(t_interval))    # counts per second (nice extra)
+                rows   = data
+                n_rows = len(rows)
+                if n_rows == 0:
+                    return
+
+                render_mode = "hist" if hist_view else "waterfall"
+
+                # Only force a full figure/axes/colorbar rebuild when the
+                # render mode changed, the channel count changed, or this
+                # is the very first draw. Everything else is a fast update.
+                needs_full_rebuild = (
+                    self._last_render_mode != render_mode
+                    or self._last_bins != bins
+                    or self._hmp_img is None
+                )
+
+                # ---------------------------------------------------------
+                # HISTOGRAM VIEW (plot LAST ROW ONLY, as a step line)
+                # ---------------------------------------------------------
+                if hist_view:
+                    last = rows[-1]
+                    y = np.zeros(bins, dtype=float)
+
+                    if isinstance(last, (list, tuple)):
+                        rlen = len(last)
+                        if rlen >= bins:
+                            y[:] = last[:bins]
+                        elif rlen > 0:
+                            y[:rlen] = last
+                    else:
+                        logger.warning(f"👆 Unexpected last-row type: {type(last)}")
+                        return
+
+                    total_counts = float(np.sum(y))
+
+                    bin_indices = np.arange(bins)
+                    x_axis = bin_indices.astype(float)
+
+                    if epb_switch:
+                        meanx = np.mean(x_axis)
+                        denom = meanx if meanx != 0 else 1.0
+                        y *= (x_axis / denom)
+
+                    win = int(getattr(shared, "tab3_smooth_win", 21))
+                    if win > 1:
+                        if win % 2 == 0:
+                            win += 1
+                        kernel = np.ones(win, dtype=float) / win
+                        y = np.convolve(y, kernel, mode="same")
+
+                    if log_switch:
+                        y[y <= 0] = 0.1
+                        y = np.log10(y)
+
+                    if cal_switch:
+                        x_axis = coeffs[0] * bin_indices**2 + coeffs[1] * bin_indices + coeffs[2]
+
+                    order  = np.argsort(x_axis)
+                    x_plot = np.asarray(x_axis)[order]
+                    y_plot = np.asarray(y)[order]
+
+                    bar_bottom = (np.log10(0.1) if log_switch else 0.0)
+                    hist_color = (LIGHT_GREEN if getattr(shared, "theme", "dark") != "paper" else "#006600")
+
+                    # Only tear down/rebuild axes on first draw, a view-mode
+                    # switch, or a channel-count change — never every tick.
+                    if needs_full_rebuild:
+                        self.figure.clf()
+                        self.ax = self.figure.add_subplot(111)
+                        self._hmp_img          = None
+                        self._hmp_cbar         = None
+                        self._hist_line        = None
+                        self._hist_fill        = None
+                        self._hist_text        = None
+                        self._hist_roi_artists = []
+
+                    fg = self._style_ax(self.ax)
+                    bg = self.ax.get_facecolor()
+
+                    if self._hist_line is None:
+                        # First draw in hist mode: create the persistent
+                        # line/fill/text artists once.
+                        self._hist_line, = self.ax.step(
+                            x_plot, y_plot, where="mid",
+                            color=hist_color, linewidth=1.4, zorder=2,
+                        )
+                        self._hist_fill = self.ax.fill_between(
+                            x_plot, bar_bottom, y_plot, step="mid",
+                            alpha=0.25, color=hist_color, linewidth=0, zorder=1,
+                        )
+                        self._hist_text = self.ax.text(
+                            0.99, 0.99, "",
+                            transform=self.ax.transAxes,
+                            ha="right", va="top",
+                            fontsize=14, fontweight="bold",
+                            color=fg,
+                            bbox=dict(boxstyle="round,pad=0.3", facecolor=bg, edgecolor=fg, alpha=0.6)
+                        )
+                    else:
+                        # Fast path: update existing artists in place.
+                        self._hist_line.set_data(x_plot, y_plot)
+                        self._hist_line.set_color(hist_color)
+                        self._hist_fill.remove()
+                        self._hist_fill = self.ax.fill_between(
+                            x_plot, bar_bottom, y_plot, step="mid",
+                            alpha=0.25, color=hist_color, linewidth=0, zorder=1,
+                        )
+
+                    self._hist_text.set_text(f"Σ {total_counts:,.0f}")
+
+                    if y_fixed:
+                        if log_switch:
+                            y_max_plot = np.log10(max(0.1, y_max_user))
+                            y_min_plot = np.log10(0.1)
+                        else:
+                            y_max_plot = max(1.0, y_max_user)
+                            y_min_plot = 0.0
+                        self.ax.set_ylim(y_min_plot, y_max_plot)
+                    else:
+                        self.ax.relim()
+                        self.ax.autoscale_view(scalex=True, scaley=True)
+
+                    title = f"Last interval - {filename}"
+                    self.ax.set_title(title, color=fg)
+                    self.ax.set_xlabel("Energy (keV)" if cal_switch else "Bin #", color=fg)
+                    self.ax.set_ylabel("log₁₀(Counts)" if log_switch else "Counts", color=fg)
+
+                    # --- ROI overlay: remove previous, redraw fresh ---
+                    for artist in self._hist_roi_artists:
+                        artist.remove()
+                    self._hist_roi_artists = []
+
+                    def _roi_ranges_from_peaks(peaks, bins):
+                        ranges = []
+                        for pk in (peaks or []):
+                            if not isinstance(pk, dict):
+                                continue
+                            try:
+                                i0 = int(pk.get("i0"))
+                                i1 = int(pk.get("i1"))
+                            except Exception:
+                                continue
+                            if i1 < i0:
+                                i0, i1 = i1, i0
+                            i0 = max(0, min(i0, bins - 1))
+                            i1 = max(0, min(i1, bins - 1))
+                            ranges.append((i0, i1))
+
+                        if not ranges:
+                            return []
+
+                        ranges.sort()
+                        merged = [list(ranges[0])]
+                        for a, b in ranges[1:]:
+                            if a <= merged[-1][1] + 1:
+                                merged[-1][1] = max(merged[-1][1], b)
+                            else:
+                                merged.append([a, b])
+                        return [(int(a), int(b)) for a, b in merged]
+
+                    roi_ranges = _roi_ranges_from_peaks(peaks, bins)
+
+                    if roi_ranges:
+                        for i0, i1 in roi_ranges:
+                            x0 = float(x_axis[i0])
+                            x1 = float(x_axis[i1])
+                            lo, hi = (x0, x1) if x0 <= x1 else (x1, x0)
+                            span = self.ax.axvspan(lo, hi, alpha=0.18, color="yellow", zorder=0)
+                            self._hist_roi_artists.append(span)
+
+                        roi_label = self.ax.text(
+                            0.01, 0.99,
+                            f"ROI: {len(roi_ranges)}",
+                            transform=self.ax.transAxes,
+                            ha="left", va="top",
+                            fontsize=10,
+                            color="yellow",
+                            alpha=0.8
+                        )
+                        self._hist_roi_artists.append(roi_label)
+
+                    self.canvas.draw_idle()
+
+                    self._last_render_mode = "hist"
+                    self._last_bins        = bins
+
+                    if run_flag:
+                        self.counts_display.setText(str(counts))
+                        self.elapsed_display.setText(str(elapsed))
+                    return
+
+                #----- END Histogram plot -----------------------------
+
+                # ---------------------------------------------------------
+                # WATERFALL VIEW (2D heatmap of stacked histograms over time)
+                # ---------------------------------------------------------
+                Z = np.zeros((n_rows, bins), dtype=float)
+                for i, r in enumerate(rows):
+                    if isinstance(r, (list, tuple)):
+                        rlen = len(r)
+                        if rlen >= bins:
+                            Z[i, :] = r[:bins]
+                        elif rlen > 0:
+                            Z[i, :rlen] = r
+                    else:
+                        logger.warning(f"👆 Unexpected row type: {type(r)}")
+                        return
+
+                if Z.ndim != 2 or Z.shape[1] != bins:
+                    logger.error(f"  ❌ Z shape mismatch: {Z.shape}, expected (n_rows, {bins}) ")
+                    return
 
                 bin_indices = np.arange(bins)
-                x_axis = bin_indices.astype(float)
+                x_axis      = bin_indices
 
-                # Energy-per-bin weighting (optional)
                 if epb_switch:
                     meanx = np.mean(x_axis)
                     denom = meanx if meanx != 0 else 1.0
-                    y *= (x_axis / denom)
+                    Z *= (x_axis / denom)[np.newaxis, :]
 
-                # --- Smooth across CHANNELS (x-axis) ---
-
-                win = int(getattr(shared, "tab3_smooth_win", 21))
-                if win > 1:
-                    if win % 2 == 0:
-                        win += 1
-                    kernel = np.ones(win, dtype=float) / win
-                    y = np.convolve(y, kernel, mode="same")
-
-
-                # Log scaling
                 if log_switch:
-                    y[y <= 0] = 0.1
-                    y = np.log10(y)
+                    Z[Z <= 0] = 0.1
+                    Z = np.log10(Z)
 
-                # Calibration for x-axis
                 if cal_switch:
                     x_axis = coeffs[0] * bin_indices**2 + coeffs[1] * bin_indices + coeffs[2]
 
-                # Draw
-                self.figure.clf()
-                self.ax = self.figure.add_subplot(111)
-                fg = self._style_ax(self.ax)
-                bg = self.ax.get_facecolor()
+                tint    = max(1, int(t_interval))
+                y_last  = float(elapsed)
+                y_first = y_last - (n_rows - 1) * tint
+                y_axis  = y_first + np.arange(n_rows) * tint
 
-                self.ax.text(
-                    0.99, 0.99,
-                    f"Σ {total_counts:,.0f}",
-                    transform=self.ax.transAxes,
-                    ha="right", va="top",
-                    fontsize=14, fontweight="bold",
-                    color=fg,
-                    bbox=dict(boxstyle="round,pad=0.3", facecolor=bg, edgecolor=fg, alpha=0.6)
-                )
+                y_min = float(y_axis.min())
+                y_max = float(y_axis.max())
+                if y_min == y_max:
+                    y_min -= 0.5
+                    y_max += 0.5
 
+                z_min = np.nanmin(Z)
+                z_max = np.nanmax(Z)
+                if np.isclose(z_max, z_min):
+                    z_max = z_min + 1e-3
+                if not log_switch:
+                    z_min = min(0, z_min)
 
-                # --- choose a baseline for the fill ---
-                fill_base = (np.log10(0.1) if log_switch else 0.0)
+                self.hmp_plot_title = f"Waterfall - {filename}"
 
-                # --- ensure x is sorted (important if cal_switch ever makes x non-monotonic) ---
-                order = np.argsort(x_axis)
-                x_plot = np.asarray(x_axis)[order]
-                y_plot = np.asarray(y)[order]
+                if needs_full_rebuild:
+                    # Full rebuild only happens on first draw, on a view-mode
+                    # switch, or when the channel count changes — not every tick.
+                    self.figure.clf()
+                    self.ax = self.figure.add_subplot(111, facecolor="#0b1d38")
 
-                # --- fill under the trace + then draw the line on top ---
-                # self.ax.fill_between(
-                #     x_plot, y_plot, fill_base,
-                #     alpha=0.25,
-                #     color=LIGHT_GREEN,
-                #     linewidth=0,
-                #     zorder=1
-                # )
-                # self.ax.plot(
-                #     x_plot, y_plot,
-                #     linewidth=1.2,
-                #     color=LIGHT_GREEN,
-                #     zorder=2
-                # )
-
-                # --- end line plot
-
-                # --- bar histogram ---
-                # Choose bar widths:
-                # - if NOT calibrated: each bin is 1 wide
-                # - if calibrated: estimate local bin widths from x spacing
-                if cal_switch:
-                    # x_plot is sorted; estimate spacing
-                    dx = np.diff(x_plot)
-                    if dx.size:
-                        # Use median spacing as "typical" width; guard against weirdness
-                        w = float(np.median(np.abs(dx)))
-                        if not np.isfinite(w) or w <= 0:
-                            w = 1.0
-                    else:
-                        w = 1.0
-                    bar_width = 0.95 * w
-                else:
-                    bar_width = 1.0
-
-                # Baseline:
-                # - normal counts: baseline = 0
-                # - log counts: baseline = log10(0.1) to match your floor
-                bar_bottom = (np.log10(0.1) if log_switch else 0.0)
-
-                # heights must be relative to bottom if using bottom != 0
-                bar_heights = y_plot - bar_bottom
-
-                self.ax.bar(
-                    x_plot,
-                    bar_heights,
-                    width=bar_width,
-                    bottom=bar_bottom,
-                    align="center",
-                    color=(LIGHT_GREEN if getattr(shared, "theme", "dark") != "paper" else "#006600"),
-                    alpha=1,
-                    edgecolor="none",
-                    zorder=2
-                )
-
-
-                if y_fixed:
-                    if log_switch:
-                        # user enters max in COUNTS, but plot is log10(counts)
-                        y_max_plot = np.log10(max(0.1, y_max_user))
-                        y_min_plot = np.log10(0.1)   # matches your log floor
-                    else:
-                        y_max_plot = max(1.0, y_max_user)
-                        y_min_plot = 0.0
-
-                    self.ax.set_ylim(y_min_plot, y_max_plot)
-                else:
-                    self.ax.relim()
-                    self.ax.autoscale_view(scalex=True, scaley=True)
-
-                title = f"Last interval - {filename}"
-                self.ax.set_title(title, color=fg)
-                self.ax.set_xlabel("Energy (keV)" if cal_switch else "Bin #", color=fg)
-                self.ax.set_ylabel("log₁₀(Counts)" if log_switch else "Counts", color=fg)
-
-                
-                def _roi_ranges_from_peaks(peaks, bins):
-                    ranges = []
-                    for pk in (peaks or []):
-                        if not isinstance(pk, dict):
-                            continue
-                        try:
-                            i0 = int(pk.get("i0"))
-                            i1 = int(pk.get("i1"))
-                        except Exception:
-                            continue
-                        if i1 < i0:
-                            i0, i1 = i1, i0
-                        # clamp to [0, bins-1]
-                        i0 = max(0, min(i0, bins - 1))
-                        i1 = max(0, min(i1, bins - 1))
-                        ranges.append((i0, i1))
-
-                    if not ranges:
-                        return []
-
-                    ranges.sort()
-                    merged = [list(ranges[0])]
-                    for a, b in ranges[1:]:
-                        if a <= merged[-1][1] + 1:
-                            merged[-1][1] = max(merged[-1][1], b)
-                        else:
-                            merged.append([a, b])
-                    return [(int(a), int(b)) for a, b in merged]
-
-
-                # --- ROI overlay (shaded bands) ---
-                # with shared.write_lock:
-                #     peaks = list(getattr(shared, "peak_list", []) or [])
-
-                roi_ranges = _roi_ranges_from_peaks(peaks, bins)
-
-                if roi_ranges:
-                    # pick a visible alpha; keep it subtle
-                    for i0, i1 in roi_ranges:
-                        # map bin endpoints into plot x-units
-                        x0 = float(x_axis[i0])
-                        x1 = float(x_axis[i1])
-                        lo, hi = (x0, x1) if x0 <= x1 else (x1, x0)
-
-                        # shaded vertical span behind the trace
-                        self.ax.axvspan(
-                            lo, hi,
-                            alpha=0.18,
-                            color="yellow",
-                            zorder=0
-                        )
-
-                    # optional: label once
-                    self.ax.text(
-                        0.01, 0.99,
-                        f"ROI: {len(roi_ranges)}",
-                        transform=self.ax.transAxes,
-                        ha="left", va="top",
-                        fontsize=10,
-                        color="yellow",
-                        alpha=0.8
+                    self._hmp_img = self.ax.imshow(
+                        Z,
+                        aspect='auto',
+                        origin='lower',
+                        cmap='turbo',
+                        extent=[float(np.min(x_axis)), float(np.max(x_axis)), y_min, y_max],
+                        vmin=z_min,
+                        vmax=z_max
                     )
 
-                self.canvas.draw()
+                    self._hmp_cbar = self.figure.colorbar(
+                        self._hmp_img, ax=self.ax,
+                        label="log₁₀(Counts)" if log_switch else "Counts"
+                    )
+                    self._hmp_fg = self._style_ax(self.ax, self._hmp_cbar)
 
-                # Update UI readouts
+                    self.ax.set_title(self.hmp_plot_title, color=self._hmp_fg)
+                    self.ax.set_xlabel("Energy (keV)" if cal_switch else "Bin #", color=self._hmp_fg)
+                    self.ax.set_ylabel("Time (s)", color=self._hmp_fg)
+                    self.ax.invert_yaxis()
+
+                else:
+                    # Fast path — push new pixel data into the existing image
+                    # and colorbar instead of rebuilding the whole figure.
+                    self._hmp_img.set_data(Z)
+                    self._hmp_img.set_extent([float(np.min(x_axis)), float(np.max(x_axis)), y_min, y_max])
+                    self._hmp_img.set_clim(z_min, z_max)
+                    self._hmp_cbar.update_normal(self._hmp_img)
+                    self.ax.set_title(self.hmp_plot_title, color=self._hmp_fg)
+
+                self.canvas.draw_idle()
+
+                self._last_render_mode = "waterfall"
+                self._last_bins        = bins
+
                 if run_flag:
                     self.counts_display.setText(str(counts))
                     self.elapsed_display.setText(str(elapsed))
-                return
 
-            #----- END Histogram plot -----------------------------                
+            except Exception as exc:
+                logger.error(f"  ❌ update_graph() error: {exc} ", exc_info=True)
 
-            # Build Z (pad/trim defensively if bins changed)
-            Z = np.zeros((n_rows, bins), dtype=float)
-            for i, r in enumerate(rows):
-                if isinstance(r, (list, tuple)):
-                    rlen = len(r)
-                    if rlen >= bins:
-                        Z[i, :] = r[:bins]
-                    elif rlen > 0:
-                        Z[i, :rlen] = r
-                else:
-                    logger.warning(f"👆 Unexpected row type: {type(r)}")
-                    return
+    # def update_graph(self):
+    #     if not self.ready_to_plot:
+    #         return
 
-            if Z.ndim != 2 or Z.shape[1] != bins:
-                logger.error(f"  ❌ Z shape mismatch: {Z.shape}, expected (n_rows, {bins}) ")
-                return
+    #     try:
+    #         # Snapshot shared state
+    #         with shared.write_lock:
+    #             run_flag     = shared.run_flag
+    #             data         = list(shared.histogram_hmp)
+    #             filename     = shared.filename
+    #             t_interval   = shared.t_interval
+    #             log_switch   = shared.log_switch
+    #             epb_switch   = shared.epb_switch
+    #             cal_switch   = shared.cal_switch
+    #             counts       = shared.counts
+    #             elapsed      = shared.elapsed
+    #             bins         = shared.bins
+    #             coeffs       = [shared.coeff_1, shared.coeff_2, shared.coeff_3]
+    #             hist_view    = shared.tab3_hist_view
+    #             y_fixed      = shared.tab3_y_fixed
+    #             y_max_user   = shared.tab3_ymax
+    #             smooth_on    = shared.tab3_smooth_on
+    #             win          = shared.tab3_smooth_win
+    #             gps = shared.gps_hmp[-1] if getattr(shared, "gps_hmp", None) else None
+    #             peaks = list(getattr(shared, "peak_list", []) or [])
 
-            # Axes mappings
-            bin_indices = np.arange(bins)
-            x_axis      = bin_indices
+               
+    #         # Ensure we have something to display
+    #         if not data or bins <= 0:
+    #             logger.warning("👆 Plot data empty or bins <= 0")
+    #             return
 
-            # Energy-per-bin weighting (apply in bin space)
-            if epb_switch:
-                meanx = np.mean(x_axis)
-                denom = meanx if meanx != 0 else 1.0
-                Z *= (x_axis / denom)[np.newaxis, :]
+    #         # Always show the live tail (last N rows)
+    #         total_rows   = len(data)
+    #         visible_rows = self.plot_window_size  # e.g., 60
+    #         rows = data[-visible_rows:] if total_rows > 0 else []
+    #         n_rows = len(rows)
+    #         if n_rows == 0:
+    #             return
 
-            # Log scaling
-            if log_switch:
-                Z[Z <= 0] = 0.1
-                Z = np.log10(Z)
 
-            # Calibration for x-axis (convert positions to energy)
-            if cal_switch:
-                x_axis = coeffs[0] * bin_indices**2 + coeffs[1] * bin_indices + coeffs[2]
+    #         # ---------------------------------------------------------
+    #         # HISTOGRAM VIEW (plot LAST ROW ONLY as a line)
+    #         # ---------------------------------------------------------
+    #         if hist_view:
+    #             # --- take LAST ROW only ---
+    #             last = rows[-1]
+    #             y = np.zeros(bins, dtype=float)
 
-            # Absolute y-axis in seconds since run start (no lag; last row = elapsed)
-            tint   = max(1, int(t_interval))
-            y_last  = float(elapsed)
-            y_first = y_last - (n_rows - 1) * tint
-            y_axis  = y_first + np.arange(n_rows) * tint
+    #             if isinstance(last, (list, tuple)):
+    #                 rlen = len(last)
+    #                 if rlen >= bins:
+    #                     y[:] = last[:bins]
+    #                 elif rlen > 0:
+    #                     y[:rlen] = last
+    #             else:
+    #                 logger.warning(f"👆 Unexpected last-row type: {type(last)}")
+    #                 return
 
-            # Bounds for imshow extent
-            y_min = float(y_axis.min())
-            y_max = float(y_axis.max())
-            if y_min == y_max:
-                y_min -= 0.5
-                y_max += 0.5
+    #             total_counts = float(np.sum(y))                 # raw sum of counts in this interval
+    #             cps = total_counts / max(1, int(t_interval))    # counts per second (nice extra)
 
-            # Create fresh 2D plot
-            self.figure.clf()
-            self.ax = self.figure.add_subplot(111, facecolor="#0b1d38")  # DARK_BLUE
+    #             bin_indices = np.arange(bins)
+    #             x_axis = bin_indices.astype(float)
 
-            # Compute color limits safely
-            z_min = np.nanmin(Z)
-            z_max = np.nanmax(Z)
-            if np.isclose(z_max, z_min):
-                z_max = z_min + 1e-3
-            if not log_switch:
-                z_min = min(0, z_min)
+    #             # Energy-per-bin weighting (optional)
+    #             if epb_switch:
+    #                 meanx = np.mean(x_axis)
+    #                 denom = meanx if meanx != 0 else 1.0
+    #                 y *= (x_axis / denom)
 
-            # Display the image
-            img = self.ax.imshow(
-                Z,
-                aspect='auto',
-                origin='lower',
-                cmap='turbo',
-                extent=[float(np.min(x_axis)), float(np.max(x_axis)), y_min, y_max],
-                vmin=z_min,
-                vmax=z_max
-            )
+    #             # --- Smooth across CHANNELS (x-axis) ---
 
-            self.hmp_plot_title = f"Waterfall - {filename}"
-            cbar = self.figure.colorbar(img, ax=self.ax, label="log₁₀(Counts)" if log_switch else "Counts")
-            fg   = self._style_ax(self.ax, cbar)
-            self.ax.set_title(self.hmp_plot_title,                              color=fg)
-            self.ax.set_xlabel("Energy (keV)" if cal_switch else "Bin #",       color=fg)
-            self.ax.set_ylabel("Time (s)",                                      color=fg)
+    #             win = int(getattr(shared, "tab3_smooth_win", 21))
+    #             if win > 1:
+    #                 if win % 2 == 0:
+    #                     win += 1
+    #                 kernel = np.ones(win, dtype=float) / win
+    #                 y = np.convolve(y, kernel, mode="same")
 
-            # Scroll upward like a spectrogram
-            self.ax.invert_yaxis()
 
-            self.canvas.draw()
+    #             # Log scaling
+    #             if log_switch:
+    #                 y[y <= 0] = 0.1
+    #                 y = np.log10(y)
 
-            # Update UI readouts
-            if run_flag:
-                self.counts_display.setText(str(counts))
-                self.elapsed_display.setText(str(elapsed))
+    #             # Calibration for x-axis
+    #             if cal_switch:
+    #                 x_axis = coeffs[0] * bin_indices**2 + coeffs[1] * bin_indices + coeffs[2]
 
-        except Exception as exc:
-            logger.error(f"  ❌ update_graph() error: {exc} ", exc_info=True)
+    #             # Draw
+    #             self.figure.clf()
+    #             self.ax = self.figure.add_subplot(111)
+    #             fg = self._style_ax(self.ax)
+    #             bg = self.ax.get_facecolor()
+
+    #             self.ax.text(
+    #                 0.99, 0.99,
+    #                 f"Σ {total_counts:,.0f}",
+    #                 transform=self.ax.transAxes,
+    #                 ha="right", va="top",
+    #                 fontsize=14, fontweight="bold",
+    #                 color=fg,
+    #                 bbox=dict(boxstyle="round,pad=0.3", facecolor=bg, edgecolor=fg, alpha=0.6)
+    #             )
+
+
+    #             # --- choose a baseline for the fill ---
+    #             fill_base = (np.log10(0.1) if log_switch else 0.0)
+
+    #             # --- ensure x is sorted (important if cal_switch ever makes x non-monotonic) ---
+    #             order = np.argsort(x_axis)
+    #             x_plot = np.asarray(x_axis)[order]
+    #             y_plot = np.asarray(y)[order]
+
+    #             # --- fill under the trace + then draw the line on top ---
+    #             # self.ax.fill_between(
+    #             #     x_plot, y_plot, fill_base,
+    #             #     alpha=0.25,
+    #             #     color=LIGHT_GREEN,
+    #             #     linewidth=0,
+    #             #     zorder=1
+    #             # )
+    #             # self.ax.plot(
+    #             #     x_plot, y_plot,
+    #             #     linewidth=1.2,
+    #             #     color=LIGHT_GREEN,
+    #             #     zorder=2
+    #             # )
+
+    #             # --- end line plot
+
+    #             # --- bar histogram ---
+    #             # Choose bar widths:
+    #             # - if NOT calibrated: each bin is 1 wide
+    #             # - if calibrated: estimate local bin widths from x spacing
+    #             if cal_switch:
+    #                 # x_plot is sorted; estimate spacing
+    #                 dx = np.diff(x_plot)
+    #                 if dx.size:
+    #                     # Use median spacing as "typical" width; guard against weirdness
+    #                     w = float(np.median(np.abs(dx)))
+    #                     if not np.isfinite(w) or w <= 0:
+    #                         w = 1.0
+    #                 else:
+    #                     w = 1.0
+    #                 bar_width = 0.95 * w
+    #             else:
+    #                 bar_width = 1.0
+
+    #             # Baseline:
+    #             # - normal counts: baseline = 0
+    #             # - log counts: baseline = log10(0.1) to match your floor
+    #             bar_bottom = (np.log10(0.1) if log_switch else 0.0)
+
+    #             # heights must be relative to bottom if using bottom != 0
+    #             bar_heights = y_plot - bar_bottom
+
+    #             self.ax.bar(
+    #                 x_plot,
+    #                 bar_heights,
+    #                 width=bar_width,
+    #                 bottom=bar_bottom,
+    #                 align="center",
+    #                 color=(LIGHT_GREEN if getattr(shared, "theme", "dark") != "paper" else "#006600"),
+    #                 alpha=1,
+    #                 edgecolor="none",
+    #                 zorder=2
+    #             )
+
+
+    #             if y_fixed:
+    #                 if log_switch:
+    #                     # user enters max in COUNTS, but plot is log10(counts)
+    #                     y_max_plot = np.log10(max(0.1, y_max_user))
+    #                     y_min_plot = np.log10(0.1)   # matches your log floor
+    #                 else:
+    #                     y_max_plot = max(1.0, y_max_user)
+    #                     y_min_plot = 0.0
+
+    #                 self.ax.set_ylim(y_min_plot, y_max_plot)
+    #             else:
+    #                 self.ax.relim()
+    #                 self.ax.autoscale_view(scalex=True, scaley=True)
+
+    #             title = f"Last interval - {filename}"
+    #             self.ax.set_title(title, color=fg)
+    #             self.ax.set_xlabel("Energy (keV)" if cal_switch else "Bin #", color=fg)
+    #             self.ax.set_ylabel("log₁₀(Counts)" if log_switch else "Counts", color=fg)
+
+                
+    #             def _roi_ranges_from_peaks(peaks, bins):
+    #                 ranges = []
+    #                 for pk in (peaks or []):
+    #                     if not isinstance(pk, dict):
+    #                         continue
+    #                     try:
+    #                         i0 = int(pk.get("i0"))
+    #                         i1 = int(pk.get("i1"))
+    #                     except Exception:
+    #                         continue
+    #                     if i1 < i0:
+    #                         i0, i1 = i1, i0
+    #                     # clamp to [0, bins-1]
+    #                     i0 = max(0, min(i0, bins - 1))
+    #                     i1 = max(0, min(i1, bins - 1))
+    #                     ranges.append((i0, i1))
+
+    #                 if not ranges:
+    #                     return []
+
+    #                 ranges.sort()
+    #                 merged = [list(ranges[0])]
+    #                 for a, b in ranges[1:]:
+    #                     if a <= merged[-1][1] + 1:
+    #                         merged[-1][1] = max(merged[-1][1], b)
+    #                     else:
+    #                         merged.append([a, b])
+    #                 return [(int(a), int(b)) for a, b in merged]
+
+
+    #             # --- ROI overlay (shaded bands) ---
+    #             # with shared.write_lock:
+    #             #     peaks = list(getattr(shared, "peak_list", []) or [])
+
+    #             roi_ranges = _roi_ranges_from_peaks(peaks, bins)
+
+    #             if roi_ranges:
+    #                 # pick a visible alpha; keep it subtle
+    #                 for i0, i1 in roi_ranges:
+    #                     # map bin endpoints into plot x-units
+    #                     x0 = float(x_axis[i0])
+    #                     x1 = float(x_axis[i1])
+    #                     lo, hi = (x0, x1) if x0 <= x1 else (x1, x0)
+
+    #                     # shaded vertical span behind the trace
+    #                     self.ax.axvspan(
+    #                         lo, hi,
+    #                         alpha=0.18,
+    #                         color="yellow",
+    #                         zorder=0
+    #                     )
+
+    #                 # optional: label once
+    #                 self.ax.text(
+    #                     0.01, 0.99,
+    #                     f"ROI: {len(roi_ranges)}",
+    #                     transform=self.ax.transAxes,
+    #                     ha="left", va="top",
+    #                     fontsize=10,
+    #                     color="yellow",
+    #                     alpha=0.8
+    #                 )
+
+    #             self.canvas.draw()
+
+    #             # Update UI readouts
+    #             if run_flag:
+    #                 self.counts_display.setText(str(counts))
+    #                 self.elapsed_display.setText(str(elapsed))
+    #             return
+
+    #         #----- END Histogram plot -----------------------------                
+
+    #         # Build Z (pad/trim defensively if bins changed)
+    #         Z = np.zeros((n_rows, bins), dtype=float)
+    #         for i, r in enumerate(rows):
+    #             if isinstance(r, (list, tuple)):
+    #                 rlen = len(r)
+    #                 if rlen >= bins:
+    #                     Z[i, :] = r[:bins]
+    #                 elif rlen > 0:
+    #                     Z[i, :rlen] = r
+    #             else:
+    #                 logger.warning(f"👆 Unexpected row type: {type(r)}")
+    #                 return
+
+    #         if Z.ndim != 2 or Z.shape[1] != bins:
+    #             logger.error(f"  ❌ Z shape mismatch: {Z.shape}, expected (n_rows, {bins}) ")
+    #             return
+
+    #         # Axes mappings
+    #         bin_indices = np.arange(bins)
+    #         x_axis      = bin_indices
+
+    #         # Energy-per-bin weighting (apply in bin space)
+    #         if epb_switch:
+    #             meanx = np.mean(x_axis)
+    #             denom = meanx if meanx != 0 else 1.0
+    #             Z *= (x_axis / denom)[np.newaxis, :]
+
+    #         # Log scaling
+    #         if log_switch:
+    #             Z[Z <= 0] = 0.1
+    #             Z = np.log10(Z)
+
+    #         # Calibration for x-axis (convert positions to energy)
+    #         if cal_switch:
+    #             x_axis = coeffs[0] * bin_indices**2 + coeffs[1] * bin_indices + coeffs[2]
+
+    #         # Absolute y-axis in seconds since run start (no lag; last row = elapsed)
+    #         tint   = max(1, int(t_interval))
+    #         y_last  = float(elapsed)
+    #         y_first = y_last - (n_rows - 1) * tint
+    #         y_axis  = y_first + np.arange(n_rows) * tint
+
+    #         # Bounds for imshow extent
+    #         y_min = float(y_axis.min())
+    #         y_max = float(y_axis.max())
+    #         if y_min == y_max:
+    #             y_min -= 0.5
+    #             y_max += 0.5
+
+    #         # Create fresh 2D plot
+    #         self.figure.clf()
+    #         self.ax = self.figure.add_subplot(111, facecolor="#0b1d38")  # DARK_BLUE
+
+    #         # Compute color limits safely
+    #         z_min = np.nanmin(Z)
+    #         z_max = np.nanmax(Z)
+    #         if np.isclose(z_max, z_min):
+    #             z_max = z_min + 1e-3
+    #         if not log_switch:
+    #             z_min = min(0, z_min)
+
+    #         # Display the image
+    #         img = self.ax.imshow(
+    #             Z,
+    #             aspect='auto',
+    #             origin='lower',
+    #             cmap='turbo',
+    #             extent=[float(np.min(x_axis)), float(np.max(x_axis)), y_min, y_max],
+    #             vmin=z_min,
+    #             vmax=z_max
+    #         )
+
+    #         self.hmp_plot_title = f"Waterfall - {filename}"
+    #         cbar = self.figure.colorbar(img, ax=self.ax, label="log₁₀(Counts)" if log_switch else "Counts")
+    #         fg   = self._style_ax(self.ax, cbar)
+    #         self.ax.set_title(self.hmp_plot_title,                              color=fg)
+    #         self.ax.set_xlabel("Energy (keV)" if cal_switch else "Bin #",       color=fg)
+    #         self.ax.set_ylabel("Time (s)",                                      color=fg)
+
+    #         # Scroll upward like a spectrogram
+    #         self.ax.invert_yaxis()
+
+    #         self.canvas.draw()
+
+    #         # Update UI readouts
+    #         if run_flag:
+    #             self.counts_display.setText(str(counts))
+    #             self.elapsed_display.setText(str(elapsed))
+
+    #     except Exception as exc:
+    #         logger.error(f"  ❌ update_graph() error: {exc} ", exc_info=True)
 
     def _load_full_hmp_from_json(self, path: Path):
         """
