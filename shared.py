@@ -36,7 +36,7 @@ teensy_serial    = None
 
 # --------------------
 # Versioning
-__version__ = "3.2.8.0"
+__version__ = "3.2.9.0"
 # --------------------
 
 SETTINGS = {}  
