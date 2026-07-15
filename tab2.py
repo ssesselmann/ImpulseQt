@@ -428,7 +428,7 @@ class Tab2(QWidget):
         # Col 1 Row 3 
         self.max_counts_input = QLineEdit(str(int(max_counts)))
         self.max_counts_input.setAlignment(Qt.AlignCenter)
-        self.max_counts_input.setValidator(QIntValidator(0, 99999999))
+        self.max_counts_input.setValidator(QIntValidator(0, 2147483647))
         self.max_counts_input.textChanged.connect(lambda text: self.on_text_changed(text, "max_counts"))
         grid.addWidget(self.labeled_input("Stop at counts.", self.max_counts_input), 2, 0)
 
@@ -453,7 +453,7 @@ class Tab2(QWidget):
         # Col 2 Row 3
         self.max_seconds_input = QLineEdit(str(int(max_seconds)))
         self.max_seconds_input.setAlignment(Qt.AlignCenter)
-        self.max_seconds_input.setValidator(QIntValidator(0, 99999999))  
+        self.max_seconds_input.setValidator(QIntValidator(0, 2147483647))  
         self.max_seconds_input.textChanged.connect(lambda text: self.on_text_changed(text, "max_seconds"))
         grid.addWidget(self.labeled_input("Stop at seconds", self.max_seconds_input), 2, 1)
 
