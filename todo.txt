@@ -1,6 +1,14 @@
 ImpulseQt
 ---------
 
+Impulse v3.2.9.0
+–––––––––––––––––––––––––––––
+• Critical Bug fix GS-MAX to packet drop  🐞
+
+Impulse v3.2.8.0
+–––––––––––––––––––––––––––––
+• Critical Bug fix GS-MAX to packet drop  🐞
+
 Impulse v3.2.7.0
 –––––––––––––––––––––––––––––
 • Fixed crash during long recordings ⚠️
