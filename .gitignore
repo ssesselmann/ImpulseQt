@@ -10,6 +10,10 @@ MSIX/*
 stage/*
 unpacked/*
 
+.venv/
+__pycache__/
+*.egg-info/
+
 shproto/__pycache__/*
 shproto/.DS_Store/*
 assets/.DS_Store/*
