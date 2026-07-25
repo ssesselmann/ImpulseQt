@@ -8,8 +8,10 @@ import json
 import platform
 import datetime
 import logging
-import appnope
-appnope.nope()
+
+if platform.system() == "Darwin":
+    import appnope
+    appnope.nope()
 
 from tab1 import Tab1
 from tab2 import Tab2

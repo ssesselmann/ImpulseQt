@@ -40,7 +40,26 @@ Your feedback is appreciated, it shapes future versions!
 
 ### **Installing**
 
-You **don’t need Python installed**. ImpulseQt comes bundled as a standalone executable that includes everything it needs to run.
+On **Windows** and **macOS** you **don’t need Python installed**. ImpulseQt comes bundled as a standalone executable that includes everything it needs to run.
+
+On **Linux**, run it from source with [uv](https://docs.astral.sh/uv/):
+
+```sh
+uv run ImpulseQt.py
+```
+
+`uv` reads `pyproject.toml`/`uv.lock`, creates a `.venv`, installs the pinned dependencies (PySide6, numpy, scipy, PyAudio, etc.) and launches the app. PyAudio needs PortAudio's headers/library to build; on Debian/Ubuntu install them first with `sudo apt install portaudio19-dev`, on Fedora `sudo dnf install portaudio-devel`.
+
+#### NixOS
+
+Manylinux wheels (PySide6's Qt6 plugins, PyAudio's PortAudio binding) expect shared libraries in standard FHS paths that don't exist on NixOS. This repo ships a `flake.nix` that provides an FHS-compatible dev shell with `uv` and all the required runtime libraries (Qt6/xcb, OpenGL, ALSA/PortAudio, etc.):
+
+```sh
+nix develop
+uv run ImpulseQt.py
+```
+
+`nix develop` drops you into a sandboxed shell that looks like a normal FHS Linux distro to `uv` and the wheels it installs — no manual `LD_LIBRARY_PATH` wrangling needed.
 
 On first launch, it creates a folder:
 

@@ -1,0 +1,37 @@
+[project]
+name = "impulseqt"
+version = "3.2.9.0"
+description = "ImpulseQt — Multi-Channel Analyzer GUI for gamma spectrometry (GammaSpectacular)"
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+license = { text = "MIT" }
+
+dependencies = [
+    "numpy<2",
+    "matplotlib==3.10.3",
+    "pandas==2.2.3",
+    "scipy==1.15.2",
+    "pyqtgraph==0.13.7",
+    "requests==2.32.3",
+    "pyserial==3.5",
+    "PySide6==6.7.2",
+    "PyAudio==0.2.14",
+    "appnope==0.1.4; sys_platform == 'darwin'",
+]
+
+[project.optional-dependencies]
+# Extra tooling needed only when producing a macOS .app bundle with py2app.
+mac-build = [
+    "py2app==0.28.6",
+    "pyobjc-core==10.3.2",
+    "pyobjc-framework-Cocoa==10.3.2",
+    "pyobjc-framework-CoreBluetooth==10.3.2",
+    "pyobjc-framework-libdispatch==10.3.2",
+]
+# Extra tooling needed only when producing a Windows executable/MSIX with PyInstaller.
+pc-build = [
+    "pyinstaller==6.14.0",
+]
+
+[tool.uv]
+package = false
