@@ -5,7 +5,7 @@ import shproto.port  # Importing a module named 'port' from a package named 'shp
 SHPROTO_START = 0xFE  # Start of packet
 SHPROTO_ESC = 0xFD    # Escape character
 SHPROTO_FINISH = 0xA5  # End of packet
-BUFFER_SIZE = 4096    # Maximum buffer size
+BUFFER_SIZE = 65536    # Maximum buffer size
 
 # Define constant values for different modes
 MODE_HISTOGRAM = 0x01
@@ -190,9 +190,11 @@ class packet:
         # ------------------------------------------------------
         # Protect against a malformed oversized packet
         # ------------------------------------------------------
+        # Protect against a malformed oversized packet
         if self.len >= BUFFER_SIZE:
-            self.clear()
             self.dropped = 1
+            self.in_packet = False
+            self.saw_ff = False
             return
 
         # First byte after the start marker is the command.
