@@ -184,6 +184,48 @@ class Tab2(QWidget):
     def __init__(self):
         super().__init__()
 
+        # Initialise comparison state and take one consistent settings snapshot
+        with shared.write_lock:
+            # Comparisons are loaded manually only
+            shared.histogram_2 = []
+            shared.bins_2      = 0
+            shared.counts_2    = 0
+            shared.elapsed_2   = 0
+            shared.filename_2  = ""
+            shared.isotope_key = ""
+            shared.comp_switch = False
+
+            if not hasattr(shared, "cal_points"):
+                shared.cal_points = {}
+
+            stored = dict(shared.cal_points)
+
+            device_type      = shared.device_type
+            max_counts       = shared.max_counts
+            max_seconds      = shared.max_seconds
+            filename         = shared.filename
+            filename_2       = shared.filename_2
+            bin_size         = shared.bin_size
+            bins             = shared.bins
+            compression      = shared.compression
+            threshold        = shared.threshold
+            tolerance        = shared.tolerance
+            comp_switch      = shared.comp_switch
+            diff_switch      = shared.diff_switch
+            coi_switch       = shared.coi_switch
+            epb_switch       = shared.epb_switch
+            log_switch       = shared.log_switch
+            cal_switch       = shared.cal_switch
+            linearity_switch = shared.linearity_switch
+            sigma             = shared.sigma
+            peakfinder        = shared.peakfinder
+            coeff_1           = shared.coeff_1
+            coeff_2           = shared.coeff_2
+            coeff_3           = shared.coeff_3
+            spec_notes        = shared.spec_notes
+            slb_switch        = shared.slb_switch
+            t_interval        = shared.t_interval
+
         tab2_layout = QVBoxLayout()
 
         positive_int_validator = QIntValidator(1, 2147483647)  
@@ -193,27 +235,18 @@ class Tab2(QWidget):
 
         # === Plot ===
         
-        self.process_thread = None
-        self.has_loaded     = False
-        self.filename_2     = ""
-
-        if shared.filename_2:
-            load_histogram_2(shared.filename_2)
-
-        if shared.isotope_key:
-            generate_synthetic_histogram(shared.isotope_key)
-            # self.comp_switch.setText(f"Show {shared.isotope_key}")    
-
+        self.process_thread     = None
+        self.has_loaded         = False
+        self.filename_2         = ""
         self._linearity_enabled = False
         self._linearity_curve   = None
         self._cal_pairs         = []
-
         # ---- Title Setup ----
-        self.plot_title_left  = QLabel("")
+        self.plot_title_left    = QLabel("")
         self.plot_title_left.setProperty("typo", "p2")
         self.plot_title_left.setAlignment(Qt.AlignLeft)
 
-        self.plot_title_right = QLabel("Histogram")
+        self.plot_title_right   = QLabel("Histogram")
         self.plot_title_right.setProperty("typo", "p2")
         self.plot_title_right.setAlignment(Qt.AlignRight)
 
@@ -222,8 +255,6 @@ class Tab2(QWidget):
         title_bar.addWidget(self.plot_title_right)
 
         # --- Create the PlotWidget first ----------
-        with shared.write_lock:
-            bins = shared.bins
         self.plot_widget = FixedRangePlotWidget()
         self.plot_widget.setMouseEnabled(x=True, y=False)
         self.plot_widget.enableAutoRange('x', False)
@@ -310,12 +341,6 @@ class Tab2(QWidget):
         self._updating_table = False
         self.roi_table.itemChanged.connect(self._on_roi_item_changed)
 
-        # Load any previously stored calibration points from shared
-        with shared.write_lock:
-            if not hasattr(shared, "cal_points"):
-                shared.cal_points = {}
-            stored = dict(shared.cal_points)
-
         # Local copy as {uid: keV}
         for uid, keV in stored.items():
             try:
@@ -331,30 +356,21 @@ class Tab2(QWidget):
         self.btn_auto_roi.clicked.connect(self._on_auto_roi_clicked)
         self.btn_clear_roi.clicked.connect(self._on_clear_rois_clicked)
         self.btn_download_roi.clicked.connect(self.on_download_roi_clicked)
-
-
         # holds ROI widgets mapped by uid
         self._peak_regions = {}     # uid -> LinearRegionItem
         self._roi_uid_counter = 0
-
 
         #---- END ROI stuff ---------------------------------------
 
         plot_container = QWidget()
         plot_container.setLayout(plot_layout)
-
         tab2_layout.addWidget(plot_container)
 
         # Appearance / labels
         self.plot_widget.setLabel('left', 'Counts')
 
         # --- Curves (add main first, then others) -----------------
-        #apply_plot_theme(self.plot_widget)
-
         self.plot_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-
-        # # curve step — use your color constants
-        # theme = getattr(shared, "theme", "dark")
 
         # --- Curves ---
         _t = plot_theme_colors()
@@ -385,33 +401,6 @@ class Tab2(QWidget):
 
         for i in range(9):
             grid.setColumnStretch(i, 1)
-
-        with shared.write_lock:
-            device_type = shared.device_type
-            max_counts  = shared.max_counts
-            max_seconds = shared.max_seconds
-            filename    = shared.filename
-            filename_2  = shared.filename_2
-            bin_size    = shared.bin_size
-            bins        = shared.bins
-            compression = shared.compression
-            threshold   = shared.threshold
-            tolerance   = shared.tolerance 
-            comp_switch = shared.comp_switch
-            diff_switch = shared.diff_switch
-            coi_switch  = shared.coi_switch
-            epb_switch  = shared.epb_switch
-            log_switch  = shared.log_switch
-            cal_switch  = shared.cal_switch
-            linearity_switch = shared.linearity_switch
-            sigma       = shared.sigma
-            peakfinder  = shared.peakfinder
-            coeff_1     = shared.coeff_1
-            coeff_2     = shared.coeff_2
-            coeff_3     = shared.coeff_3
-            spec_notes  = shared.spec_notes
-            slb_switch  = shared.slb_switch
-            t_interval  = shared.t_interval
 
         # Col 1 Row 1 --------------------------------------------------------------------------
         self.start_button = QPushButton("START")
@@ -692,14 +681,21 @@ class Tab2(QWidget):
         self.select_flag_table.setProperty("typo", "p2")
         self.select_flag_table.currentIndexChanged.connect(self.on_select_isotope_table_changed)
 
-        # Initial populate
-        options = get_isotope_options() 
-        for opt in options:
-            self.select_flag_table.addItem(opt['label'], opt['value'])
+        # Populate without triggering the handler
+        self.select_flag_table.blockSignals(True)
 
-        # Set first item by default (if list not empty)
+        options = get_isotope_options()
+
+        for opt in options:
+            self.select_flag_table.addItem(opt["label"], opt["value"])
+
         if self.select_flag_table.count() > 0:
             self.select_flag_table.setCurrentIndex(0)
+
+        self.select_flag_table.blockSignals(False)
+
+        # Now deliberately load once
+        if self.select_flag_table.count() > 0:
             self.on_select_isotope_table_changed(0)
 
         # Add to layout
@@ -852,7 +848,7 @@ class Tab2(QWidget):
         try:
             db = _load_isotope_db()
         except Exception as e:
-            logger.error(f"  ❌ on_library_clicked: could not load isotope db: {e}")
+            logger.error(f"   ❌ on_library_clicked: could not load isotope db: {e}")
             return
 
         dialog = QDialog(self)
@@ -1449,6 +1445,7 @@ class Tab2(QWidget):
             return
 
         fname = self.select_flag_table.itemData(index)
+        logger.info("Selected isotope filename: %r", fname)
         self.current_isotope_file = fname
         flag_path = Path(shared.LIB_DIR) / fname
 
@@ -2354,7 +2351,20 @@ class Tab2(QWidget):
         x_vals2     = self.calibrate_spectrum(x_vals2,     comp_coeff_abc, cal_switch) if x_vals2 else []
         x_vals_corr = self.calibrate_spectrum(x_vals_corr, coeff_abc,      cal_switch) if x_vals_corr else []
 
-
+        if epb_switch:
+            if cal_switch:
+                self.plot_widget.setLabel(
+                    "left",
+                    "keV × counts"
+                )
+            else:
+                self.plot_widget.setLabel(
+                    "left",
+                    "channel × counts"
+                )
+        else:
+            self.plot_widget.setLabel("left", "Counts")
+        
         # EPB (display only) — linear space
         if epb_switch:
             y_vals  = [y * x for x, y in zip(x_vals,  y_vals)]
