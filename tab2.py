@@ -2483,9 +2483,10 @@ class Tab2(QWidget):
         if log_switch:
             self.hist_curve.setFillLevel(None)
             self.hist_curve.setBrush(None)
-            # Keep red fill on Gaussian curve in log mode — it renders fine
+            # Keep red fill on Gaussian curve in log mode
+            # Use 0.1 as fill anchor (avoids log(0) = -inf issue)
             _t = plot_theme_colors()
-            self.gauss_curve.setFillLevel(0)
+            self.gauss_curve.setFillLevel(0.1)
             self.gauss_curve.setBrush(_t["gauss_brush"])
         else:
             _t = plot_theme_colors()
