@@ -155,11 +155,11 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
 
                 # Process the pulse as normal
                 normalised = normalise_pulse(samples)
-                distortion = distortion(normalised, left_shape)
+                dist = distortion(normalised, left_shape)
 
-                if distortion > tolerance:
+                if dist > tolerance:
                     dropped_counts += 1
-                elif distortion < tolerance:
+                elif dist < tolerance:
                     bin_index = int(height) // bin_size #drift bug was here
                     if bin_index < bins:
                         full_histogram[bin_index] += 1
