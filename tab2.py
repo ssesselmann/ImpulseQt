@@ -2478,6 +2478,11 @@ class Tab2(QWidget):
             self.plot_widget.setXRange(0, bins - 1, padding=0)
 
         # 4) Toggle log transform LAST so it picks up the just-set data
+        # In log mode, fillLevel=0 is undefined (log(0)=-inf) so the fill disappears below 1.
+        # Set fillLevel to the log floor (0.5) in log mode, 0 in linear mode.
+        fill_level = 0.5 if log_switch else 0
+        self.hist_curve.setFillLevel(fill_level)
+        self.gauss_curve.setFillLevel(fill_level)
         self.plot_widget.setLogMode(x=False, y=log_switch)
 
         # Optional: nudge autorange to recompute with the new transform
