@@ -33,7 +33,7 @@ def plot_theme_colors():
             "hist_brush": (0, 0, 0, 50),
             "comp_pen": pg.mkPen("#cc3333", width=2),
             "gauss_pen": pg.mkPen("#cc0000", width=2),
-            "gauss_brush": (180, 0, 0, 40),
+            "gauss_brush": (180, 0, 0, 180),
             "crosshair_pen": pg.mkPen("k", width=1),
             "marker": "#000000",
             "roi_brush": (100, 0, 200, 50),
