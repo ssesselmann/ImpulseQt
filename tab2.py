@@ -2478,6 +2478,19 @@ class Tab2(QWidget):
             self.plot_widget.setXRange(0, bins - 1, padding=0)
 
         # 4) Toggle log transform LAST so it picks up the just-set data
+        # In log mode, disable fill — log(0) is undefined so filled step plots break below 1.
+        # Show line only in log mode; restore fill in linear mode.
+        if log_switch:
+            self.hist_curve.setFillLevel(None)
+            self.hist_curve.setBrush(None)
+            self.gauss_curve.setFillLevel(None)
+            self.gauss_curve.setBrush(None)
+        else:
+            _t = plot_theme_colors()
+            self.hist_curve.setFillLevel(0)
+            self.hist_curve.setBrush(_t["hist_brush"])
+            self.gauss_curve.setFillLevel(0)
+            self.gauss_curve.setBrush(_t["gauss_brush"])
         self.plot_widget.setLogMode(x=False, y=log_switch)
 
         # Optional: nudge autorange to recompute with the new transform
