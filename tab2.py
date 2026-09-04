@@ -140,6 +140,11 @@ class Tab2(QWidget):
             for line in region.lines:
                 line.setPen(theme["roi_pen"])
                 line.setHoverPen(theme["roi_hover_pen"])
+        if getattr(self, "_linearity_curve", None) is not None:
+            lin_color = theme.get("marker", "#ffffff")
+            self._linearity_curve.setPen(pg.mkPen(lin_color, width=1))
+            self._linearity_curve.setSymbolPen(pg.mkPen(lin_color))
+            self._linearity_curve.setSymbolBrush(pg.mkBrush(lin_color))
 
     def labeled_input(self, label_text, widget):
         label = QLabel(label_text)
@@ -2567,12 +2572,16 @@ class Tab2(QWidget):
 
         # Create or update the overlay curve
         if getattr(self, "_linearity_curve", None) is None:
+            theme = plot_theme_colors()
+            lin_color = theme.get("marker", "#ffffff")
             self._linearity_curve = self.plot_widget.plot(
                 x_overlay,
                 y_overlay,
-                pen=pg.mkPen('w', width=1),   # yellow-ish on dark blue
+                pen=pg.mkPen(lin_color, width=1),
                 symbol="o",
                 symbolSize=6,
+                symbolPen=pg.mkPen(lin_color),
+                symbolBrush=pg.mkBrush(lin_color),
             )
             self._linearity_curve.setZValue(11)  # above hist_curve (10)
         else:
