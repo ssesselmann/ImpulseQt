@@ -1,5 +1,7 @@
 # tab1_max.py
-import functions as fn
+from def_utils import resource_path, allowed_command
+from def_devices import get_serial_device_list, generate_device_settings_table_data
+from def_acquisition import start_max_oscilloscope, stop_max_pulse_check, start_max_pulse
 import time
 import shared
 import serial
@@ -123,7 +125,7 @@ class Tab1MaxWidget(QWidget):
 
         # Impulse Logo
         logo = QLabel(alignment=Qt.AlignCenter); logo.setStyleSheet("padding:10px;")
-        logo.setPixmap(QPixmap(fn.resource_path("assets/impulse.gif")).scaledToHeight(80, Qt.SmoothTransformation))
+        logo.setPixmap(QPixmap(resource_path("assets/impulse.gif")).scaledToHeight(80, Qt.SmoothTransformation))
         left_layout.addWidget(logo)
 
         content_layout.addWidget(left_column, 1)
@@ -187,7 +189,7 @@ class Tab1MaxWidget(QWidget):
         self.port_selector.clear()
         self.port_selector.setPlaceholderText("Select serial device")
 
-        opts = [{"label": label, "value": port_str} for label, port_str in fn.get_serial_device_list()]
+        opts = [{"label": label, "value": port_str} for label, port_str in get_serial_device_list()]
         for o in opts:
             self.port_selector.addItem(o["label"], o["value"])
 
@@ -301,7 +303,7 @@ class Tab1MaxWidget(QWidget):
             return
 
         # 3) Validate command (unless override)
-        if (not is_override) and (not fn.allowed_command(cmd)):
+        if (not is_override) and (not allowed_command(cmd)):
             self.serial_status.setText("Caution !! (+ to override)")
             return
 
@@ -317,7 +319,7 @@ class Tab1MaxWidget(QWidget):
 
 
     def update_device_info_table(self):
-        rows, tco_pairs = fn.generate_device_settings_table_data()
+        rows, tco_pairs = generate_device_settings_table_data()
 
         self.device_info_table.setRowCount(len(rows))
         self.device_info_table.setColumnCount(3)
@@ -347,19 +349,19 @@ class Tab1MaxWidget(QWidget):
         return "\n".join([header, sep] + rows)
 
     def start_max_oscilloscope_check(self):
-        fn.start_max_oscilloscope()
+        start_max_oscilloscope()
         self.current_max_mode = 1
         self.pulse_timer.start()
 
     def start_max_pulse_check(self):
-        fn.stop_max_pulse_check()
+        stop_max_pulse_check()
         time.sleep(0.2)
-        fn.start_max_pulse()
+        start_max_pulse()
         self.current_max_mode = 2
         self.pulse_timer.start()
 
     def stop_max_pulse_check(self):
-        fn.stop_max_pulse_check()
+        stop_max_pulse_check()
         self.current_max_mode = 0
         self.pulse_timer.stop()
 
@@ -445,3 +447,4 @@ class Tab1MaxWidget(QWidget):
         self.ax.set_ylabel("Amplitude")
 
         self.canvas.draw()
+

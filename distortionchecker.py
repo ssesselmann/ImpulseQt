@@ -1,7 +1,7 @@
 import pyaudio
 import wave
 import logging
-import functions as fn
+from def_analysis import normalise_pulse, distortion
 import shared
 import time
 
@@ -82,16 +82,16 @@ def distortion_finder(stereo):
                 if count_left < shapecatches:
                     left_samples = [flip_left * x for x in left_channel[i:i + sample_length]]
                     if abs(left_samples[peak]) > threshold:
-                        norm = fn.normalise_pulse(left_samples)
-                        dist = fn.distortion(norm, left_shape)
+                        norm = normalise_pulse(left_samples)
+                        dist = distortion(norm, left_shape)
                         distortion_left.append(dist)
                         count_left += 1
 
                 if stereo and count_right < shapecatches:
                     right_samples = [flip_right * x for x in right_channel[i:i + sample_length]]
                     if abs(right_samples[peak]) > threshold:
-                        norm = fn.normalise_pulse(right_samples)
-                        dist = fn.distortion(norm, right_shape)
+                        norm = normalise_pulse(right_samples)
+                        dist = distortion(norm, right_shape)
                         distortion_right.append(dist)
                         count_right += 1
 

@@ -20,7 +20,8 @@ import serial
 import serial.tools.list_ports
 import time
 import shared
-import functions as fn
+from def_devices import get_serial_device_list
+from def_utils import resource_path
 
 from qt_compat import (
     QComboBox, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
@@ -339,7 +340,7 @@ class Tab1TeensyWidget(QWidget):
         self.port_selector.clear()
         self.port_selector.setPlaceholderText("Select Teensy port")
 
-        for label, port_str in fn.get_serial_device_list():
+        for label, port_str in get_serial_device_list():
             self.port_selector.addItem(label, port_str)
 
         selected = False

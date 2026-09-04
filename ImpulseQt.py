@@ -8,8 +8,11 @@ import json
 import platform
 import datetime
 import logging
-import appnope
-appnope.nope()
+# appnope prevents macOS from sleeping during acquisition (macOS only)
+import platform
+if platform.system() == "Darwin":
+    import appnope
+    appnope.nope()
 
 from tab1 import Tab1
 from tab2 import Tab2
@@ -44,7 +47,7 @@ from qss import GLOBAL_QSS
 from status_bar_handler import StatusBarHandler
 from feedback_popup import FeedbackPopup
 from send_feedback import send_feedback_email
-from functions import resource_path
+from def_utils import resource_path
 
 from shared import logger, USER_DATA_DIR, BASE_DIR, ICON_PATH
 

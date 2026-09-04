@@ -5,7 +5,8 @@ from threading import Event
 
 import pyqtgraph as pg
 
-import functions as fn
+from def_devices import get_device_list
+from def_utils import resource_path
 import shared
 from shared import logger, WHITE, LIGHT_GREEN, PINK, DARK_BLUE
 
@@ -39,7 +40,7 @@ class Tab1ProWidget(QWidget):
         # --- Selection Controls
         self.device_selector = QComboBox()
 
-        device_list = fn.get_device_list()  # [(name, index), ...
+        device_list = get_device_list()  # [(name, index), ...
 
         # Add device name as display, index as userData
         for name, index in device_list:
@@ -248,7 +249,7 @@ class Tab1ProWidget(QWidget):
         logo_label = QLabel()
         logo_label.setAlignment(Qt.AlignCenter)
         logo_label.setStyleSheet("padding: 10px;")
-        logo_path = fn.resource_path("assets/impulse.gif")
+        logo_path = resource_path("assets/impulse.gif")
         pixmap = QPixmap(logo_path)
         scaled_pixmap = pixmap.scaledToHeight(100, Qt.SmoothTransformation)
         logo_label.setPixmap(scaled_pixmap)

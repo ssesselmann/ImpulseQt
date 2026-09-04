@@ -32,20 +32,10 @@ from qt_compat import QDoubleValidator
 from qt_compat import QDialog
 from qt_compat import QApplication
 
-from functions import (
-    start_recording, 
-    stop_recording, 
-    load_histogram, 
-    load_histogram_2, 
-    load_histogram_csv,
-    gaussian_correl,
-    peak_finder,
-    get_isotope_options,
-    resource_path,
-    sanitize_for_log,
-    generate_synthetic_histogram,
-    update_calibration_in_json
-    )
+from def_acquisition import start_recording, stop_recording
+from def_io import load_histogram, load_histogram_2, load_histogram_csv, update_calibration_in_json
+from def_analysis import gaussian_correl, peak_finder, get_isotope_options, generate_synthetic_histogram
+from def_utils import resource_path, sanitize_for_log
 
 from shared import logger, MONO, FOOTER, DLD_DIR, USER_DATA_DIR, BIN_OPTIONS, LIGHT_GREEN, PINK, RED, WHITE, DARK_BLUE, ICON_PATH
 from pathlib import Path
@@ -150,6 +140,11 @@ class Tab2(QWidget):
             for line in region.lines:
                 line.setPen(theme["roi_pen"])
                 line.setHoverPen(theme["roi_hover_pen"])
+        if getattr(self, "_linearity_curve", None) is not None:
+            lin_color = theme.get("marker", "#ffffff")
+            self._linearity_curve.setPen(pg.mkPen(lin_color, width=1))
+            self._linearity_curve.setSymbolPen(pg.mkPen(lin_color))
+            self._linearity_curve.setSymbolBrush(pg.mkBrush(lin_color))
 
     def labeled_input(self, label_text, widget):
         label = QLabel(label_text)
@@ -843,7 +838,7 @@ class Tab2(QWidget):
 
     
     def on_library_clicked(self):
-        from functions import _load_isotope_db
+        from def_analysis import _load_isotope_db
 
         try:
             db = _load_isotope_db()
@@ -2483,6 +2478,21 @@ class Tab2(QWidget):
             self.plot_widget.setXRange(0, bins - 1, padding=0)
 
         # 4) Toggle log transform LAST so it picks up the just-set data
+        # In log mode, disable fill — log(0) is undefined so filled step plots break below 1.
+        # Show line only in log mode; restore fill in linear mode.
+        if log_switch:
+            self.hist_curve.setFillLevel(None)
+            self.hist_curve.setBrush(None)
+            # Keep red fill on Gaussian curve in log mode — it renders fine
+            _t = plot_theme_colors()
+            self.gauss_curve.setFillLevel(0)
+            self.gauss_curve.setBrush(_t["gauss_brush"])
+        else:
+            _t = plot_theme_colors()
+            self.hist_curve.setFillLevel(0)
+            self.hist_curve.setBrush(_t["hist_brush"])
+            self.gauss_curve.setFillLevel(0)
+            self.gauss_curve.setBrush(_t["gauss_brush"])
         self.plot_widget.setLogMode(x=False, y=log_switch)
 
         # Optional: nudge autorange to recompute with the new transform
@@ -2577,12 +2587,16 @@ class Tab2(QWidget):
 
         # Create or update the overlay curve
         if getattr(self, "_linearity_curve", None) is None:
+            theme = plot_theme_colors()
+            lin_color = theme.get("marker", "#ffffff")
             self._linearity_curve = self.plot_widget.plot(
                 x_overlay,
                 y_overlay,
-                pen=pg.mkPen('w', width=1),   # yellow-ish on dark blue
+                pen=pg.mkPen(lin_color, width=1),
                 symbol="o",
                 symbolSize=6,
+                symbolPen=pg.mkPen(lin_color),
+                symbolBrush=pg.mkBrush(lin_color),
             )
             self._linearity_curve.setZValue(11)  # above hist_curve (10)
         else:
