@@ -2,10 +2,7 @@
 
 import pandas as pd
 import pyaudio
-import webbrowser
-import wave
 import numpy as np
-import subprocess
 import math
 import csv
 import json
@@ -16,10 +13,8 @@ import sys
 import platform
 import threading
 import queue
-import sqlite3 as sql
 import logging
 import glob
-import requests as req
 import shproto.dispatcher
 import serial.tools.list_ports
 import shared
@@ -49,21 +44,6 @@ def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and PyInstaller """
     base_path = getattr(sys, '_MEIPASS', os.path.abspath("."))
     return os.path.join(base_path, relative_path)
-
-# Finds pulses in string of data over a given threshold
-def find_pulses(left_channel):
-
-    pulses = []
-
-    for i in range(len(left_channel) - 51):
-        samples = left_channel[i:i + 51]  # Get the first 51 samples
-        if samples[25] >= max(samples) and (max(samples) - min(samples)) > 100 and samples[25] < 32768:
-            pulses.append(samples)
-    return pulses
-
-# Calculates the average pulse shape
-def average_pulse(sum_pulse, count):
-    return [x / count for x in sum_pulse]
 
 # Normalizes the average pulse shape
 def normalise_pulse(average):
@@ -98,22 +78,6 @@ def distortion(normalised, shape):
 # Function calculates pulse height
 def pulse_height(samples):
     return max(samples) - min(samples)
-
-# Function to create bin_array
-def create_bin_array(start, stop, bin_size):
-    return np.arange(start, stop, bin_size)
-
-def histogram_count(n, bins):
-    for i in range(len(bins)):
-        if n < bins[i]:
-            return i
-    return len(bins)
-
-# Function to bin pulse height
-def update_bin(n, bins, bin_counts):
-    bin_num = histogram_count(n, bins)
-    bin_counts[bin_num] += 1
-    return bin_counts
 
 def update_calibration_in_json(filename, coeff_1, coeff_2, coeff_3):
     """Update only the calibration coefficients in an existing JSON file."""
@@ -274,28 +238,6 @@ def update_mode_3_data(
 
     return interval_counter, last_histogram  
 
-# Clears global counts per second list
-def clear_global_cps_list():
-    with shared.write_lock:
-        shared.counts          = 0
-        shared.count_history   = []
-        shared.count_history_saved_index = 0
-        shared.dropped_counts  = 0
-
-
-# Function extracts keys from dictionary
-def extract_keys(dict_, keys):
-    return {k: dict_.get(k, None) for k in keys}
-
-# This function terminates the audio connection
-def refresh_audio_device_list():
-    try:
-        p = pyaudio.PyAudio()
-        p.terminate()
-        time.sleep(0.01)
-    except:
-        pass
-
 # Function to query settings database
 def get_device_number():
     
@@ -364,36 +306,6 @@ def get_device_list():
 
     return out
 
-def _com_sort_key(dev: str) -> int:
-    m = re.match(r"^COM(\d+)$", (dev or "").upper().strip())
-    return int(m.group(1)) if m else 10**9
-
-
-
-# Returns maxInputChannels in an unordered list
-def get_max_input_channels(device):
-    p = pyaudio.PyAudio()
-    channels = p.get_device_info_by_index(device)['maxInputChannels']
-    return channels
-
-# Function to open browser on localhost
-def open_browser(port):
-    webbrowser.open_new("http://localhost:{}".format(port))
-
-def create_dummy_csv(filepath):
-    with open(filepath, mode='w', newline='') as csv_file:
-        writer = csv.writer(csv_file)
-        for i in range(50):
-            writer.writerow([i, 0, 0])
-
-# Function to automatically switch between positive and negative pulses
-def detect_pulse_direction(samples):
-    if max(samples) >= 3000:
-        return 1
-    if min(samples) <= -3000:
-        return -1
-    return 0
-
 def get_path(filename):
     name, ext = os.path.splitext(filename)
     if platform.system() == "Darwin":
@@ -401,13 +313,6 @@ def get_path(filename):
         file = os.path.join(bundle_dir, f"{name}{ext}")
         return file if os.path.exists(file) else os.path.realpath(filename)
     return os.path.realpath(filename)
-
-def restart_program():
-    subprocess.Popen(['python', 'app.py'])
-
-def shutdown():
-    logger.info("   ✅ fn Shutting down server")
-    os._exit(0)
 
 def rolling_average(data, window_size):
     return np.convolve(data, np.ones(window_size)/window_size, mode='valid')
@@ -758,51 +663,6 @@ def stop_recording():
 
 
 
-# clear variables
-def clear_shared(mode):
-
-    if mode == 2:
-        with shared.write_lock:
-            shared.count_history   = []
-            shared.counts          = 0
-            shared.cps             = 0
-            shared.elapsed         = 0
-            shared.dropped_counts  = 0
-            shared.histogram       = [0] * shared.bins
-            shared.spec_notes      = ""
-
-        logger.info(f"   ✅ fn Data cleared mode({mode}) ")    
-
-    if mode == 3:
-
-        with shared.write_lock:
-            file_path = os.path.join(shared.USER_DATA_DIR, f'{shared.filename}_hmp.json')
-
-        try:
-            if os.path.exists(file_path):
-                os.remove(file_path)
-                logger.info(f"   ✅ fn Deleting: {file_path} ")
-
-            else:
-                logger.warning(f"👆 fn File does not exist: {file_path}")
-
-        except Exception as e:
-
-            logger.error(f"  ❌ fn Deleting: {file_path}: {e}")
-
-        
-        with shared.write_lock:
-            shared.count_history   = []
-            shared.counts          = 0
-            shared.cps             = 0
-            shared.elapsed         = 0
-            shared.dropped_counts  = 0
-            shared.histogram_hmp    = []
-
-        logger.info(f"   ✅ fn Cleared data mode({mode})")  
-
-    return
-
 def get_unique_filename(directory, filename):
     """
     Generate a unique filename by appending (1), (2), etc., if the file already exists.
@@ -816,41 +676,6 @@ def get_unique_filename(directory, filename):
         counter += 1
 
     return new_filename
-
-def export_csv(filename, data_directory, calib_switch):
-    download_folder = os.path.expanduser("~/Downloads")
-    output_file = get_unique_filename(download_folder, f'{filename}.csv')
-
-    try:
-        with open(os.path.join(data_directory, f'{filename}.json')) as f:
-            data = json.load(f)
-    except FileNotFoundError:
-        logger.error(f"  ❌ fn {filename}.json not found in {data_directory} ")
-        return
-
-    if data.get("schemaVersion") == "NPESv2":
-        data = data["data"][0]
-
-    try:
-        spectrum = data["resultData"]["energySpectrum"]["spectrum"]
-        coefficients = data["resultData"]["energySpectrum"]["energyCalibration"]["coefficients"]
-    except KeyError:
-        logger.error(f"  ❌ fn Missing expected keys in {filename}.json ")
-        return
-
-    # Ensure the download folder exists
-    os.makedirs(download_folder, exist_ok=True)
-
-    # Write data to CSV
-    with open(os.path.join(download_folder, output_file), "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["energy", "counts"])
-        for i, value in enumerate(spectrum):
-            if calib_switch:
-                energy = round((i ** coefficients[2] + i * coefficients[1] + coefficients[0]), 2)
-            else:
-                energy = i
-            writer.writerow([energy, value])
 
 def load_histogram_csv(filepath):
     """Load a spectrum CSV (Bin,Counts) and return histogram as a list."""
@@ -866,100 +691,6 @@ def load_histogram_csv(filepath):
         logger.error(f"  ❌ fn load_histogram_csv: {e}")
         return []
     return histogram
-
-# removes the path from serial device list Mac only
-def cleanup_serial_options(options):
-    prefix_to_remove = '/dev/cu.usbserial-'
-    for item in options:
-        if 'label' in item and item['label'].startswith(prefix_to_remove):
-            item['label'] = 'Serial # ' + item['label'][len(prefix_to_remove):]
-    return options
-
-import json
-import os
-
-def get_api_key():
-    with shared.write_lock:
-        data_directory = shared.DATA_DIR
-    try:
-        user_file_path = get_path(f'{data_directory}/_user.json')
-        if not os.path.exists(user_file_path):
-            logger.error(f"  ❌ fn User file not found: {user_file_path} ")
-            return None
-
-        with open(user_file_path, 'r') as file:
-            user_data = json.load(file)
-        api_key = user_data.get('api_key', None)
-        return api_key
-
-    except Exception as e:
-        logger.error(f"  ❌ fn code/functions/get_api_key() failed: {e} ")
-
-        return None
-
-def publish_spectrum(filename):
-
-    with shared.write_lock:
-        data_directory = shared.DATA_DIR
-        
-    logger.info(f"   ✅ fn functions.publish_spectrum {filename} ")
-
-    url = "https://gammaspectacular.com/spectra/publish_spectrum"
-    api_key = get_api_key()
-    logger.info(f"  ✅ fn Api key obtained {api_key}")
-
-    spectrum_file_path = f'{data_directory}/{filename}.json'
-    try:
-        with open(spectrum_file_path, 'rb') as file:
-            files = {'file': (filename, file)}
-            data = {'api_key': api_key}
-            response = req.post(url, files=files, data=data)
-            if response.status_code == 200:
-                logger.info(f"   ✅ fn {filename} Published ok ")
-                return f'{filename}\npublished:\n{response}'
-            else:
-                logger.error(f"  ❌ fn {response.text} ")
-
-                return f'Error from /code/functions/publish_spectrum: {response.text}'
-    except req.exceptions.RequestException as e:
-        logger.error(f"  ❌ fn publish failed {e}")
-
-        return f'code/functions/publish_spectrum: {e}'
-    except FileNotFoundError:
-        logger.error(f"  ❌ fn publish_spectrum: {spectrum_file_path} ")
-
-        return f"error from /code/functions/publish_spectrum: {spectrum_file_path}"
-
-    except Exception as e:
-        logger.error(f"  ❌ fn from /code/functions/publish_spectrum: {e} ")
-        return f'Error from /code/functions/publish_spectrum: {e}'
-
-def get_spec_notes(filename):
-    try:
-        filename = Path(filename).stem
-        path = get_path(os.path.join(USER_DATA_DIR, f"{filename}.json"))
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        if data.get("schemaVersion") == "NPESv2":
-            data = data["data"][0]
-
-        return data.get("sampleInfo", {}).get("note", "")
-    except Exception:
-        return "Not writing"
-
-
-def fetch_json(file_id):
-    url = f'https://www.gammaspectacular.com/spectra/files/{file_id}.json'
-    try:
-        response = req.get(url)
-        response.raise_for_status()
-        if response.status_code == 200:
-            return response.json()
-        return None
-    except req.exceptions.RequestException as e:
-        logger.error(f"  ❌ fn fetching JSON: {e} ")
-        return None
 
 # Check for dangerous commands
 
@@ -1089,68 +820,6 @@ def get_filename_options(kind="user"):
     return files
 
 
-def get_filename_2_options():
-
-    def is_valid(filename: str) -> bool:
-        excluded = ["_cps.json", "-cps.json", "_hmp.json", "_settings.json", "_user.json"]
-        return filename.endswith(".json") and not any(filename.endswith(sfx) for sfx in excluded)
-
-    def make_option(file_path: Path, base_dir: Path, prefix: str = "", dot_prefix: bool = False):
-        try:
-            rel = file_path.relative_to(base_dir)
-        except ValueError:
-            rel = file_path.name
-        name = Path(rel).stem
-        label = ("• " if dot_prefix else "") + name
-        value = f"{prefix}{rel}".replace("\\", "/")
-        return {'label': label, 'value': value, 'sort_key': name.lower()}
-
-    # --- User files at USER_DATA_DIR root ---
-    user_files = [
-        make_option(f, shared.USER_DATA_DIR)
-        for f in shared.USER_DATA_DIR.glob("*.json")
-        if is_valid(f.name)
-    ]
-    user_files.sort(key=lambda x: x['sort_key'])
-
-    # --- Isotope lookup entries from /lib/isotopes.json ---
-    iso_options = []
-    try:
-        iso_json_path = shared.USER_DATA_DIR / "lib" / "isotopes.json"
-        if not iso_json_path.exists():
-            # Fallbacks: allow an app-shipped asset or an explicit path in shared
-            candidate = getattr(shared, "ISOTOPES_JSON", None)
-            if candidate:
-                iso_json_path = Path(candidate)
-            else:
-                iso_json_path = Path(__file__).resolve().parent / "assets" / "isotopes.json"
-
-        data = json.loads(iso_json_path.read_text(encoding="utf-8"))
-        # Keys are isotope ids (e.g., "cs137"); prefer optional display if present
-        for key, item in data.items():
-            display = (item.get("display") or key).strip()
-            iso_options.append({
-                'label': f"• {display}",
-                'value': f"lib/{key}",           # special value so loader can detect “isotope lookup”
-                'sort_key': display.lower()
-            })
-        iso_options.sort(key=lambda x: x['sort_key'])
-    except Exception as e:
-        logger.info(f"   ✅ fn No isotopes.json found or failed to load: {e}")
-        iso_options = []
-
-    # Remove sort keys
-    for it in user_files + iso_options:
-        it.pop('sort_key', None)
-
-    # Combine with a separator if both present
-    combined = list(user_files)
-    if user_files and iso_options:
-        combined.append({'label': '───────', 'value': '', 'disabled': True})
-    combined += iso_options
-
-    return combined
-
 def get_options_hmp():
     with shared.write_lock:
         data_directory = shared.USER_DATA_DIR
@@ -1166,39 +835,6 @@ def get_options_hmp():
         file['label'] = file['label'].replace('_hmp.json', '')
         file['value'] = file['value'].replace('_hmp.json', '')
     return options_sorted
-
-# Calibrates the x-axis of the Gaussian correlation
-def calibrate_gc(gc, coefficients):
-    channels = np.arange(len(gc))
-    x_values = np.polyval(coefficients, channels)
-    gc_calibrated = list(zip(x_values, gc))
-    return gc_calibrated
-                
-
-# Finds the peaks in gc (Gaussian correlation)
-def find_peaks_in_gc(gc, sigma):
-    width = sigma * 2
-    peaks, _ = find_peaks(gc, width=width)
-    return peaks
-
-# Finds matching isotopes in the JSON data file
-def matching_isotopes(x_calibrated, data, width):
-    matches = {}
-    for idx, (x, y) in enumerate(x_calibrated):
-        if y > 4:  # Threshold for significant peaks
-            matched_isotopes = [
-                isotope for isotope in data if abs(isotope['energy'] - x) <= width
-            ]
-            if matched_isotopes:
-                matches[idx] = (x, y, matched_isotopes)
-    return matches
-
-def reset_stores():
-    return {
-        'store_count_history': [],
-        'store_load_flag_tab3': False,
-        'store_load_flag_tab4': False,
-    }
 
 def load_histogram(filename):
 
