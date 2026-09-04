@@ -1,6 +1,6 @@
 from qt_compat import QWidget, QLabel, QVBoxLayout, QTextBrowser
 from shared import __version__, DATA_DIR, USER_DATA_DIR, SETTINGS_FILE, LIB_DIR, LOG_DIR, DLD_DIR
-from functions import resource_path
+from def_utils import resource_path
 import base64
 
 
