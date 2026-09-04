@@ -1257,7 +1257,6 @@ def load_histogram_2(filename):
             shared.histogram_2     = result["spectrum"]
             shared.bins_2          = result["numberOfChannels"]
             shared.elapsed_2       = result["measurementTime"]
-            # Coefficients inverted from NPES format [c3, c2, c1] → [c1, c2, c3]
             shared.comp_coeff_1    = coeffs[2]
             shared.comp_coeff_2    = coeffs[1]
             shared.comp_coeff_3    = coeffs[0]
@@ -1272,7 +1271,7 @@ def load_histogram_2(filename):
 
     except Exception as e:
         
-        logger.info(f"  ❌ fn failed loading comparison {filename}: {e} ")
+        logger.info(f"   ❌ fn failed loading comparison {filename}: {e} ")
 
         return False
 
@@ -1450,19 +1449,20 @@ def start_max_pulse():
 
 def start_max_oscilloscope():
     try:
-        time.sleep(0.1)
-        process_03('-mode 1')  # Switch to pulse mode
+        process_03("-sto")
         time.sleep(0.3)
-        process_03('-sta')     # Start process
-        time.sleep(0.1)
-    except Exception as e:
-        logger.error(f"  ❌ fn process_03 command: {e} ")
-        return True  # Signal that the interval should remain disabled
 
-    if not stop_thread.is_set():  # Check if the thread is already running
-        stop_thread.clear()  # Ensure the thread is ready to run
-        threading.Thread(target=capture_pulse_data, daemon=True).start()
-        return False  # Signal that the interval should be enabled        
+        process_03("-mode 1")
+        time.sleep(0.3)
+
+        process_03("-sta")
+        time.sleep(0.1)
+
+        return False
+
+    except Exception as e:
+        logger.error("❌ Oscilloscope start failed: %s", e)
+        return True     
   
 def stop_max_pulse_check():
     try:
@@ -1505,6 +1505,7 @@ def get_isotope_options():
         files.sort(key=lambda p: p.stem.casefold())
 
         for f in files:
+            logger.info("Isotope file found: %r", f.name)
             label = f.stem.replace('-', ' ').replace('_', ' ').title()
             options.append({'label': label, 'value': f.name})
     except Exception as e:
@@ -1752,7 +1753,7 @@ def generate_synthetic_histogram(isotope_key: str, include_xray: bool = False) -
             shared.bins_2        = bins
             shared.elapsed_2     = 0
             shared.counts_2      = int(sum(spec2))  # == TARGET_COUNTS
-            shared.filename_2    = f"• {key}"
+            shared.filename_2    = key
 
             # NPES order [c0,c1,c2]; your fields map as comp_coeff_1=c1, _2=c2, _3=c0
             shared.comp_coeff_1  = 0.0
