@@ -32,20 +32,10 @@ from qt_compat import QDoubleValidator
 from qt_compat import QDialog
 from qt_compat import QApplication
 
-from functions import (
-    start_recording, 
-    stop_recording, 
-    load_histogram, 
-    load_histogram_2, 
-    load_histogram_csv,
-    gaussian_correl,
-    peak_finder,
-    get_isotope_options,
-    resource_path,
-    sanitize_for_log,
-    generate_synthetic_histogram,
-    update_calibration_in_json
-    )
+from def_acquisition import start_recording, stop_recording
+from def_io import load_histogram, load_histogram_2, load_histogram_csv, update_calibration_in_json
+from def_analysis import gaussian_correl, peak_finder, get_isotope_options, generate_synthetic_histogram
+from def_utils import resource_path, sanitize_for_log
 
 from shared import logger, MONO, FOOTER, DLD_DIR, USER_DATA_DIR, BIN_OPTIONS, LIGHT_GREEN, PINK, RED, WHITE, DARK_BLUE, ICON_PATH
 from pathlib import Path
@@ -843,7 +833,7 @@ class Tab2(QWidget):
 
     
     def on_library_clicked(self):
-        from functions import _load_isotope_db
+        from def_analysis import _load_isotope_db
 
         try:
             db = _load_isotope_db()

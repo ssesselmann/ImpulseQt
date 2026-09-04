@@ -10,7 +10,8 @@ import logging
 import queue
 import shared
 import struct
-import functions as fn
+from def_analysis import normalise_pulse, distortion, pulse_height
+from def_acquisition import update_mode_3_data
 import gps_main  # at top of file is better, but ok here for first test
 import save
 
@@ -135,7 +136,7 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
             for i in range(len(right_channel) - sample_length):
                 samples = right_channel[i:i + sample_length]
                 samples = [flip_right * x for x in samples]
-                height = fn.pulse_height(samples)
+                height = pulse_height(samples)
                 if samples[peak] == max(samples) and abs(height) > right_threshold and samples[peak] < 32768:
                     right_pulses.append((i + peak, height))
 
@@ -144,7 +145,7 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
         samples = [flip_left * x for x in samples]
         
         for i in range(len(left_channel) - sample_length):
-            height = fn.pulse_height(samples)
+            height = pulse_height(samples)
             if samples[peak] == max(samples) and abs(height) > threshold and samples[peak] < 32768:
                 # Optimize coincident pulse check by using binary search or range filter
                 if mode == 4:
@@ -153,8 +154,8 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
                         continue  # Skip if no coincident pulse found
 
                 # Process the pulse as normal
-                normalised = fn.normalise_pulse(samples)
-                distortion = fn.distortion(normalised, left_shape)
+                normalised = normalise_pulse(samples)
+                distortion = distortion(normalised, left_shape)
 
                 if distortion > tolerance:
                     dropped_counts += 1
@@ -187,7 +188,7 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
                     shared.histogram    = full_histogram.copy()  
                 shared.count_history.append(counts_per_sec)
 
-            interval_counter, last_histogram = fn.update_mode_3_data(
+            interval_counter, last_histogram = update_mode_3_data(
                 mode, shared, full_histogram, last_histogram,
                 hmp_buffer, interval_counter, t_interval, bins,
                 time_this_save, save_queue,

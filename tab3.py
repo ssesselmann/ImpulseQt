@@ -51,15 +51,10 @@ from matplotlib import cm
 from datetime import datetime, timedelta
 from collections import deque 
 from shared import logger, MONO, START, STOP, BTN, BUD, FOOTER, DLD_DIR, USER_DATA_DIR, BIN_OPTIONS, DARK_BLUE, ICON_PATH, LIGHT_GREEN
-from functions import (
-    load_histogram_hmp, 
-    get_options_hmp, 
-    start_recording, 
-    stop_recording, 
-    format_date, 
-    get_device_number,
-    resource_path
-)
+from def_acquisition import start_recording, stop_recording
+from def_io import load_histogram_hmp
+from def_utils import get_options_hmp, format_date, resource_path
+from def_devices import get_device_number
 
 class Tab3(QWidget):
     def __init__(self):

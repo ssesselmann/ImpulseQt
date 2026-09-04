@@ -47,7 +47,7 @@ from qss import GLOBAL_QSS
 from status_bar_handler import StatusBarHandler
 from feedback_popup import FeedbackPopup
 from send_feedback import send_feedback_email
-from functions import resource_path
+from def_utils import resource_path
 
 from shared import logger, USER_DATA_DIR, BASE_DIR, ICON_PATH
 
