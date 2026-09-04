@@ -232,8 +232,7 @@ def start(sn=None):
 
     csv_file_path = os.path.join(USER_DATA_DIR, "_max-pulse-shape.csv")  # hoisted for safety
 
-    noted_timeout = False
-    byte_misses = 0
+    packet_drop = 0
 
     _last_loop_mark = time.perf_counter()   
 
@@ -247,8 +246,6 @@ def start(sn=None):
             with shproto.dispatcher.command_lock:
                 local_cmd = shproto.dispatcher.command
                 shproto.dispatcher.command = ""
-
-            logger.info(f"   ✅ Dispatched command: {local_cmd!r} ")
 
             # Local host timers (still forward to device too; remove if device handles them)
             if   local_cmd == "-sta": _elapsed_start()
@@ -347,7 +344,7 @@ def start(sn=None):
 
                 logger.warning(
                     "⚠️ CRC failure: type=%s cmd=0x%02X dropped_for_cmd=%d "
-                    "dropped_total=%d",
+                    "dropped_total=%d raw_bytes=%d",
                     packet_name,
                     cmd,
                     shproto.dispatcher.dropped_by_cmd[cmd],
@@ -456,7 +453,7 @@ def start(sn=None):
 
 
             # ===========================================================================
-            # MODE_HISTOGRAM
+            # MODE_HISTOGRAM (-mode 0)
             # ===========================================================================
             elif response.cmd == shproto.MODE_HISTOGRAM:
                 shproto.dispatcher.pkts01 += 1
@@ -518,7 +515,7 @@ def start(sn=None):
 
 
             # ===========================================================================
-            # MODE_PULSE
+            # MODE_PULSE (-mode 2)
             # ===========================================================================
             elif response.cmd == shproto.MODE_PULSE:
                 pulse_data = []
@@ -584,14 +581,7 @@ def start(sn=None):
 
                     # Only log abnormal STAT timing
                     if dt <= 0 or dt > 2.0:
-                        logger.warning(
-                            "STAT anomaly: raw=%d curr=%.3f prev=%.3f dt=%.3f delta=%d",
-                            total_time_raw,
-                            curr_tt,
-                            prev_tt,
-                            dt,
-                            shproto.dispatcher._hist_delta_since_stat,
-                        )
+                        logger.warning("⚠️ STAT anomaly")
 
                     if dt <= 0:
                         dt = 1.0  # safety fallback
@@ -599,14 +589,8 @@ def start(sn=None):
                     cps_int = int(round(shproto.dispatcher._hist_delta_since_stat / dt))
 
                     if shproto.dispatcher._histogram_cov_count < 8192:
-                        logger.warning(
-                            " ⚠️ INCOMPLETE FRAME at STAT: covered=%d/8192 delta=%d dt=%.3f cps=%d dropped_total=%d",
-                            shproto.dispatcher._histogram_cov_count,
-                            shproto.dispatcher._hist_delta_since_stat,
-                            dt,
-                            cps_int,
-                            shproto.dispatcher.dropped,
-                        )
+                        packet_drop += 1
+                        logger.warning("⚠️ Packet drops: %d", packet_drop)
 
 
                     with shared.write_lock:
@@ -931,12 +915,7 @@ def process_03(cmd):
     ensure_running()
 
     with shproto.dispatcher.command_lock:
-
         shproto.dispatcher.command = cmd
-
-    logger.info(f"   📨 Queued command: {cmd!r}")
-
-
 
 def clear():
 
