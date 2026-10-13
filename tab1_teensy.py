@@ -63,6 +63,7 @@ class Tab1TeensyWidget(QWidget):
         self._osc_buf      = []         # last complete pulse for plotting
         self._osc_pulse    = []         # assembles one pulse at a time
         self._osc_ceiling  = 3000       # updated from Teensy ceiling value
+        self._osc_lld      = 0           # updated from Teensy LLD value
         self._pulse_capture_pending = False
 
         # Connect cross-thread signals to UI slots
@@ -535,6 +536,8 @@ class Tab1TeensyWidget(QWidget):
                 self._osc_ceiling = int(parts[0])
                 self._osc_lld = int(parts[1])
                 self._osc_pulse.append(int(parts[2]))
+                if len(self._osc_pulse) == 1:
+                    logger.info(f"   ✅ Teensy osc: ceiling={self._osc_ceiling} lld={self._osc_lld}")
 
             elif self.current_mode == 2 and len(parts) == 3:
                 self._osc_pulse.append((
