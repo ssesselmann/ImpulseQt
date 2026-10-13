@@ -577,7 +577,9 @@ class Tab1TeensyWidget(QWidget):
             if self.current_mode == 1:
                 # Pulse mode: ceiling, trigger, sample
                 self._osc_ceiling = int(parts[0])
-                self._osc_lld = int(parts[1])
+                stream_lld = int(parts[1])
+                if stream_lld > 0:          # only update if firmware sends a real value
+                    self._osc_lld = stream_lld
                 self._osc_pulse.append(int(parts[2]))
                 if len(self._osc_pulse) == 1:
                     logger.info(f"   ✅ Teensy osc: ceiling={self._osc_ceiling} lld={self._osc_lld}")
