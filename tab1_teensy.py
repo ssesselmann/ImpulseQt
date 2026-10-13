@@ -749,9 +749,13 @@ class Tab1TeensyWidget(QWidget):
                 markeredgecolor= "black",
                 markersize     = 4,
             )
-            self.ax.set_ylim(-100, self._osc_ceiling)
+            self.ax.set_ylim(-self._osc_ceiling, self._osc_ceiling)
             if self._osc_lld > 0:
-                self.ax.axhline(y=self._osc_lld, color="orange", linewidth=0.8, linestyle="--", label="LLD")
+                # Shaded dead zone between -lld and +lld — pulses must exceed this absolute threshold
+                self.ax.axhspan(-self._osc_lld, self._osc_lld,
+                                alpha=0.15, color="orange", label=f"LLD ±{self._osc_lld}")
+                self.ax.axhline(y= self._osc_lld, color="orange", linewidth=0.8, linestyle="--")
+                self.ax.axhline(y=-self._osc_lld, color="orange", linewidth=0.8, linestyle="--")
             self.ax.legend()
 
         elif self.current_mode == 2:
