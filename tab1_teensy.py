@@ -749,8 +749,8 @@ class Tab1TeensyWidget(QWidget):
                 markeredgecolor= "black",
                 markersize     = 4,
             )
-            self.ax.set_ylim(-100, self._osc_ceiling)
-            if self._osc_lld > 0:
+            self.ax.set_ylim(-self._osc_ceiling, self._osc_ceiling)
+            if self._osc_lld != 0:
                 self.ax.axhline(y=self._osc_lld, color="orange", linewidth=0.8, linestyle="--", label="LLD")
             self.ax.legend()
 

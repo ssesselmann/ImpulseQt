@@ -251,6 +251,7 @@ class Tab2(QWidget):
 
         # --- Create the PlotWidget first ----------
         self.plot_widget = FixedRangePlotWidget()
+        self.plot_widget.getAxis("bottom").setTickDensity(2.0)
         self.plot_widget.setMouseEnabled(x=True, y=False)
         self.plot_widget.enableAutoRange('x', False)
         self.plot_widget.setXRange(0, bins - 1, padding=0)

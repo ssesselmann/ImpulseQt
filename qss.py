@@ -36,8 +36,8 @@ def plot_theme_colors():
             "gauss_brush": (180, 0, 0, 180),
             "crosshair_pen": pg.mkPen("k", width=1),
             "marker": "#000000",
-            "roi_brush": (100, 0, 200, 50),
-            "roi_pen": pg.mkPen("#6600cc", width=1.5),
+            "roi_brush": (255, 255, 0, 50),
+            "roi_pen": pg.mkPen("#FFA305", width=1.5),
             "roi_hover_pen": pg.mkPen("#220044", width=2),
         }
     else:
