@@ -218,24 +218,6 @@ class Tab1TeensyWidget(QWidget):
         ppu_row.addWidget(ppu_send_btn)
         mid_layout.addLayout(ppu_row)
 
-        # LLD display threshold — user sets this to match firmware lld value
-        lld_row = QHBoxLayout()
-        lld_label = QLabel("LLD display:")
-        lld_label.setProperty("typo", "p1")
-        self.lld_input = QLineEdit()
-        self.lld_input.setPlaceholderText("ADC counts")
-        self.lld_input.setToolTip("Set to match firmware LLD — draws \u00b1threshold band on oscilloscope")
-        self.lld_input.setText(str(self._osc_lld))
-        self.lld_input.returnPressed.connect(self._on_set_lld_display)
-        lld_set_btn = QPushButton("Set")
-        lld_set_btn.setProperty("btn", "primary")
-        lld_set_btn.setFixedWidth(BTN_W)
-        lld_set_btn.clicked.connect(self._on_set_lld_display)
-        lld_row.addWidget(lld_label)
-        lld_row.addWidget(self.lld_input, 1)
-        lld_row.addWidget(lld_set_btn)
-        mid_layout.addLayout(lld_row)
-
         content.addWidget(mid_col, 1)
 
         # ── RIGHT COLUMN — oscilloscope plot ─────────────────────────────
@@ -331,19 +313,6 @@ class Tab1TeensyWidget(QWidget):
         if self._send(f"channels {ch}"):
             self.cmd_status.setText(f"Channels set to {ch}")
             QTimer.singleShot(800, self._request_info)
-
-    def _on_set_lld_display(self):
-        """Update the LLD display threshold from the UI input field."""
-        text = self.lld_input.text().strip()
-        try:
-            val = int(text)
-            if val >= 0:
-                self._osc_lld = val
-                self.cmd_status.setText(f"LLD display set to \u00b1{val}")
-            else:
-                self.cmd_status.setText("\u274c LLD must be a positive number")
-        except ValueError:
-            self.cmd_status.setText("\u274c LLD must be a whole number")
 
     def _on_set_ppu_tolerance(self):
         text = self.ppu_input.text().strip()
@@ -699,7 +668,6 @@ class Tab1TeensyWidget(QWidget):
                     lld_val = int(value.strip())
                     if lld_val > 0:
                         self._osc_lld = lld_val
-                        self.lld_input.setText(str(lld_val))
                         logger.info(f"   ✅ LLD read from info: {self._osc_lld}")
                 except ValueError:
                     pass
@@ -881,3 +849,5 @@ class Tab1TeensyWidget(QWidget):
         self.console.verticalScrollBar().setValue(
             self.console.verticalScrollBar().maximum()
         )
+
+
