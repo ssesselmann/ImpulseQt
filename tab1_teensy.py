@@ -649,7 +649,7 @@ class Tab1TeensyWidget(QWidget):
                     self.ppu_input.setText(str(tolerance))
                 except ValueError:
                     pass
-            elif param == "Lower Limit Discriminator":
+            elif "Lower Limit" in param or "lld" in cmd.lower():
                 try:
                     self._osc_lld = int(value.strip())
                     logger.info(f"   ✅ LLD read from info: {self._osc_lld}")
