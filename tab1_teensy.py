@@ -492,6 +492,18 @@ class Tab1TeensyWidget(QWidget):
             if line.startswith("#"):
                 self._sig_console.emit(line)
 
+                # Parse LLD directly from the console line as it arrives
+                if "lld" in line.lower() and "|" in line:
+                    parts = [p.strip() for p in line.lstrip("#").split("|")]
+                    if len(parts) == 3:
+                        try:
+                            lld_val = int(parts[2].strip())
+                            if lld_val > 0:
+                                self._osc_lld = lld_val
+                                logger.info(f"   ✅ LLD parsed from console: {self._osc_lld}")
+                        except ValueError:
+                            pass
+
                 # Closing separator flushes the info block to the table
                 if "\u2500" in line and self._info_buf:
                     rows = list(self._info_buf)
