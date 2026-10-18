@@ -260,6 +260,11 @@ def start_teensy_recording(mode=2):
         last_save_time = start_time
         first_tick     = True
 
+        # Read stop conditions at start of recording
+        with shared.write_lock:
+            max_counts  = int(getattr(shared, "max_counts",  2147483647) or 2147483647)
+            max_seconds = int(getattr(shared, "max_seconds", 2147483647) or 2147483647)
+
         while shared.run_flag.is_set():
             try:
                 ser.write(b"d\n")
@@ -306,6 +311,12 @@ def start_teensy_recording(mode=2):
                         if not first_tick:
                             shared.count_history.append(live_cps)
                         first_tick = False
+
+                    # Check stop conditions — same logic as pulsecatcher.py
+                    if total >= max_counts or elapsed >= max_seconds:
+                        logger.info(f"   ✅ fn Teensy stop condition reached: counts={total}/{max_counts} elapsed={elapsed}/{max_seconds}")
+                        shared.run_flag.clear()
+                        break
 
                     if mode == 3:
                         interval_counter, last_histogram = update_mode_3_data(
