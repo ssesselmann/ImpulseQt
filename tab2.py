@@ -2309,6 +2309,14 @@ class Tab2(QWidget):
         x_vals2 = list(range(len(histogram_2))) if comp_switch else []
         y_vals2 = histogram_2.copy() if comp_switch else []
 
+        # Scale comparison spectrum so its tallest peak matches the primary spectrum
+        if comp_switch and y_vals and y_vals2:
+            primary_peak = max(y_vals)
+            comp_peak    = max(y_vals2)
+            if comp_peak > 0 and primary_peak > 0:
+                scale = primary_peak / comp_peak
+                y_vals2 = [v * scale for v in y_vals2]
+
 
         if diff_switch and comp_switch:
             eps = 1e-9
