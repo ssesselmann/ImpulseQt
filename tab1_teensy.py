@@ -300,7 +300,10 @@ class Tab1TeensyWidget(QWidget):
         self.ax.plot(lld_trace,  linewidth=0.8, label="LLD",      color="orange", linestyle="--")
 
         ADC_ZERO = 37215
-        self.ax.set_ylim(37000 - ADC_ZERO, 37500 - ADC_ZERO)
+
+        #self.ax.set_ylim(37000 - ADC_ZERO, 37500 - ADC_ZERO)
+        self.ax.relim()                       # Recalculate data limits
+        self.ax.autoscale(enable=True, axis="y")
         self.ax.set_xlim(0, len(data) - 1)
         self.ax.set_title("Baseline Capture", color=fg)
         self.ax.set_xlabel("Sample")
