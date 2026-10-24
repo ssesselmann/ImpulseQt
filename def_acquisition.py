@@ -1,0 +1,493 @@
+# def_acquisition.py
+# Recording acquisition and control functions for all three device modes.
+# Covers: start/stop recording (PRO/MAX/Teensy), waterfall (mode 3) buffer
+#         management, and oscilloscope/pulse capture helpers for the GS-MAX.
+
+import time
+import queue
+import threading
+import logging
+from collections import deque
+from datetime import datetime
+from pathlib import Path
+
+import shared
+import save
+import shproto.dispatcher
+from shared import logger
+from shproto.dispatcher import process_03, start
+from def_io import write_blank_json_schema_hmp
+
+# Threading primitives used by oscilloscope/pulse capture (MAX mode)
+stop_thread      = threading.Event()
+pulse_data_queue = queue.Queue()
+
+
+# ---------------------------------------------------------------------------
+# Waterfall (mode 3) buffer management
+# ---------------------------------------------------------------------------
+
+def update_mode_3_data(
+    mode, shared, full_histogram, last_histogram,
+    hmp_buffer, interval_counter, t_interval, bins,
+    now, save_queue, meta, filename, hst3d=None, gps_hmp_full=None
+):
+    """
+    Accumulate 1-second spectrum slices and flush an aggregated row to
+    shared.histogram_hmp every t_interval seconds.
+
+    Returns: (interval_counter, last_histogram)
+
+    Each flush also appends a GPS row to shared.gps_hmp so that histogram
+    and GPS indices always stay aligned.
+    """
+    # Only active in waterfall mode
+    if mode != 3:
+        return interval_counter, last_histogram
+
+    # Defensive shape handling — bins can change if compression changes
+    if len(full_histogram) < bins:
+        full_histogram = list(full_histogram) + [0] * (bins - len(full_histogram))
+    elif len(full_histogram) > bins:
+        full_histogram = full_histogram[:bins]
+
+    if len(last_histogram) != bins:
+        # Bins changed — reset delta baseline and buffer
+        last_histogram[:] = [0] * bins
+        hmp_buffer.clear()
+        interval_counter = 0
+
+    # Build 1-second delta row (clamp negatives to 0)
+    interval_hist = [max(full_histogram[i] - last_histogram[i], 0) for i in range(bins)]
+    last_histogram[:] = full_histogram
+
+    # Only buffer rows with activity
+    if any(interval_hist):
+        hmp_buffer.append(interval_hist)
+
+    interval_counter += 1
+
+    # Flush every t_interval seconds
+    if interval_counter >= max(1, int(t_interval)):
+        if hmp_buffer:
+            # Aggregate N buffered rows into one slice (per-bin sums)
+            aggregated = [sum(col) for col in zip(*hmp_buffer)]
+
+            with shared.write_lock:
+                # Initialise ring buffers if needed
+                if not hasattr(shared, "histogram_hmp") or not hasattr(shared.histogram_hmp, "append"):
+                    shared.histogram_hmp = deque(maxlen=getattr(shared, "ring_len_hmp", 3600))
+                if not hasattr(shared, "gps_hmp") or not hasattr(shared.gps_hmp, "append"):
+                    shared.gps_hmp = deque(maxlen=getattr(shared, "ring_len_hmp", 3600))
+
+                # Append spectrum slice
+                shared.histogram_hmp.append(aggregated)
+
+                # Append matching GPS row (same lock keeps indices aligned)
+                fix = getattr(shared, "last_gps_fix", None)
+                ok  = (isinstance(fix, dict) and fix.get("fix")
+                       and fix.get("lat") is not None and fix.get("lon") is not None)
+                row = {
+                    "lat": fix.get("lat") if ok else None,
+                    "lon": fix.get("lon") if ok else None,
+                    "t":   shared.elapsed,
+                }
+                shared.gps_hmp.append(row)
+
+            # Enqueue save job for the background saver
+            payload = meta.copy()
+            payload["filename"]    = filename
+            payload["last_minute"] = aggregated
+            payload["gps"]         = row
+            save_queue.put(payload)
+
+            hmp_buffer.clear()
+            interval_counter = 0
+        else:
+            interval_counter = 0
+
+    return interval_counter, last_histogram
+
+
+# ---------------------------------------------------------------------------
+# Recording dispatcher — routes to the correct device mode
+# ---------------------------------------------------------------------------
+
+def start_recording(mode, device_type):
+    """Start a recording session for the given device type and mode."""
+    if device_type == "MAX":
+        return start_max_recording(mode)
+    elif device_type == "PRO":
+        return start_pro_recording(mode)
+    elif device_type == "TEENSY":
+        return start_teensy_recording(mode)
+    else:
+        logger.error(f"  ❌ fn Unsupported device_type: {device_type} ")
+        return None
+
+
+def stop_recording():
+    """Stop the active recording session for any device type."""
+    with shared.write_lock:
+        device_type = shared.device_type
+        shared.run_flag.clear()
+
+    if device_type == "MAX":
+        shproto.dispatcher.spec_stopflag = 1
+        shproto.dispatcher.stop()
+
+    # TEENSY: run_flag.clear() is enough — the thread sends 'x' to the device itself
+    logger.info(f"   ✅ fn Recording stopped [{device_type}] ")
+
+
+# ---------------------------------------------------------------------------
+# GS-MAX recording (serial mode)
+# ---------------------------------------------------------------------------
+
+def start_max_recording(mode):
+    """
+    Start a GS-MAX recording session.
+    Stops any existing MAX thread, resets shared state, then launches
+    the appropriate dispatcher process (2D or 3D waterfall).
+    """
+    # Stop any still-running MAX thread
+    if hasattr(shared, "max_process_thread") and shared.max_process_thread.is_alive():
+        logger.warning("👆 fn MAX thread still running, attempting to stop ")
+        shproto.dispatcher.spec_stopflag = 1
+        shared.max_process_thread.join(timeout=2)
+        logger.info("   ✅ fn Previous MAX thread stopped ")
+
+    with shared.write_lock:
+        shared.dropped_counts = 0
+        shared.counts         = 0
+        shared.elapsed        = 0
+        shared.run_flag.set()
+        filename    = shared.filename
+        compression = shared.compression
+        device      = shared.device
+        t_interval  = int(getattr(shared, "t_interval", 1) or 1)
+        if mode == 3:
+            # Reset waterfall buffers so old data doesn't bleed into new recording
+            shared.histogram_hmp = []
+            shared.gps_hmp       = []
+
+    logger.info(f"   ✅ fn Starting MAX recording ({filename}) in mode {mode} ")
+
+    # Serial commands are slow — send outside the lock
+    shproto.dispatcher.spec_stopflag = 0
+    shproto.dispatcher.ensure_running()
+    time.sleep(0.15)
+    shproto.dispatcher.process_03("-mode 0")
+    time.sleep(0.15)
+    shproto.dispatcher.process_03("-rst")
+    time.sleep(0.15)
+    shproto.dispatcher.process_03("-sta")
+    time.sleep(0.15)
+
+    def run_dispatcher():
+        try:
+            if mode == 3:
+                logger.info("   ✅ fn Launching MAX 3D process_02 ")
+                shproto.dispatcher.process_02(filename, compression, device, t_interval)
+            else:
+                logger.info("   ✅ fn Launching MAX 2D process_01 ")
+                shproto.dispatcher.process_01(filename, compression, device, t_interval)
+        except Exception as e:
+            logger.error(f"  ❌ fn MAX process thread crashed: {e} ")
+
+    process_thread = threading.Thread(target=run_dispatcher, daemon=True)
+    process_thread.start()
+    shared.max_process_thread = process_thread
+    return process_thread
+
+
+# ---------------------------------------------------------------------------
+# Teensy recording (USB serial at 2 Mbaud)
+# ---------------------------------------------------------------------------
+
+def start_teensy_recording(mode=2):
+    """
+    Start a Teensy recording session.
+    Sends 's' to begin acquisition, then polls 'd' every second for spectrum data.
+    Saves to JSON every 60 seconds and on stop.
+    """
+    import serial
+
+    with shared.write_lock:
+        shared.counts         = 0
+        shared.elapsed        = 0
+        shared.dropped_counts = 0
+        shared.histogram      = []
+        shared.run_flag.set()
+        shared.save_done.clear()
+        port_str   = shared.device_port
+        bins       = shared.bins
+        filename   = shared.filename
+        ser        = shared.teensy_serial
+        coeff_1    = shared.coeff_1
+        coeff_2    = shared.coeff_2
+        coeff_3    = shared.coeff_3
+        spec_notes = shared.spec_notes
+
+    logger.info(f"   ✅ fn Starting Teensy recording on {port_str}")
+
+    last_histogram   = [0] * bins
+    hmp_buffer       = []
+    interval_counter = 0
+
+    with shared.write_lock:
+        t_interval = int(getattr(shared, "t_interval", 1))
+
+    save_queue = queue.Queue()
+    meta = {"bins": bins, "filename": filename}
+
+    if not ser or not ser.is_open:
+        logger.error("  ❌ fn Teensy not connected — connect on tab1 first")
+        return None
+
+    try:
+        ser.write(b"s\n")
+        ser.flush()
+        shared.teensy_recording.set()   # pause tab1 reader while recording
+    except Exception as e:
+        logger.error(f"  ❌ fn Teensy send failed: {e}")
+        return None
+
+    def run():
+        nonlocal bins, interval_counter, last_histogram
+        start_time     = time.time()
+        dt_start       = datetime.utcnow()
+        last_save_time = start_time
+        first_tick     = True
+
+        # Read stop conditions at start of recording
+        with shared.write_lock:
+            max_counts  = int(getattr(shared, "max_counts",  2147483647) or 2147483647)
+            max_seconds = int(getattr(shared, "max_seconds", 2147483647) or 2147483647)
+
+        while shared.run_flag.is_set():
+            try:
+                ser.write(b"d\n")
+                ser.flush()
+                raw = ser.readline()
+                if not raw:
+                    time.sleep(1.0)
+                    continue
+
+                line = raw.decode("utf-8", errors="replace").strip()
+
+                # Parse pipe-delimited format: cps|pileup|comma,separated,counts
+                if "|" in line:
+                    parts = line.split("|", 2)
+                    try:
+                        live_cps = int(float(parts[0]))
+                    except ValueError:
+                        live_cps = 0
+                    try:
+                        pileup = int(parts[1])
+                    except (ValueError, IndexError):
+                        pileup = 0
+                    data_str = parts[2] if len(parts) > 2 else ""
+                else:
+                    data_str = line
+                    live_cps = 0
+                    pileup   = 0
+
+                counts = [int(x) for x in data_str.split(",") if x.strip().isdigit()]
+
+                if counts:
+                    bins       = len(counts)
+                    compressed = counts
+                    total      = sum(compressed)
+                    elapsed    = int(time.time() - start_time)
+
+                    with shared.write_lock:
+                        shared.bins           = bins
+                        shared.histogram      = compressed
+                        shared.counts         = total
+                        shared.elapsed        = elapsed
+                        shared.cps            = live_cps
+                        shared.dropped_counts = pileup
+                        if not first_tick:
+                            shared.count_history.append(live_cps)
+                        first_tick = False
+
+                    # Check stop conditions — same logic as pulsecatcher.py
+                    if total >= max_counts or elapsed >= max_seconds:
+                        logger.info(f"   ✅ fn Teensy stop condition reached: counts={total}/{max_counts} elapsed={elapsed}/{max_seconds}")
+                        shared.run_flag.clear()
+                        break
+
+                    if mode == 3:
+                        interval_counter, last_histogram = update_mode_3_data(
+                            mode=3, shared=shared,
+                            full_histogram=compressed,
+                            last_histogram=last_histogram,
+                            hmp_buffer=hmp_buffer,
+                            interval_counter=interval_counter,
+                            t_interval=t_interval,
+                            bins=bins, now=None,
+                            save_queue=save_queue,
+                            meta=meta, filename=filename,
+                        )
+
+                    # Periodic save every 60 seconds
+                    now = time.time()
+                    if now - last_save_time >= 60:
+                        save.save_histogram_json(
+                            filename=filename, device="TEENSY",
+                            histogram=compressed, counts=total,
+                            dropped_counts=pileup, elapsed=elapsed,
+                            coeff_1=coeff_1, coeff_2=coeff_2, coeff_3=coeff_3,
+                            spec_notes=spec_notes, dt_start=dt_start,
+                            dt_now=datetime.utcnow(),
+                        )
+                        save.save_count_history_csv(filename)
+                        logger.info(f"    ✅ {filename} saved ")
+                        last_save_time = now
+
+            except Exception as e:
+                logger.warning(f"👆 fn Teensy poll error: {e}")
+            time.sleep(1.0)
+
+        # Send stop command — do NOT close the port (tab1 owns it)
+        try:
+            ser.write(b"x\n")
+            ser.flush()
+        except Exception:
+            pass
+
+        # Final save on stop
+        with shared.write_lock:
+            histogram = list(shared.histogram)
+            total     = shared.counts
+            elapsed   = shared.elapsed
+            pileup    = shared.dropped_counts
+
+        save.save_histogram_json(
+            filename=filename, device="TEENSY",
+            histogram=histogram, counts=total,
+            dropped_counts=pileup, elapsed=elapsed,
+            coeff_1=coeff_1, coeff_2=coeff_2, coeff_3=coeff_3,
+            spec_notes=spec_notes, dt_start=dt_start,
+            dt_now=datetime.utcnow(),
+        )
+        save.save_count_history_csv(filename)
+        shared.teensy_recording.clear()  # resume tab1 reader
+        shared.save_done.set()
+        logger.info("   ✅ fn Teensy recording stopped")
+
+    thread = threading.Thread(target=run, daemon=True, name="teensy-recorder")
+    thread.start()
+    return thread
+
+
+# ---------------------------------------------------------------------------
+# PRO (sound card) recording
+# ---------------------------------------------------------------------------
+
+def start_pro_recording(mode):
+    """
+    Start a PRO (sound card) recording session via pulsecatcher.
+    Modes: 2 = 2D spectrum, 3 = waterfall, 4 = coincidence.
+    """
+    from pulsecatcher import pulsecatcher
+
+    with shared.write_lock:
+        filename      = shared.filename
+        device        = shared.device
+        run_flag      = shared.run_flag
+        run_flag_lock = shared.run_flag_lock
+        run_flag.set()
+        shared.recording = True
+
+    if mode in (2, 4):
+        logger.info(f"   ✅ fn Start recording ")
+        try:
+            thread = threading.Thread(target=pulsecatcher, args=(mode, run_flag, run_flag_lock))
+            thread.start()
+            return thread
+        except Exception as e:
+            logger.error(f"  ❌ fn starting 2D spectrum thread: {e} ")
+
+    elif mode == 3:
+        logger.info("   ✅ fn Start recording (3D) ")
+        write_blank_json_schema_hmp(filename, device)
+        try:
+            thread = threading.Thread(target=pulsecatcher, args=(3, run_flag, run_flag_lock))
+            thread.start()
+            return thread
+        except Exception as e:
+            logger.error(f"  ❌ fn 3D spectrum thread: {e} ")
+    else:
+        logger.error(f"  ❌ fn Unsupported mode for PRO device: {mode}")
+        return None
+
+
+# ---------------------------------------------------------------------------
+# GS-MAX oscilloscope and pulse capture helpers
+# ---------------------------------------------------------------------------
+
+def start_max_pulse():
+    """
+    Switch the GS-MAX into pulse capture mode and start the capture thread.
+    Returns False (enable interval) on success, True (disable interval) on error.
+    """
+    try:
+        time.sleep(0.1)
+        process_03('-dbg 2000 8000')  # Filter pulses between 2000 and 8000
+        time.sleep(0.2)
+        process_03('-mode 2')         # Switch to pulse mode
+        time.sleep(0.3)
+        process_03('-sta')            # Start recording
+        time.sleep(0.1)
+    except Exception as e:
+        logger.error(f"  ❌ fn process_03 command: {e} ")
+        return True
+
+    if not stop_thread.is_set():
+        stop_thread.clear()
+        threading.Thread(target=capture_pulse_data, daemon=True).start()
+        return False
+
+def start_max_oscilloscope():
+    """
+    Switch the GS-MAX into oscilloscope mode.
+    Returns False (enable interval) on success, True (disable interval) on error.
+    """
+    try:
+        process_03("-sto")
+        time.sleep(0.3)
+        process_03("-mode 1")
+        time.sleep(0.3)
+        process_03("-sta")
+        time.sleep(0.1)
+        return False
+    except Exception as e:
+        logger.error("❌ Oscilloscope start failed: %s", e)
+        return True
+
+def stop_max_pulse_check():
+    """Stop the GS-MAX pulse capture and reset to default mode."""
+    try:
+        process_03('-sto')    # Stop recording
+        time.sleep(0.1)
+        process_03('-mode 0') # Reset to default mode
+    except Exception as e:
+        logger.error(f"  ❌ fn process_03: {e} ")
+    stop_thread.set()
+    return True
+
+def capture_pulse_data():
+    """
+    Background thread: read pulse amplitude data from the MAX dispatcher
+    and push each batch into pulse_data_queue for the UI to consume.
+    """
+    stop_thread.clear()
+    try:
+        for pulse_data in start():  # start() yields lists of pulse amplitudes
+            if stop_thread.is_set():
+                break
+            pulse_data_queue.put(pulse_data)
+    except Exception as e:
+        logger.error(f"  ❌ fn capture_pulse_data: {e} ")

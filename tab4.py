@@ -26,7 +26,9 @@ from qt_compat import QGroupBox
 from qt_compat import QGridLayout
 
 from shared import logger, START, STOP, BTN, FOOTER, DLD_DIR
-from functions import start_recording, stop_recording, get_filename_options, load_cps_file, load_cps_csv, resource_path
+from def_acquisition import start_recording, stop_recording
+from def_io import load_cps_file, load_cps_csv
+from def_utils import get_filename_options, resource_path
 from pathlib import Path
 from qss import apply_plot_theme, plot_theme_colors
 

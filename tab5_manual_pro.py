@@ -4,7 +4,7 @@ from qt_compat import QWidget
 from qt_compat import QLabel
 from qt_compat import QVBoxLayout
 from shared import __version__ , DATA_DIR, USER_DATA_DIR, SETTINGS_FILE, LIB_DIR, LOG_DIR, DLD_DIR
-from functions import resource_path
+from def_utils import resource_path
 import base64
 
 def get_pro_image_data_uri():

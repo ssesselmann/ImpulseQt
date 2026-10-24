@@ -31,12 +31,9 @@ run_flag_lock    = Lock()
 teensy_recording = Event()
 teensy_serial    = None
 
-
-
-
 # --------------------
 # Versioning
-__version__ = "3.2.9.0"
+__version__ = "3.3.1.0"
 # --------------------
 
 SETTINGS = {}  

@@ -20,7 +20,8 @@ import serial
 import serial.tools.list_ports
 import time
 import shared
-import functions as fn
+from def_devices import get_serial_device_list
+from def_utils import resource_path
 
 from qt_compat import (
     QComboBox, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
@@ -48,6 +49,7 @@ class Tab1TeensyWidget(QWidget):
     _sig_info_table    = Signal(list)
     _sig_spectrum_dump = Signal(str)
     _sig_baseline_done = Signal()
+    _sig_pulse_done    = Signal()
 
     def __init__(self):
         super().__init__()
@@ -61,12 +63,15 @@ class Tab1TeensyWidget(QWidget):
         self._osc_buf      = []         # last complete pulse for plotting
         self._osc_pulse    = []         # assembles one pulse at a time
         self._osc_ceiling  = 3000       # updated from Teensy ceiling value
+        self._osc_lld      = 0           # updated from Teensy LLD value
+        self._pulse_capture_pending = False
 
         # Connect cross-thread signals to UI slots
         self._sig_console.connect(self._append_console)
         self._sig_info_table.connect(self._update_info_table)
         self._sig_spectrum_dump.connect(self._handle_spectrum_dump)
         self._sig_baseline_done.connect(self._on_baseline_done)
+        self._sig_pulse_done.connect(self._on_pulse_done)
 
         root = QVBoxLayout(self)
 
@@ -121,7 +126,7 @@ class Tab1TeensyWidget(QWidget):
 
         cmd_row = QHBoxLayout()
         self.cmd_input = QLineEdit()
-        self.cmd_input.setPlaceholderText("e.g.  rise 20  |  fall 35  |  adc 1")
+        self.cmd_input.setPlaceholderText("e.g.  rise 20  |  fall 35  |  ppu 10  |  adc 1")
         self.cmd_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.cmd_input.returnPressed.connect(self._on_send_command)
 
@@ -191,6 +196,28 @@ class Tab1TeensyWidget(QWidget):
         self.info_table.setEditTriggers(QTableWidget.NoEditTriggers)
         mid_layout.addWidget(self.info_table, 1)
 
+        # Editable PPU parameter
+        ppu_row = QHBoxLayout()
+        ppu_label = QLabel("PPU tolerance:")
+        ppu_label.setProperty("typo", "p1")
+
+        self.ppu_input = QLineEdit()
+        self.ppu_input.setPlaceholderText("ADC counts")
+        self.ppu_input.setToolTip(
+            "Permitted sample-to-sample reversal during spectrum pulse validation"
+        )
+        self.ppu_input.returnPressed.connect(self._on_set_ppu_tolerance)
+
+        ppu_send_btn = QPushButton("Set")
+        ppu_send_btn.setProperty("btn", "primary")
+        ppu_send_btn.setFixedWidth(BTN_W)
+        ppu_send_btn.clicked.connect(self._on_set_ppu_tolerance)
+
+        ppu_row.addWidget(ppu_label)
+        ppu_row.addWidget(self.ppu_input, 1)
+        ppu_row.addWidget(ppu_send_btn)
+        mid_layout.addLayout(ppu_row)
+
         content.addWidget(mid_col, 1)
 
         # ── RIGHT COLUMN — oscilloscope plot ─────────────────────────────
@@ -204,19 +231,22 @@ class Tab1TeensyWidget(QWidget):
         self._setup_plot()
 
         btn_row = QHBoxLayout()
-        self.osc_btn  = QPushButton("Pulse mode")
-        self.base_btn = QPushButton("Baseline Mode")
-        self.stop_btn = QPushButton("Stop")
+        self.osc_btn   = QPushButton("Oscilloscope")
+        self.single_btn = QPushButton("Single Shot")
+        self.base_btn  = QPushButton("Baseline Mode")
+        self.stop_btn  = QPushButton("Stop")
 
         self.osc_btn.setProperty("btn",  "start")
+        self.single_btn.setProperty("btn", "primary")
         self.base_btn.setProperty("btn", "primary")
         self.stop_btn.setProperty("btn", "stop")
 
         self.osc_btn.clicked.connect(self._start_oscilloscope)
+        self.single_btn.clicked.connect(self._start_single_shot)
         self.base_btn.clicked.connect(self._start_baseline_scope)
         self.stop_btn.clicked.connect(self._stop_mode)
 
-        for b in (self.osc_btn, self.base_btn, self.stop_btn):
+        for b in (self.osc_btn, self.single_btn, self.base_btn, self.stop_btn):
             btn_row.addWidget(b)
         right_layout.addLayout(btn_row)
 
@@ -243,6 +273,15 @@ class Tab1TeensyWidget(QWidget):
         self.cmd_status.setText("Baseline capture complete")
         self._plot_baseline()
 
+    def _on_pulse_done(self):
+        """Stop acquisition and leave the captured pulse frozen on screen."""
+        self._send("x")
+        self._update_plot()
+        self.current_mode = 0
+        self.plot_timer.stop()
+        self.cmd_status.setText("Single pulse captured")
+        logger.info("Single pulse captured (%d samples)", len(self._osc_buf))
+
     def _plot_baseline(self):
         data = list(self._osc_buf)
         if not data:
@@ -261,7 +300,10 @@ class Tab1TeensyWidget(QWidget):
         self.ax.plot(lld_trace,  linewidth=0.8, label="LLD",      color="orange", linestyle="--")
 
         ADC_ZERO = 37215
-        self.ax.set_ylim(37000 - ADC_ZERO, 37500 - ADC_ZERO)
+
+        #self.ax.set_ylim(37000 - ADC_ZERO, 37500 - ADC_ZERO)
+        self.ax.relim()                       # Recalculate data limits
+        self.ax.autoscale(enable=True, axis="y")
         self.ax.set_xlim(0, len(data) - 1)
         self.ax.set_title("Baseline Capture", color=fg)
         self.ax.set_xlabel("Sample")
@@ -275,6 +317,22 @@ class Tab1TeensyWidget(QWidget):
             self.cmd_status.setText(f"Channels set to {ch}")
             QTimer.singleShot(800, self._request_info)
 
+    def _on_set_ppu_tolerance(self):
+        text = self.ppu_input.text().strip()
+        try:
+            tolerance = int(text)
+        except ValueError:
+            self.cmd_status.setText("❌ PPU tolerance must be a whole number")
+            return
+
+        if not 0 <= tolerance <= 65535:
+            self.cmd_status.setText("❌ PPU tolerance must be between 0 and 65535")
+            return
+
+        if self._send(f"ppu {tolerance}"):
+            self.cmd_status.setText(f"PPU tolerance set to {tolerance}")
+            QTimer.singleShot(800, self._request_info)
+
     def _refresh_ports(self, keep_selection=True):
         with shared.write_lock:
             saved = str(getattr(shared, "device_port", "") or "").strip()
@@ -286,7 +344,7 @@ class Tab1TeensyWidget(QWidget):
         self.port_selector.clear()
         self.port_selector.setPlaceholderText("Select Teensy port")
 
-        for label, port_str in fn.get_serial_device_list():
+        for label, port_str in get_serial_device_list():
             self.port_selector.addItem(label, port_str)
 
         selected = False
@@ -437,6 +495,18 @@ class Tab1TeensyWidget(QWidget):
             if line.startswith("#"):
                 self._sig_console.emit(line)
 
+                # Parse LLD directly from the console line as it arrives
+                if "lld" in line.lower() and "|" in line:
+                    parts = [p.strip() for p in line.lstrip("#").split("|")]
+                    if len(parts) == 3:
+                        try:
+                            lld_val = int(parts[2].strip())
+                            if lld_val > 0:
+                                self._osc_lld = lld_val
+                                logger.info(f"   ✅ LLD parsed from console: {self._osc_lld}")
+                        except ValueError:
+                            pass
+
                 # Closing separator flushes the info block to the table
                 if "\u2500" in line and self._info_buf:
                     rows = list(self._info_buf)
@@ -448,10 +518,13 @@ class Tab1TeensyWidget(QWidget):
                         self._info_buf.append(parsed)
 
             elif line == "---":
-                # Pulse / trace delimiter — push complete buffer to plot
+                # Publish every complete pulse; stop only for a single shot.
                 if self.current_mode == 1 and self._osc_pulse:
                     self._osc_buf = list(self._osc_pulse)
                     self._osc_pulse.clear()
+                    if self._pulse_capture_pending:
+                        self._pulse_capture_pending = False
+                        self._sig_pulse_done.emit()
 
             elif "," in line:
                 parts = line.split(",")
@@ -476,8 +549,12 @@ class Tab1TeensyWidget(QWidget):
             if self.current_mode == 1:
                 # Pulse mode: ceiling, trigger, sample
                 self._osc_ceiling = int(parts[0])
-                self._osc_lld = int(parts[1])
+                stream_lld = int(parts[1])
+                if stream_lld > 0:          # only update if firmware sends a real value
+                    self._osc_lld = stream_lld
                 self._osc_pulse.append(int(parts[2]))
+                if len(self._osc_pulse) == 1:
+                    logger.info(f"   ✅ Teensy osc: ceiling={self._osc_ceiling} lld={self._osc_lld}")
 
             elif self.current_mode == 2 and len(parts) == 3:
                 self._osc_pulse.append((
@@ -583,20 +660,49 @@ class Tab1TeensyWidget(QWidget):
                         self.ch_selector.blockSignals(False)
                 except ValueError:
                     pass
+            elif param in ("Shape noise tolerance", "PPU tolerance"):
+                try:
+                    tolerance = int(value.strip())
+                    self.ppu_input.setText(str(tolerance))
+                except ValueError:
+                    pass
+            elif "Lower Limit" in param or "lld" in cmd.lower():
+                try:
+                    lld_val = int(value.strip())
+                    if lld_val > 0:
+                        self._osc_lld = lld_val
+                        logger.info(f"   ✅ LLD read from info: {self._osc_lld}")
+                except ValueError:
+                    pass
 
     # ═══════════════════════════════════════════════════════════════════════
     #  Modes
     # ═══════════════════════════════════════════════════════════════════════
 
     def _start_oscilloscope(self):
-        if not self._send("o"):
-            return
         self.current_mode = 1
         self._osc_buf.clear()
         self._osc_pulse.clear()
+        self._pulse_capture_pending = False
+        if not self._send("o"):
+            self.current_mode = 0
+            return
         self.plot_timer.start()
         self.cmd_status.setText("Oscilloscope mode started")
-        logger.info("Oscilloscope mode started")
+        logger.info("Continuous oscilloscope mode started")
+
+    def _start_single_shot(self):
+        self.current_mode = 1
+        self._osc_buf.clear()
+        self._osc_pulse.clear()
+        self._pulse_capture_pending = True
+        if not self._send("o"):
+            self.current_mode = 0
+            self._pulse_capture_pending = False
+            return
+        self.plot_timer.start()
+        self.cmd_status.setText("Waiting for one pulse …")
+        logger.info("Single-pulse capture armed")
 
     
     def _start_baseline_scope(self):
@@ -612,6 +718,8 @@ class Tab1TeensyWidget(QWidget):
     def _stop_mode(self):
         self._send("x")
         self.current_mode = 0
+        self._pulse_capture_pending = False
+        self._osc_pulse.clear()
         self.plot_timer.stop()
         self.cmd_status.setText("Stopped")
         logger.info("Teensy stopped")
@@ -669,9 +777,13 @@ class Tab1TeensyWidget(QWidget):
                 markeredgecolor= "black",
                 markersize     = 4,
             )
-            self.ax.set_ylim(-100, self._osc_ceiling)
+            self.ax.set_ylim(-self._osc_ceiling, self._osc_ceiling)
             if self._osc_lld > 0:
-                self.ax.axhline(y=self._osc_lld, color="orange", linewidth=0.8, linestyle="--", label="LLD")
+                # Shaded dead zone between -lld and +lld — pulses must exceed this absolute threshold
+                self.ax.axhspan(-self._osc_lld, self._osc_lld,
+                                alpha=0.15, color="orange", label=f"LLD ±{self._osc_lld}")
+                self.ax.axhline(y= self._osc_lld, color="orange", linewidth=0.8, linestyle="--")
+                self.ax.axhline(y=-self._osc_lld, color="orange", linewidth=0.8, linestyle="--")
             self.ax.legend()
 
         elif self.current_mode == 2:
@@ -693,16 +805,29 @@ class Tab1TeensyWidget(QWidget):
         self.canvas.draw()
 
     def _plot_spectrum(self, counts):
+        total = sum(counts)
+
         self.ax.clear()
         self.ax.set_axisbelow(True)
         self.ax.minorticks_on()
         fg, bg, lc = self._style_ax()
-        self.ax.bar(range(len(counts)), counts, color=lc, width=1.0, linewidth=0)
-        self.ax.set_title("Gamma Spectrum", color=fg)
+
+        self.ax.bar(
+            range(len(counts)),
+            counts,
+            color=lc,
+            width=1.0,
+            linewidth=0,
+        )
+
+        self.ax.set_title(
+            f"Gamma Spectrum — Total: {total:,}",
+            color=fg,
+        )
         self.ax.set_xlabel("Channel")
         self.ax.set_ylabel("Counts")
         self.canvas.draw()
-
+    
     def apply_theme_to_plots(self):
         fg, bg, lc = self._style_ax()
         self.ax.set_title(self.ax.get_title(), color=fg)
@@ -717,10 +842,15 @@ class Tab1TeensyWidget(QWidget):
         doc = self.console.document()
         while doc.blockCount() > 200:
             cursor = self.console.textCursor()
-            cursor.movePosition(cursor.Start)
-            cursor.select(cursor.BlockUnderCursor)
+            cursor_type = type(cursor)
+            move_operation = getattr(cursor_type, "MoveOperation", cursor_type)
+            selection_type = getattr(cursor_type, "SelectionType", cursor_type)
+            cursor.movePosition(move_operation.Start)
+            cursor.select(selection_type.BlockUnderCursor)
             cursor.removeSelectedText()
             cursor.deleteChar()
         self.console.verticalScrollBar().setValue(
             self.console.verticalScrollBar().maximum()
         )
+
+
