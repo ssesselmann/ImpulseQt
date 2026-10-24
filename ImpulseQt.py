@@ -8,8 +8,7 @@ import json
 import platform
 import datetime
 import logging
-# appnope prevents macOS from sleeping during acquisition (macOS only)
-import platform
+
 if platform.system() == "Darwin":
     import appnope
     appnope.nope()
