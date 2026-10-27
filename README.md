@@ -2,7 +2,7 @@
 
 **An open source MCA for Gamma Spectrometry**
 
-ImpulseQt is an easy and intuitive Python program for gamma spectrometry. It works equally well under Windows, Mac or Linux. 
+Easy and intuitive Python program for gamma spectrometry that works equally well under Windows, Mac or Linux. 
 
 A complete manual is embedded in the software, but the programmer's intention was that the manual would never be needed. 
 
