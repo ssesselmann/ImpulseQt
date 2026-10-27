@@ -4,11 +4,19 @@
 
 Easy and intuitive Python program for gamma spectrometry that works equally well under Windows, Mac or Linux. 
 
-A complete manual is embedded in the software, but the programmer's intention was that the manual would never be needed. 
+A complete manual is included in the software, but its unlikely you will need it. 
 
-**Features**
+**Some Features you expect and some that might surprise**
  - **Device setup tab** Select device type and fine-tune its settings
- - **Histogram tab** Record and analyse your pulse height histogram. Includes features like linear and logarithmic scale, Gaussian correlation plot, comparison spectrum, background subtraction, isotope library, coincidence counting (stereo sound cards only), calibration and CSV exports. 
+- **Histogram tab** Record and analyse your pulse height histogram. Features include:
+    - Linear and logarithmic scales
+    - Gaussian correlation plot
+    - Comparison spectrum
+    - Background subtraction
+    - Isotope library
+    - Coincidence counting (stereo sound cards only)
+    - Calibration
+    - CSV exports
  - **Waterfall tab** 3D Waterfall plot showing changes to your spectrum over time. This feature is compatible with an external USB GPS module and when connected can save spectrum as intervals with GPS coordinates and plot the counts directly on a map. 
  - **Count Rate tab** This tab plots the count rate over time and features a smoothing function as well as the ability to export CSV count rates.
  - **Manual tab** This tab contains the full manual and changes dynamically according to the selected device type. 
