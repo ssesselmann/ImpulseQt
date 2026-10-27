@@ -1,44 +1,58 @@
 # ImpulseQt
 
-**ImpulseQt — A Complete Refactor of Impulse**
+**ImpulseQt — An open source MCA for Gamma Spectrometry**
 
-Impulse started as an experiment: could a Multi-Channel Analyzer (MCA) be written in Python using Dash-Plotly to run in a browser? It worked — but many users found it slow and unresponsive. This was mostly due to the Dash-Plotly GUI, which is great for static plots but not ideal for dynamic, real-time applications like a continuously updating MCA.
+ImpulseQt is an easy and intuitive Python program for gamma spectrometry. It works equally well under Windows, Mac or Linux. 
 
-So I rewrote the program using **PySide6** for the front-end GUI. The result? A smaller app bundle, a faster and more responsive interface — and best of all, the program now actually quits cleanly when you close the window!
+A complete manual is embedded in the software, but the programmer's intention was that the manual would never be needed. 
 
+**Features**
+ - **Device setup tab** Select device type and fine-tune its settings
+ - **Histogram tab** Record and analyse your pulse height histogram. Includes features like linear and logarithmic scale, Gaussian correlation plot, comparison spectrum, background subtraction, isotope library, coincidence counting (stereo sound cards only), calibration and CSV exports. 
+ - **Waterfall tab** 3D Waterfall plot showing changes to your spectrum over time. This feature is compatible with an external USB GPS module and when connected can save spectrum as intervals with GPS coordinates and plot the counts directly on a map. 
+ - **Count Rate tab** This tab plots the count rate over time and features a smoothing function as well as the ability to export CSV count rates.
+ - **Manual tab** This tab contains the full manual and changes dynamically according to the selected device type. 
+
+ Enjoy the simplicity of ImpulseQt and appreciate achieving the same results with fewer settings. 
 ---
 
 ### **Multi-Device Support**
 
-Just like the original Impulse, **ImpulseQt** supports **multiple hardware types**. It operates in two modes:
-- **Sound card spectrometers** such as *GammaSpectacular* and *Theremino*
-- **USB MCAs** including *Atom Spectrometers* and *GS-MAX*
+**ImpulseQt** supports **multiple hardware types**. 
+It operates in three modes:
+- **Sound Card Spectrometer Mode** Works with devices such as *GammaSpectacular* and *Theremino*
+- **ATOM USB MCAs** Works with *Atom Spectrometers* and *GS-MAX Spectrometers* USB UART 
+- **Teensy MCA** Currently under development
 
-While the GUI is shared, each device type uses its own dedicated engine under the hood.
+Each device type has its own engine under the hood, but all share a common GUI.
 
 ---
 
 ### **Multi-Platform**
 
 ImpulseQt is written in Python and compiled for **Windows** and **macOS**. (Yes, there are a few of us Mac users in the scientific world!)  
-**Linux** users can run it directly from source.
+**Linux** users can run it directly from source using Python 3.10
 
 ---
 
 ### **Open Source**
 
-ImpulseQt is open source under the **MIT License** — which means you're free to copy, modify, fork, or even steal it.  
+ImpulseQt is open source under the **MIT License** — You’re free to use, copy, modify, and fork it under the MIT License
+
 Just be respectful, and remember the **hundreds of hours** I spent designing, coding, and debugging this software.
 
 ---
 
 ### **Feedback**
 
-Your feedback is appreciated, it shapes future versions!
+Your feedback is appreciated it helps shape future versions!
 
 ---
 
-### **Installing**
+### **Installation**
+
+ImpulseQt has been written for Python 3.10 and works best with this version. If you have a newer or older version installed, I recommend creating a virtual environment using Python 3.10.
+If you are running the compiled version you can ignore this instruction. 
 
 On **Windows** and **macOS** you **don’t need Python installed**. ImpulseQt comes bundled as a standalone executable that includes everything it needs to run.
 
@@ -52,7 +66,7 @@ uv run ImpulseQt.py
 
 #### NixOS
 
-Manylinux wheels (PySide6's Qt6 plugins, PyAudio's PortAudio binding) expect shared libraries in standard FHS paths that don't exist on NixOS. This repo ships a `flake.nix` that provides an FHS-compatible dev shell with `uv` and all the required runtime libraries (Qt6/xcb, OpenGL, ALSA/PortAudio, etc.):
+Many linux wheels (PySide6's Qt6 plugins, PyAudio's PortAudio binding) expect shared libraries in standard FHS paths that don't exist on NixOS. This repo ships a `flake.nix` that provides an FHS-compatible dev shell with `uv` and all the required runtime libraries (Qt6/xcb, OpenGL, ALSA/PortAudio, etc.):
 
 ```sh
 nix develop
