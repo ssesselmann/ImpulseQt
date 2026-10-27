@@ -1,7 +1,7 @@
 # ImpulseQt
 
 **An open source MCA for Gamma Spectrometry**
-
+---
 Easy and intuitive Python program for gamma spectrometry that works equally well under Windows, Mac or Linux. 
 
 A complete manual is included in the software, but its unlikely you will need it. 
@@ -21,7 +21,7 @@ A complete manual is included in the software, but its unlikely you will need it
  - **Count Rate tab** This tab plots the count rate over time and features a smoothing function as well as the ability to export CSV count rates.
  - **Manual tab** This tab contains the full manual and changes dynamically according to the selected device type. 
 
- Enjoy the simplicity of ImpulseQt and appreciate achieving the same results with fewer settings. 
+ Enjoy the simplicity of ImpulseQt
 ---
 
 ### **Multi-Device Support**
