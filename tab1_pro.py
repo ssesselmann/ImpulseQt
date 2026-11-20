@@ -419,10 +419,7 @@ class Tab1ProWidget(QWidget):
         pi.setLabel("left", "Amplitude", units="% FS")
         pi.setLabel("bottom", "Sample")
 
-        try:
-            pi.getAxis("left").setTickSpacing(1, 0.5)
-        except TypeError:
-            pi.getAxis("left").setTickSpacing(major=1, minor=0.5)
+        # Tick spacing is left on automatic so labels never overlap at wide y ranges
 
         # --- LLD / ULD shaded regions ---
         with shared.write_lock:
@@ -571,8 +568,9 @@ class Tab1ProWidget(QWidget):
 
             # Y autorange based on actual pulse data, not the sentinel region bounds
             if left_pct:
-                y_min = min(left_pct)
-                y_max = max(left_pct)
+                visible = left_pct + (right_pct if stereo else [])
+                y_min = min(visible)
+                y_max = max(visible)
                 padding = (y_max - y_min) * 0.2 or 5.0   # 20% padding, min 5%
                 pi.setYRange(y_min - padding, y_max + padding, padding=0)
             # pi.enableAutoRange(axis='y', enable=True)
