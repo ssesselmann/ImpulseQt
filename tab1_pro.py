@@ -141,12 +141,14 @@ class Tab1ProWidget(QWidget):
         self.pulse_plot = pg.PlotWidget()
         self.style_plot_canvas(self.pulse_plot)
         self.pulse_plot.setTitle("Mean Pulse Shape") 
+        self.pulse_plot.setMouseEnabled(x=False, y=True)   # mouse wheel zooms Y axis only
         self.pulse_plot.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         # --- Distortion curve plot ---
         self.curve_plot = pg.PlotWidget()
         self.style_plot_canvas(self.curve_plot)
         self.curve_plot.setTitle("Distortion Curve")  
+        self.curve_plot.setMouseEnabled(x=False, y=True)   # mouse wheel zooms Y axis only
         self.curve_plot.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         # Use stretch factors to divide space evenly
