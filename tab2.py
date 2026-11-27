@@ -54,6 +54,10 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QBrush, QColor
 from qss import apply_plot_theme, plot_theme_colors
 
+# Ideal bins * pitch: 2^15 = full scale of the 16-bit sound card input.
+# Only used for log feedback, other combinations are still allowed.
+FULL_SCALE_WINDOW = 32768
+
 
 
 class _WhiteInputDelegate(QStyledItemDelegate):
@@ -1348,8 +1352,31 @@ class Tab2(QWidget):
 
             logger.info(f"   ✅ {key} changed to {text}")
 
+            if key == "bin_size":
+                self._log_bin_pitch_feedback()
+
         except ValueError:
             pass
+
+    def _log_bin_pitch_feedback(self):
+        """Tell the user whether bins * pitch matches the 2^15 full-scale window (PRO only)."""
+        with shared.write_lock:
+            device_type = shared.device_type
+            bins        = int(shared.bins)
+            pitch       = int(shared.bin_size)
+
+        if device_type != "PRO" or bins < 1 or pitch < 1:
+            return
+
+        window = bins * pitch
+        if window == FULL_SCALE_WINDOW:
+            verdict = "Good choice 👍"
+        elif window < FULL_SCALE_WINDOW:
+            verdict = "Spectrum width exceeds window ⚠️"
+        else:
+            verdict = "Spectrum width narrower than window ⚠️"
+
+        logger.info(f"   ✅ bins {bins} x pitch {pitch} = {window} : {verdict}")
 
     @Slot(int)
     def on_select_bins_changed(self, index):
@@ -1371,6 +1398,7 @@ class Tab2(QWidget):
             shared.bins = max(1, int(shared.bins_abs) // max(1, compression))
 
         logger.info(f"   ✅ Compression set to {compression}, bins = {shared.bins}")
+        self._log_bin_pitch_feedback()
 
         self.update_histogram()
 
