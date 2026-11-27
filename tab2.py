@@ -54,9 +54,9 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QBrush, QColor
 from qss import apply_plot_theme, plot_theme_colors
 
-# Ideal bins * pitch: 2^15 = full scale of the 16-bit sound card input.
-# Only used for log feedback, other combinations are still allowed.
-FULL_SCALE_WINDOW = 32768
+# Audio range: 2^15 = full scale of the 16-bit sound card input.
+# Ideal bins * pitch equals this. Only used for log feedback, other combinations are still allowed.
+AUDIO_RANGE = 32768
 
 
 
@@ -1359,7 +1359,7 @@ class Tab2(QWidget):
             pass
 
     def _log_bin_pitch_feedback(self):
-        """Tell the user whether bins * pitch matches the 2^15 full-scale window (PRO only)."""
+        """Tell the user whether bins * pitch covers the 2^15 audio range (PRO only)."""
         with shared.write_lock:
             device_type = shared.device_type
             bins        = int(shared.bins)
@@ -1368,15 +1368,15 @@ class Tab2(QWidget):
         if device_type != "PRO" or bins < 1 or pitch < 1:
             return
 
-        window = bins * pitch
-        if window == FULL_SCALE_WINDOW:
+        covered = bins * pitch
+        if covered == AUDIO_RANGE:
             verdict = "Good choice 👍"
-        elif window < FULL_SCALE_WINDOW:
-            verdict = "Spectrum width exceeds window ⚠️"
+        elif covered < AUDIO_RANGE:
+            verdict = "Spectrum covers less than the audio range, tall pulses are cut off ⚠️"
         else:
-            verdict = "Spectrum width narrower than window ⚠️"
+            verdict = "Spectrum covers more than the audio range, upper bins stay empty ⚠️"
 
-        logger.info(f"   ✅ bins {bins} x pitch {pitch} = {window} : {verdict}")
+        logger.info(f"   ✅ bins {bins} x pitch {pitch} = {covered} : {verdict}")
 
     @Slot(int)
     def on_select_bins_changed(self, index):
