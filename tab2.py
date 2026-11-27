@@ -65,8 +65,12 @@ class _WhiteInputDelegate(QStyledItemDelegate):
 class FixedRangePlotWidget(pg.PlotWidget):
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_A:
-            bins = shared.bins
-            self.setXRange(0, bins - 1, padding=0)
+            # Reset to first..last bin in the units currently plotted (channels or keV)
+            full = getattr(self, "full_range", None)
+            if full:
+                self.setXRange(full[0], full[1], padding=0)
+            else:
+                self.setXRange(0, shared.bins - 1, padding=0)
         else:
             super().keyPressEvent(event)
 
@@ -2482,9 +2486,20 @@ class Tab2(QWidget):
         else:
             self.plot_widget.setLabel('bottom', 'Bins/Channels')
         
-        if bins != getattr(self, '_last_bins', None):
-            self._last_bins = bins
-            self.plot_widget.setXRange(0, bins - 1, padding=0)
+        # Full x extent is first bin .. last bin, in channels or keV depending on cal_switch.
+        # Calibration changes the x values only, never the number of bins.
+        if (len(x_vals) > 1 and np.isfinite(x_vals[0]) and np.isfinite(x_vals[-1])
+                and x_vals[-1] > x_vals[0]):
+            full_range = (float(x_vals[0]), float(x_vals[-1]))
+        else:
+            full_range = (0, bins - 1)
+        self.plot_widget.full_range = full_range
+
+        # Re-fit the view when the bin count or the calibration switch changes
+        range_key = (bins, bool(cal_switch))
+        if range_key != getattr(self, '_last_range_key', None):
+            self._last_range_key = range_key
+            self.plot_widget.setXRange(full_range[0], full_range[1], padding=0)
 
         # 4) Toggle log transform LAST so it picks up the just-set data
         # In log mode, disable fill — log(0) is undefined so filled step plots break below 1.
