@@ -111,6 +111,11 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
     while shared.run_flag.is_set() and local_counts < max_counts and local_elapsed <= max_seconds:
         # Read one chunk of audio data from stream into memory.
         data = stream.read(chunk_size, exception_on_overflow=False)
+
+        # Re-read live every chunk so a change of the Baseline dropdown on tab1 applies immediately
+        # (it used to be copied once at start, so changes only took effect after a restart)
+        with shared.write_lock:
+            baseline_left = shared.baseline_left
         
         # Convert hex values into a list of decimal values
         values = list(struct.unpack(f"<{chunk_size * channels}h", data))
