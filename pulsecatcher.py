@@ -52,6 +52,7 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
         max_seconds     = shared.max_seconds
         t_interval      = shared.t_interval
         peakshift       = shared.peakshift
+        baseline_left   = shared.baseline_left   # pile-up discriminator, 0 = off
         peak            = int((sample_length - 1) / 2) + peakshift
         spec_notes      = shared.spec_notes
         stereo          = shared.stereo
@@ -157,7 +158,11 @@ def pulsecatcher(mode, run_flag, run_flag_lock):
                 normalised = normalise_pulse(samples)
                 dist = distortion(normalised, left_shape)
 
-                if dist > tolerance:
+                if baseline_left != 0 and samples[0] > baseline_left:
+                    # Window starts above baseline: this pulse sits on the tail of a previous pulse,
+                    # so max - min reads low. Drop it (left channel only).
+                    dropped_counts += 1
+                elif dist > tolerance:
                     dropped_counts += 1
                 elif dist < tolerance:
                     bin_index = int(height) // bin_size #drift bug was here

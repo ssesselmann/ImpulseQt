@@ -154,6 +154,7 @@ shape_lld = 0
 shape_uld = 0
 shapecatches = 0
 peakshift = 0
+baseline_left = 0   # GS-PRO pile-up discriminator (ADC counts, 0 = off): drop pulse if samples[0] > baseline_left
 flip = 1
 
 mean_shape_left       = []
@@ -349,6 +350,7 @@ SETTINGS_SCHEMA = {
     "max_seconds": {"type": "int", "default": 2147483647},
     "peakfinder": {"type": "int", "default": 0},
     "peakshift": {"type": "int", "default": 0},
+    "baseline_left": {"type": "int", "default": 0},
     "polynomial_fn": {"type": "list", "default": []},
     "mean_shape_left": {"type": "list", "default": []},
     "mean_shape_right": {"type": "list", "default": []},

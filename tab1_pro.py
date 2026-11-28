@@ -32,6 +32,7 @@ class Tab1ProWidget(QWidget):
             sample_rate     = shared.sample_rate
             sample_length   = shared.sample_length
             shapecatches    = shared.shapecatches
+            baseline_left   = shared.baseline_left
             chunk_size      = shared.chunk_size
             stereo          = shared.stereo
             distortion_left = shared.distortion_left
@@ -86,6 +87,25 @@ class Tab1ProWidget(QWidget):
         self.buffer_size.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.buffer_size.currentTextChanged.connect(lambda val: (logger.info(f"[INFO] Buffer changed to {val} ⚙️"),setattr(shared, "chunk_size", int(val))))
 
+        # Baseline (left channel) pile-up discriminator, ADC counts in steps of 10 (~1 keV).
+        # A pulse whose first sample is above this value sits on the tail of a previous pulse and is dropped.
+        # Off (0) disables the check.
+        self.baseline_left = QComboBox()
+        for v in range(-100, 101, 10):
+            self.baseline_left.addItem("Off" if v == 0 else f"{v:+d}", v)
+        snapped = max(-100, min(100, int(round(int(baseline_left) / 10.0) * 10)))
+        self.baseline_left.setCurrentIndex(self.baseline_left.findData(snapped))
+        if snapped != int(baseline_left):
+            with shared.write_lock:
+                shared.baseline_left = snapped      # keep shared in step with what the dropdown shows
+        self.baseline_left.setMaximumWidth(100)
+        self.baseline_left.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.baseline_left.setToolTip(
+            "Drop pulses whose first sample is above this baseline (pile-up on the tail of a previous pulse). "
+            "Off = disabled. Left channel only."
+        )
+        self.baseline_left.currentIndexChanged.connect(self.on_baseline_left_changed)
+
         top_bar = QWidget()
         top_bar.setProperty("typo", "p1")     # <-- key line
         top_bar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -102,6 +122,8 @@ class Tab1ProWidget(QWidget):
         top_controls.addWidget(self.pulse_catcher)
         top_controls.addWidget(QLabel("Buffer Size"))
         top_controls.addWidget(self.buffer_size)
+        top_controls.addWidget(QLabel("Baseline"))
+        top_controls.addWidget(self.baseline_left)
         top_controls.addStretch()
 
         tab1_pro_layout.addWidget(top_bar, 0, Qt.AlignTop)
@@ -305,6 +327,7 @@ class Tab1ProWidget(QWidget):
         if hasattr(self, "_shape_curve_right"):
             self._shape_curve_right.setPen(t["comp_pen"])
             self._shape_curve_right.setSymbolBrush(t["marker"])
+        self.update_baseline_line()
         with shared.write_lock:
             dl = getattr(shared, "distortion_left",  None)
             dr = getattr(shared, "distortion_right", None)
@@ -414,6 +437,27 @@ class Tab1ProWidget(QWidget):
         )
 
 
+    def on_baseline_left_changed(self, _index):
+        """Store the baseline_left discriminator (ADC counts, 0 = off) and refresh the dotted line."""
+        val = int(self.baseline_left.currentData())
+        with shared.write_lock:
+            shared.baseline_left = val
+        logger.info(f"[INFO] Baseline (left) changed to {val}")
+        self.update_baseline_line()
+
+    def update_baseline_line(self):
+        """Dotted line on the pulse shape plot at baseline_left (% FS); hidden when Off."""
+        if not hasattr(self, "_baseline_line"):
+            return
+        with shared.write_lock:
+            val = int(shared.baseline_left)
+        if val == 0:
+            self._baseline_line.hide()
+            return
+        self._baseline_line.setValue(val * 100.0 / 32767.0)
+        self._baseline_line.setPen(pg.mkPen(plot_theme_colors()["marker"], width=1.5, style=Qt.DotLine))
+        self._baseline_line.show()
+
     def update_sample_window_label(self):
         """Show the sample window duration (sample length / sample rate) under the pulse shape plot."""
         with shared.write_lock:
@@ -482,6 +526,12 @@ class Tab1ProWidget(QWidget):
         pi.addItem(uld_label)
         lld_label.setPos(0, lld_pct)
         uld_label.setPos(0, uld_pct)
+
+        # Dotted baseline_left line: pulses whose first sample is above this are dropped
+        self._baseline_line = pg.InfiniteLine(pos=0, angle=0)
+        self._baseline_line.setZValue(5)
+        pi.addItem(self._baseline_line, ignoreBounds=True)
+        self.update_baseline_line()
 
         t = plot_theme_colors()
         self._shape_curve_left = pi.plot(
