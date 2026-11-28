@@ -151,6 +151,10 @@ class Tab1ProWidget(QWidget):
         self.curve_plot.setMouseEnabled(x=False, y=True)   # mouse wheel zooms Y axis only
         self.curve_plot.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
+        # Keep the sample window text under the pulse shape plot in step with rate / length
+        self.sample_rate.currentTextChanged.connect(lambda _: self.update_sample_window_label())
+        self.sample_size.currentTextChanged.connect(lambda _: self.update_sample_window_label())
+
         # Use stretch factors to divide space evenly
         row_layout = QHBoxLayout()
         row_layout.addWidget(self.help_text, stretch=1)
@@ -410,6 +414,18 @@ class Tab1ProWidget(QWidget):
         )
 
 
+    def update_sample_window_label(self):
+        """Show the sample window duration (sample length / sample rate) under the pulse shape plot."""
+        with shared.write_lock:
+            rate   = int(shared.sample_rate)
+            length = int(shared.sample_length)
+
+        if rate <= 0 or length <= 0:
+            return
+
+        window_us = length / rate * 1e6
+        self.pulse_plot.getPlotItem().setLabel("bottom", f"Sample window {window_us:.1f} \u00b5s")
+
     def init_pulse_plot(self):
         pw = self.pulse_plot
         apply_plot_theme(pw)
@@ -417,7 +433,7 @@ class Tab1ProWidget(QWidget):
         pi = pw.getPlotItem()
         pi.showGrid(x=True, y=True, alpha=0.18)
         pi.setLabel("left", "Amplitude", units="% FS")
-        pi.setLabel("bottom", "Sample")
+        self.update_sample_window_label()   # x label: "Sample window NN \u00b5s"
 
         # Tick spacing is left on automatic so labels never overlap at wide y ranges
 
